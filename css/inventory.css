@@ -1,0 +1,151 @@
+/* inventory.css — bloxd.io-style inventory / crafting screens (Update #5): two dark slate-navy panels over
+   the dimmed game, an armor row + 6×6 storage on the right, the recipe browser or creative catalog on the
+   left, the hotbar row below. Everything scales with --gui-scale. */
+#inventory-screen {
+  --inv-bg: #2e3654;
+  --inv-slot: #3a4675;
+  --inv-slot-border: #4d5a8c;
+  --inv-slot-hover: #4a578f;
+  --inv-craft: #3d7fe0;
+  --inv-craft-border: #7fb0f5;
+  --inv-craft-off: #5a6070;
+  --inv-craft-off-border: #7a8090;
+  --inv-text: #ffffff;
+  --inv-muted: #aab4d8;
+  --inv-red: #d0392b;
+  --inv-font: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  cursor: default;
+  font-family: var(--inv-font);
+  color: var(--inv-text);
+}
+.inv-layout { display: flex; flex-direction: column; align-items: center; gap: calc(6px * var(--gui-scale)); }
+.inv-panels { display: flex; align-items: stretch; gap: 0; }
+.inv-panel {
+  background: var(--inv-bg);
+  border-radius: calc(3px * var(--gui-scale));
+  padding: calc(8px * var(--gui-scale));
+  display: flex;
+  flex-direction: column;
+  gap: calc(5px * var(--gui-scale));
+  box-shadow: 0 0 0 calc(1px * var(--gui-scale)) rgba(0, 0, 0, 0.35);
+}
+.inv-left { width: calc(258px * var(--gui-scale)); min-height: calc(178px * var(--gui-scale)); }
+.inv-right { width: calc(152px * var(--gui-scale)); }
+.inv-divider {
+  width: calc(6px * var(--gui-scale));
+  margin: 0 calc(2px * var(--gui-scale));
+  border-radius: calc(1px * var(--gui-scale));
+  background: repeating-linear-gradient(180deg, #6b4423 0 calc(9px * var(--gui-scale)), #4f3118 calc(9px * var(--gui-scale)) calc(12px * var(--gui-scale)), #7a4f2a calc(12px * var(--gui-scale)) calc(20px * var(--gui-scale)));
+  box-shadow: inset calc(1px * var(--gui-scale)) 0 0 rgba(255, 220, 170, 0.18), inset calc(-1px * var(--gui-scale)) 0 0 rgba(0, 0, 0, 0.35);
+}
+.inv-title { text-align: center; font-weight: 700; font-size: calc(10px * var(--gui-scale)); line-height: 1.2; letter-spacing: 0.01em; }
+.inv-toggle { display: flex; justify-content: center; gap: calc(3px * var(--gui-scale)); }
+.inv-tab {
+  font: 700 calc(6.5px * var(--gui-scale)) var(--inv-font);
+  color: var(--inv-muted);
+  background: var(--inv-slot);
+  border: calc(1px * var(--gui-scale)) solid var(--inv-slot-border);
+  border-radius: calc(2px * var(--gui-scale));
+  padding: calc(1px * var(--gui-scale)) calc(6px * var(--gui-scale));
+  cursor: pointer;
+}
+.inv-tab.active, .inv-tab:hover { color: var(--inv-text); background: var(--inv-craft); border-color: var(--inv-craft-border); }
+
+/* ---- Slots ---- */
+.slot-grid { display: grid; gap: calc(2px * var(--gui-scale)); }
+.main-grid { grid-template-columns: repeat(6, calc(20px * var(--gui-scale))); grid-auto-rows: calc(20px * var(--gui-scale)); justify-content: center; }
+.inv-hotbar { grid-template-columns: repeat(9, calc(20px * var(--gui-scale))); grid-auto-rows: calc(20px * var(--gui-scale)); background: var(--inv-bg); padding: calc(4px * var(--gui-scale)); border-radius: calc(3px * var(--gui-scale)); box-shadow: 0 0 0 calc(1px * var(--gui-scale)) rgba(0, 0, 0, 0.35); }
+.armor-row { display: flex; justify-content: center; gap: calc(2px * var(--gui-scale)); }
+.slot {
+  position: relative;
+  width: calc(20px * var(--gui-scale));
+  height: calc(20px * var(--gui-scale));
+  background: var(--inv-slot);
+  border: calc(1px * var(--gui-scale)) solid var(--inv-slot-border);
+  border-radius: calc(2px * var(--gui-scale));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.slot:hover, .slot.drag-target { background: var(--inv-slot-hover); border-color: #7f8fc8; }
+.slot .slot-icon { width: calc(16px * var(--gui-scale)); height: calc(16px * var(--gui-scale)); }
+.slot .slot-count { font: 700 calc(7px * var(--gui-scale)) var(--inv-font); text-shadow: calc(1px * var(--gui-scale)) calc(1px * var(--gui-scale)) 0 #000; }
+.armor-slot .slot-silhouette { position: absolute; inset: calc(2px * var(--gui-scale)); background-size: contain; background-repeat: no-repeat; background-position: center; opacity: 0.35; pointer-events: none; }
+.armor-slot.filled .slot-silhouette { display: none; }
+
+/* ---- Recipe browser (left panel) ---- */
+.craft-area { display: flex; gap: calc(6px * var(--gui-scale)); flex: 1; min-height: 0; }
+/* The recipe grid stretches over the space left of the detail area: six equal square columns with even gaps. */
+.recipe-grid { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: calc(2px * var(--gui-scale)); align-content: start; max-height: calc(152px * var(--gui-scale)); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--inv-slot-border) transparent; }
+.recipe-grid .slot, .catalog-grid .slot { width: auto; height: auto; aspect-ratio: 1; }
+.recipe-grid .slot .slot-icon, .catalog-grid .slot .slot-icon { width: 78%; height: 78%; }
+.recipe-tile { cursor: pointer; opacity: 0.4; }
+.recipe-tile.affordable { opacity: 1; }
+.recipe-tile.selected { border-color: #ffffff; background: var(--inv-slot-hover); }
+.recipe-detail { flex: 0 0 calc(84px * var(--gui-scale)); min-width: 0; display: flex; flex-direction: column; align-items: center; gap: calc(6px * var(--gui-scale)); padding-top: calc(2px * var(--gui-scale)); }
+.recipe-detail.hidden { display: none; }
+.recipe-name { font-weight: 700; font-size: calc(7.5px * var(--gui-scale)); text-align: center; line-height: 1.15; }
+.recipe-materials { display: flex; flex-wrap: wrap; justify-content: center; gap: calc(3px * var(--gui-scale)); }
+.recipe-material { position: relative; width: calc(18px * var(--gui-scale)); height: calc(18px * var(--gui-scale)); display: flex; align-items: center; justify-content: center; }
+.recipe-material .slot-icon { width: calc(16px * var(--gui-scale)); height: calc(16px * var(--gui-scale)); }
+.recipe-badge {
+  position: absolute; right: calc(-2px * var(--gui-scale)); bottom: calc(-2px * var(--gui-scale));
+  min-width: calc(7px * var(--gui-scale)); padding: 0 calc(1.5px * var(--gui-scale));
+  font: 700 calc(6px * var(--gui-scale)) var(--inv-font); text-align: center; line-height: calc(8px * var(--gui-scale));
+  color: #fff; background: #1e2440; border: calc(1px * var(--gui-scale)) solid var(--inv-slot-border); border-radius: calc(2px * var(--gui-scale));
+}
+.recipe-badge.short { background: var(--inv-red); border-color: #ff8a7a; }
+.craft-button {
+  position: relative;
+  width: calc(52px * var(--gui-scale)); height: calc(34px * var(--gui-scale));
+  background: var(--inv-craft); border: calc(1.5px * var(--gui-scale)) solid var(--inv-craft-border); border-radius: calc(3px * var(--gui-scale));
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  box-shadow: 0 calc(2px * var(--gui-scale)) 0 rgba(0, 0, 0, 0.3);
+}
+.craft-button:hover:not(.disabled) { filter: brightness(1.1); }
+.craft-button:active:not(.disabled) { transform: translateY(calc(1px * var(--gui-scale))); box-shadow: none; }
+.craft-button.disabled { background: var(--inv-craft-off); border-color: var(--inv-craft-off-border); cursor: default; }
+.craft-button .slot-icon { width: calc(20px * var(--gui-scale)); height: calc(20px * var(--gui-scale)); }
+.craft-button .craft-count { position: absolute; right: calc(4px * var(--gui-scale)); bottom: calc(2px * var(--gui-scale)); font: 700 calc(9px * var(--gui-scale)) var(--inv-font); text-shadow: calc(1px * var(--gui-scale)) calc(1px * var(--gui-scale)) 0 #000; }
+
+/* ---- Creative catalog (left panel) ---- */
+.catalog-area { display: flex; flex-direction: column; gap: calc(4px * var(--gui-scale)); flex: 1; min-height: 0; }
+.catalog-search {
+  width: 100%; align-self: center;
+  font: 700 calc(7px * var(--gui-scale)) var(--inv-font); text-align: center; color: var(--inv-text);
+  background: var(--inv-slot); border: calc(1px * var(--gui-scale)) solid var(--inv-slot-border); border-radius: calc(2px * var(--gui-scale));
+  padding: calc(2px * var(--gui-scale)); outline: none;
+}
+.catalog-search::placeholder { color: var(--inv-muted); }
+.catalog-search:focus { border-color: var(--inv-craft-border); }
+.catalog-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: calc(2px * var(--gui-scale));
+  align-content: start; height: calc(140px * var(--gui-scale)); overflow-y: scroll; padding-right: calc(3px * var(--gui-scale));
+  scrollbar-width: thin; scrollbar-color: #6a78b8 #252b45;
+}
+.catalog-grid::-webkit-scrollbar { width: calc(5px * var(--gui-scale)); }
+.catalog-grid::-webkit-scrollbar-track { background: #252b45; border-radius: calc(2px * var(--gui-scale)); }
+.catalog-grid::-webkit-scrollbar-thumb { background: #6a78b8; border-radius: calc(2px * var(--gui-scale)); }
+.catalog-slot.filtered { display: none; }
+
+/* ---- Cursor stack and tooltip ---- */
+#cursor-stack {
+  position: fixed; left: 0; top: 0; width: calc(18px * var(--gui-scale)); height: calc(18px * var(--gui-scale));
+  pointer-events: none; z-index: 30; display: flex; align-items: center; justify-content: center;
+}
+#cursor-stack .slot-icon { width: calc(16px * var(--gui-scale)); height: calc(16px * var(--gui-scale)); }
+#cursor-stack .slot-count { position: absolute; right: 0; bottom: calc(-2px * var(--gui-scale)); font: 700 calc(7px * var(--gui-scale)) var(--inv-font); text-shadow: calc(1px * var(--gui-scale)) calc(1px * var(--gui-scale)) 0 #000; }
+#tooltip {
+  position: fixed; z-index: 31; pointer-events: none;
+  background: rgba(16, 0, 16, 0.94); border: calc(1px * var(--gui-scale)) solid #5a3a8a; border-radius: calc(2px * var(--gui-scale));
+  padding: calc(3px * var(--gui-scale)) calc(4px * var(--gui-scale)); font: 700 calc(7px * var(--gui-scale)) var(--inv-font); color: #fff; white-space: nowrap;
+}
+.tip-stat { font-weight: 400; }
+.tip-stat.green, .popup-stat.green, .recipe-stat.green { color: #55ff55; }
+.tip-stat.gray, .popup-stat.gray, .recipe-stat.gray { color: #aaaaaa; }
+.popup-stat { font-size: calc(8px * var(--gui-scale)); }

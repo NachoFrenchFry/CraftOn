@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CraftOn</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/hud.css">
+  <link rel="stylesheet" href="css/inventory.css">
+  <link rel="stylesheet" href="css/menus.css">
+  <!--
+    Three.js import map. To use a local copy instead of the CDN, download
+    https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js into lib/
+    and change the single line below to:  "three": "./lib/three.module.js"
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Boot screen (Update #7): plain HTML, visible before any module loads; main.js updates the step text. -->
+  <div id="boot-screen" class="screen menu-screen">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h1 class="title">CraftOn</h1>
+      <div class="progress"><div id="boot-bar" class="progress-bar" style="width: 3%"></div></div>
+      <div id="boot-text" class="loading-text">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ===================== HUD ===================== -->
+  <div id="hud" class="hidden">
+    <div id="crosshair"></div>
+    <!-- Reserved container for future status bars (health, hunger, armor, XP).
+         Intentionally empty: CraftOn currently has no health/hunger/armor/XP. -->
+    <div id="status-bars" aria-hidden="true"></div>
+    <div id="item-name-popup"></div>
+    <div id="hotbar"></div>
+    <div id="pointer-hint" class="hidden">Click to resume</div>
+    <div id="underwater-overlay" class="hidden"></div>
+    <div id="fps-counter" class="hidden"></div>
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <div id="debug-overlay" class="hidden"></div>
+
+  <!-- ===================== INVENTORY (bloxd.io-style two panels, Update #5) ===================== -->
+  <div id="inventory-screen" class="screen hidden">
+    <div class="inv-layout">
+      <div class="inv-panels">
+        <div id="inv-left" class="inv-panel inv-left">
+          <div id="inv-toggle" class="inv-toggle hidden">
+            <button id="inv-tab-items" class="inv-tab" type="button">Items</button>
+            <button id="inv-tab-craft" class="inv-tab" type="button">Hand Crafting</button>
+          </div>
+          <div id="inv-title" class="inv-title">Hand Crafting</div>
+          <!-- Recipe browser: icon grid on the left, selected recipe details on the right. -->
+          <div id="inv-crafting" class="craft-area"></div>
+          <!-- Creative catalog: search box over a scrollable 6-column grid. -->
+          <div id="catalog-panel" class="catalog-area hidden">
+            <input id="catalog-search" class="catalog-search" type="text" placeholder="Search" autocomplete="off" spellcheck="false">
+            <div id="catalog-grid" class="catalog-grid"></div>
+          </div>
+        </div>
+        <div class="inv-divider" aria-hidden="true"></div>
+        <div id="inv-right" class="inv-panel inv-right">
+          <div id="inv-armor" class="armor-row"></div>
+          <div id="inv-main" class="slot-grid main-grid"></div>
+        </div>
+      </div>
+      <div id="inv-hotbar" class="slot-grid inv-hotbar"></div>
+    </div>
+    <div id="cursor-stack" class="hidden"></div>
+    <div id="tooltip" class="hidden"></div>
+  </div>
+
+  <!-- ===================== MENUS ===================== -->
+  <div id="account-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content account-content">
+      <h1 class="title">CraftOn</h1>
+      <div class="acct-tabs">
+        <button id="acct-tab-login" class="mc-button acct-tab active" type="button">Log In</button>
+        <button id="acct-tab-signup" class="mc-button acct-tab" type="button">Create Account</button>
+      </div>
+      <div class="acct-form">
+        <label>Username <input id="acct-username" type="text" maxlength="16" autocomplete="username" spellcheck="false"></label>
+        <label>Password <input id="acct-password" type="password" maxlength="72" autocomplete="current-password"></label>
+        <label id="acct-confirm-label" class="hidden">Confirm password <input id="acct-confirm" type="password" maxlength="72" autocomplete="new-password"></label>
+        <div id="acct-error" class="acct-error hidden"></div>
+        <button id="acct-submit" class="mc-button" type="button">Log In</button>
+        <button id="acct-retry" class="mc-button hidden" type="button">Retry</button>
+        <div id="acct-note" class="acct-note hidden">Accounts have no email, so a forgotten password cannot be reset. Keep it safe.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="main-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h1 class="title">CraftOn</h1>
+      <div class="subtitle">A voxel sandbox in your browser</div>
+      <div class="menu-buttons">
+        <button id="btn-play" class="mc-button">Play</button>
+        <button id="btn-multiplayer" class="mc-button">Multiplayer</button>
+        <button id="btn-options" class="mc-button">Options</button>
+      </div>
+      <div class="menu-account"><span id="menu-account"></span> <button id="btn-logout" class="mc-button small" type="button">Log out</button></div>
+      <div class="menu-footer">CraftOn · Three.js · no build step</div>
+    </div>
+  </div>
+
+  <div id="world-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h2 class="menu-heading">Select World</h2>
+      <div id="world-error" class="acct-error hidden"></div>
+      <button id="btn-worlds-retry" class="mc-button small hidden" type="button">Retry</button>
+      <div id="world-list" class="world-list"></div>
+      <div class="create-world">
+        <label>World name <input id="world-name" type="text" maxlength="32" value="New World"></label>
+        <label>Seed (blank = random) <input id="world-seed" type="text" maxlength="32" placeholder="any text or number"></label>
+        <label>Game mode
+          <select id="world-mode"><option value="survival">Survival</option><option value="creative">Creative</option></select>
+        </label>
+        <button id="btn-create-world" class="mc-button">Create New World</button>
+      </div>
+      <button id="btn-world-back" class="mc-button">Back</button>
+    </div>
+  </div>
+
+  <!-- ===================== MULTIPLAYER (Update #8) ===================== -->
+  <div id="multiplayer-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h2 class="menu-heading">Multiplayer</h2>
+      <div class="menu-buttons">
+        <button id="btn-mp-host" class="mc-button">Host Server</button>
+        <button id="btn-mp-find" class="mc-button">Find Server</button>
+      </div>
+      <div class="menu-note">LAN only: players on the same Wi-Fi join each other directly. Some networks (school, office or guest Wi-Fi) block devices from talking to each other.</div>
+      <button id="btn-mp-back" class="mc-button">Back</button>
+    </div>
+  </div>
+
+  <div id="host-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h2 class="menu-heading">Host Server</h2>
+      <div id="host-error" class="acct-error hidden"></div>
+      <div id="host-world-list" class="world-list"></div>
+      <label class="host-max">Max players <select id="host-max"></select></label>
+      <div class="create-world">
+        <label>World name <input id="host-name" type="text" maxlength="32" value="New World"></label>
+        <label>Seed (blank = random) <input id="host-seed" type="text" maxlength="32" placeholder="any text or number"></label>
+        <label>Game mode
+          <select id="host-mode"><option value="survival">Survival</option><option value="creative">Creative</option></select>
+        </label>
+        <button id="btn-host-create" class="mc-button">Create New World & Host</button>
+      </div>
+      <button id="btn-host-back" class="mc-button">Back</button>
+    </div>
+  </div>
+
+  <div id="find-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h2 class="menu-heading">Find Server</h2>
+      <div id="find-status" class="find-status">Searching your network…</div>
+      <div id="find-list" class="world-list"></div>
+      <button id="btn-find-refresh" class="mc-button small">Refresh</button>
+      <div class="create-world">
+        <label>Join by code <input id="join-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false"></label>
+        <button id="btn-join-code" class="mc-button">Join by code</button>
+      </div>
+      <div id="find-error" class="acct-error hidden"></div>
+      <button id="btn-find-back" class="mc-button">Back</button>
+    </div>
+  </div>
+
+  <div id="kicked-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h1 class="title">CraftOn</h1>
+      <h2 class="menu-heading">Signed in somewhere else</h2>
+      <div class="menu-text">Your account is being used in another tab or on another device. CraftOn can only run in one place per account.</div>
+      <div id="kicked-error" class="acct-error hidden"></div>
+      <button id="btn-kicked-reconnect" class="mc-button">Reconnect</button>
+      <button id="btn-kicked-logout" class="mc-button">Log out</button>
+    </div>
+  </div>
+
+  <div id="disconnected-menu" class="screen overlay-screen disconnected hidden">
+    <div class="menu-content">
+      <h2 id="disconnected-text" class="menu-heading">The host closed the server</h2>
+      <button id="btn-disconnected-ok" class="mc-button">Back to menu</button>
+    </div>
+  </div>
+
+  <div id="options-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content options-content">
+      <h2 class="menu-heading">Options</h2>
+      <div id="options-list" class="options-list"></div>
+      <button id="btn-options-controls" class="mc-button">Controls…</button>
+      <button id="btn-options-done" class="mc-button">Done</button>
+    </div>
+  </div>
+
+  <div id="controls-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content controls-content">
+      <h2 class="menu-heading">Controls</h2>
+      <div class="controls-hint">Click a key to change it, then press any key or mouse button. Esc cancels. Esc and the mouse wheel cannot be rebound.</div>
+      <div id="bind-list" class="bind-list"></div>
+      <div class="controls-footer">
+        <button id="btn-binds-reset-all" class="mc-button">Reset All to Defaults</button>
+        <button id="btn-binds-done" class="mc-button">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading-screen" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h2 class="menu-heading" id="loading-title">Generating terrain…</h2>
+      <div id="loading-progress" class="progress"><div id="loading-bar" class="progress-bar"></div></div>
+      <div id="loading-text" class="loading-text">0%</div>
+    </div>
+  </div>
+
+  <div id="pause-menu" class="screen overlay-screen hidden">
+    <div class="menu-content">
+      <h2 class="menu-heading">Game Menu</h2>
+      <button id="btn-resume" class="mc-button">Back to Game</button>
+      <button id="btn-pause-options" class="mc-button">Options</button>
+      <button id="btn-gamemode" class="mc-button">Game Mode: Survival</button>
+      <div id="pause-hosting" class="pause-hosting hidden"></div>
+      <button id="btn-stop-hosting" class="mc-button hidden">Stop Hosting</button>
+      <button id="btn-save-quit" class="mc-button">Save & Quit to Title</button>
+    </div>
+  </div>
+
+  <div id="atlas-view" class="screen hidden"></div>
+
+  <div id="fatal-message" class="screen hidden">
+    <div class="menu-content fatal-content"></div>
+  </div>
+
+  <script>
+    // Friendly message when opened from the file system: modules, workers and
+    // textures all need an HTTP origin.
+    if (location.protocol === 'file:') {
+      document.addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById('fatal-message');
+        el.classList.remove('hidden');
+        el.querySelector('.fatal-content').innerHTML =
+          '<h2>CraftOn needs a local web server</h2>' +
+          '<p>ES modules, Web Workers and textures cannot load over <code>file://</code>.</p>' +
+          '<p>From the project folder run one of:</p>' +
+          '<pre>npx serve .\npython3 -m http.server 8000</pre>' +
+          '<p>then open <code>http://localhost:8000</code> (or the port shown).</p>';
+      });
+    }
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

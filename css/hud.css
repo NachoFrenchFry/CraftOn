@@ -1,0 +1,149 @@
+/* hud.css — crosshair, hotbar, item-name popup, debug overlay, in-game hints */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(9px * var(--gui-scale));
+  height: calc(9px * var(--gui-scale));
+  transform: translate(-50%, -50%);
+  mix-blend-mode: difference;
+  background:
+    linear-gradient(#fff, #fff) center / calc(1.5px * var(--gui-scale)) 100% no-repeat,
+    linear-gradient(#fff, #fff) center / 100% calc(1.5px * var(--gui-scale)) no-repeat;
+}
+
+/* Reserved for future health / hunger / armor / XP bars. Kept empty on purpose. */
+#status-bars {
+  position: absolute;
+  left: 50%;
+  bottom: calc(24px * var(--gui-scale));
+  width: calc(182px * var(--gui-scale));
+  height: calc(20px * var(--gui-scale));
+  transform: translateX(-50%);
+}
+
+#hotbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(1px * var(--gui-scale));
+  transform: translateX(-50%);
+  width: calc(182px * var(--gui-scale));
+  height: calc(22px * var(--gui-scale));
+  display: flex;
+  background: rgba(0, 0, 0, 0.55);
+  border: calc(1px * var(--gui-scale)) solid rgba(160, 160, 160, 0.9);
+  padding: 0;
+}
+
+.hotbar-slot {
+  position: relative;
+  width: calc(20px * var(--gui-scale));
+  height: calc(20px * var(--gui-scale));
+  border: calc(1px * var(--gui-scale)) solid rgba(90, 90, 90, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hotbar-slot.selected {
+  outline: calc(2px * var(--gui-scale)) solid #fff;
+  outline-offset: calc(-1px * var(--gui-scale));
+  z-index: 1;
+}
+
+.slot-icon {
+  width: calc(16px * var(--gui-scale));
+  height: calc(16px * var(--gui-scale));
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  pointer-events: none;
+}
+
+.slot-count {
+  position: absolute;
+  right: calc(1px * var(--gui-scale));
+  bottom: calc(-1px * var(--gui-scale));
+  font-size: calc(10px * var(--gui-scale));
+  line-height: 1;
+  color: #fff;
+  text-shadow: var(--text-shadow);
+  pointer-events: none;
+}
+
+#item-name-popup {
+  position: absolute;
+  left: 50%;
+  bottom: calc(30px * var(--gui-scale));
+  transform: translateX(-50%);
+  font-size: calc(10px * var(--gui-scale));
+  color: #fff;
+  text-shadow: var(--text-shadow);
+  opacity: 0;
+  transition: opacity 0.4s;
+  white-space: nowrap;
+}
+#item-name-popup.visible { opacity: 1; transition: none; }
+
+#pointer-hint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, calc(20px * var(--gui-scale)));
+  padding: calc(4px * var(--gui-scale)) calc(8px * var(--gui-scale));
+  background: rgba(0, 0, 0, 0.6);
+  text-shadow: var(--text-shadow);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+#underwater-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 60, 180, 0.35);
+}
+
+#debug-overlay {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  pointer-events: none;
+  padding: calc(2px * var(--gui-scale));
+  font-size: calc(9px * var(--gui-scale));
+  line-height: 1.15;
+  color: #fff;
+  text-shadow: var(--text-shadow);
+  white-space: pre;
+}
+#debug-overlay .debug-line {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 0 calc(1px * var(--gui-scale));
+  margin-bottom: 1px;
+}
+
+#fps-counter {
+  position: absolute;
+  right: calc(2px * var(--gui-scale));
+  top: calc(2px * var(--gui-scale));
+  padding: 0 calc(2px * var(--gui-scale));
+  background: rgba(0, 0, 0, 0.45);
+  font-size: calc(9px * var(--gui-scale));
+  text-shadow: var(--text-shadow);
+}
+
+/* ---- Toast (non-blocking notices such as "Couldn't save, retrying…") ---- */
+.toast {
+  position: absolute; left: 50%; top: calc(8px * var(--gui-scale)); transform: translateX(-50%);
+  padding: calc(3px * var(--gui-scale)) calc(6px * var(--gui-scale));
+  background: rgba(0, 0, 0, 0.75); border: calc(1px * var(--gui-scale)) solid #ffcc55; color: #ffe08a;
+  font-size: calc(8px * var(--gui-scale)); text-shadow: var(--text-shadow); pointer-events: none; z-index: 15;
+}

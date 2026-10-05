@@ -1,0 +1,57 @@
+/* base.css — reset, full-window layout, fonts, pixelated rendering, CSS variables */
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+:root {
+  --gui-scale: 2;
+  --px: calc(var(--gui-scale) * 1px);
+  --font-ui: 'VT323', 'Courier New', Courier, monospace;
+  --text-shadow: calc(1px * var(--gui-scale)) calc(1px * var(--gui-scale)) 0 #3f3f3f;
+  --panel-bg: #c6c6c6;
+  --panel-light: #ffffff;
+  --panel-dark: #555555;
+  --slot-bg: #8b8b8b;
+  --slot-light: #ffffff;
+  --slot-dark: #373737;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: var(--font-ui);
+  font-size: calc(10px * var(--gui-scale));
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#game-canvas {
+  display: block;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  outline: none;
+}
+
+.hidden { display: none !important; }
+
+canvas, img, .icon { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+.mc-text { text-shadow: var(--text-shadow); }
+
+button, input, select {
+  font-family: var(--font-ui);
+  font-size: calc(10px * var(--gui-scale));
+}
