@@ -1,10 +1,12 @@
-/* base.css — reset, full-window layout, fonts, pixelated rendering, CSS variables */
-@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+/* base.css — reset, full-window layout, the pixel font, pixelated rendering, CSS variables.
+   Every piece of text uses font/Minecraft.ttf (Update #9): it is drawn on an 8 px grid, so sizes are whole
+   multiples of 8 px times --gui-scale and font smoothing is off, which keeps it crisp at every scale. */
+@font-face { font-family: 'CraftOnFont'; src: url('../font/Minecraft.ttf') format('truetype'); font-display: block; }
 
 :root {
   --gui-scale: 2;
   --px: calc(var(--gui-scale) * 1px);
-  --font-ui: 'VT323', 'Courier New', Courier, monospace;
+  --font-ui: 'CraftOnFont', monospace;
   --text-shadow: calc(1px * var(--gui-scale)) calc(1px * var(--gui-scale)) 0 #3f3f3f;
   --panel-bg: #c6c6c6;
   --panel-light: #ffffff;
@@ -24,10 +26,13 @@ html, body {
   overflow: hidden;
   background: #000;
   font-family: var(--font-ui);
-  font-size: calc(10px * var(--gui-scale));
+  font-size: calc(8px * var(--gui-scale));
   color: #fff;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  letter-spacing: 0;
 }
 
 #game-canvas {
@@ -42,6 +47,7 @@ html, body {
 .hidden { display: none !important; }
 
 canvas, img, .icon { image-rendering: pixelated; image-rendering: crisp-edges; }
+#game-canvas { image-rendering: pixelated; } /* the render-scale upscale stays blocky (Update #9 §7) */
 
 .screen {
   position: fixed;
@@ -53,5 +59,6 @@ canvas, img, .icon { image-rendering: pixelated; image-rendering: crisp-edges; }
 
 button, input, select {
   font-family: var(--font-ui);
-  font-size: calc(10px * var(--gui-scale));
+  font-size: calc(8px * var(--gui-scale));
+  -webkit-font-smoothing: none;
 }

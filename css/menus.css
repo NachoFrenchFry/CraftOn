@@ -66,9 +66,9 @@
 
 .title {
   margin: 0;
-  font-size: calc(36px * var(--gui-scale));
+  font-size: calc(32px * var(--gui-scale));
   line-height: 1;
-  letter-spacing: calc(2px * var(--gui-scale));
+  letter-spacing: 0;
   color: #fff;
   text-shadow:
     calc(2px * var(--gui-scale)) calc(2px * var(--gui-scale)) 0 #3f3f3f,
@@ -76,7 +76,7 @@
 }
 .subtitle {
   color: #ffff55;
-  font-size: calc(10px * var(--gui-scale));
+  font-size: calc(8px * var(--gui-scale));
   transform: rotate(-6deg);
   animation: splash 1.2s ease-in-out infinite alternate;
 }
@@ -84,10 +84,10 @@
 
 .menu-heading {
   margin: 0 0 calc(4px * var(--gui-scale)) 0;
-  font-size: calc(14px * var(--gui-scale));
+  font-size: calc(16px * var(--gui-scale));
 }
 .menu-buttons { display: flex; flex-direction: column; gap: calc(4px * var(--gui-scale)); width: 100%; }
-.menu-footer { font-size: calc(7px * var(--gui-scale)); color: #ddd; margin-top: calc(10px * var(--gui-scale)); }
+.menu-footer { font-size: calc(8px * var(--gui-scale)); color: #ddd; margin-top: calc(10px * var(--gui-scale)); }
 
 .mc-button {
   width: 100%;
@@ -124,8 +124,8 @@
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 .world-entry .world-info { flex: 1; display: flex; flex-direction: column; }
-.world-entry .world-name { font-size: calc(10px * var(--gui-scale)); }
-.world-entry .world-meta { font-size: calc(7px * var(--gui-scale)); color: #aaa; }
+.world-entry .world-name { font-size: calc(8px * var(--gui-scale)); }
+.world-entry .world-meta { font-size: calc(8px * var(--gui-scale)); color: #aaa; }
 .world-list .empty { color: #aaa; font-size: calc(8px * var(--gui-scale)); padding: calc(2px * var(--gui-scale)); }
 
 .create-world {
@@ -153,6 +153,7 @@
 }
 .options-list {
   width: 100%;
+  overflow-y: auto;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: calc(3px * var(--gui-scale));
@@ -164,7 +165,7 @@
 }
 .options-content > .mc-button { flex: 0 0 auto; }
 /* In-game the options / controls screens dim the world instead of hiding it. */
-#options-menu.in-world .menu-bg, #controls-menu.in-world .menu-bg { background: rgba(0, 0, 0, 0.55); animation: none; }
+#options-menu.in-world .menu-bg, #controls-menu.in-world .menu-bg, #shaders-menu.in-world .menu-bg { background: rgba(0, 0, 0, 0.55); animation: none; }
 
 /* ---- Controls (key bindings) ---- */
 .controls-content {
@@ -173,7 +174,7 @@
   overflow: hidden;
   flex-wrap: nowrap;
 }
-.controls-hint { font-size: calc(7px * var(--gui-scale)); color: #ccc; text-align: center; }
+.controls-hint { font-size: calc(8px * var(--gui-scale)); color: #ccc; text-align: center; }
 .bind-list {
   width: 100%;
   overflow-y: auto;
@@ -184,7 +185,7 @@
   padding: calc(2px * var(--gui-scale));
   scrollbar-width: thin;
 }
-.bind-group { font-size: calc(9px * var(--gui-scale)); color: #ffff88; padding: calc(4px * var(--gui-scale)) calc(2px * var(--gui-scale)) calc(1px * var(--gui-scale)); }
+.bind-group { font-size: calc(8px * var(--gui-scale)); color: #ffff88; padding: calc(4px * var(--gui-scale)) calc(2px * var(--gui-scale)) calc(1px * var(--gui-scale)); }
 .bind-row {
   display: grid;
   grid-template-columns: 1fr calc(90px * var(--gui-scale)) calc(40px * var(--gui-scale));
@@ -193,7 +194,7 @@
   padding: calc(1px * var(--gui-scale)) calc(2px * var(--gui-scale));
 }
 .bind-row .bind-label { font-size: calc(8px * var(--gui-scale)); }
-.bind-key { width: 100%; min-height: calc(16px * var(--gui-scale)); font-size: calc(9px * var(--gui-scale)); }
+.bind-key { width: 100%; min-height: calc(16px * var(--gui-scale)); font-size: calc(8px * var(--gui-scale)); }
 .bind-key.listening { color: #ffff55; background: linear-gradient(#5a5a8a, #3a3a6a); }
 .bind-key.conflict { color: #ff6060; border-color: #ff6060 #802020 #802020 #ff6060; }
 .bind-reset { width: 100%; min-height: calc(16px * var(--gui-scale)); font-size: calc(8px * var(--gui-scale)); }
@@ -219,7 +220,7 @@
   border: calc(1px * var(--gui-scale)) solid #888;
 }
 .progress-bar { height: 100%; width: 0%; background: #55ff55; transition: width 0.1s; }
-.loading-text { font-size: calc(9px * var(--gui-scale)); }
+.loading-text { font-size: calc(8px * var(--gui-scale)); }
 
 .overlay-screen {
   display: flex;
@@ -248,19 +249,19 @@
   align-items: center;
   justify-content: center;
 }
-.fatal-content { width: auto; max-width: 90vw; font-size: calc(9px * var(--gui-scale)); align-items: flex-start; }
+.fatal-content { width: auto; max-width: 90vw; font-size: calc(8px * var(--gui-scale)); align-items: flex-start; }
 .fatal-content pre { background: #000; padding: calc(4px * var(--gui-scale)); width: 100%; }
 
 /* ---- Multiplayer (Update #8) ---- */
-.menu-note, .menu-text { font-size: calc(7px * var(--gui-scale)); color: #ddd; text-align: center; line-height: 1.35; }
+.menu-note, .menu-text { font-size: calc(8px * var(--gui-scale)); color: #ddd; text-align: center; line-height: 1.35; }
 .menu-text { font-size: calc(8px * var(--gui-scale)); margin: calc(4px * var(--gui-scale)) 0; }
 .find-status { font-size: calc(8px * var(--gui-scale)); color: #ffff88; text-align: center; min-height: calc(9px * var(--gui-scale)); }
 .host-max { display: flex; justify-content: space-between; align-items: center; width: 100%; font-size: calc(8px * var(--gui-scale)); color: #ccc; }
 .host-max select { background: #000; color: #e0e0e0; border: calc(1px * var(--gui-scale)) solid #a0a0a0; }
 .lobby-entry .world-meta { color: #bbb; }
-.pause-hosting { width: 100%; font-size: calc(7px * var(--gui-scale)); color: #ffff88; text-align: center; background: rgba(0, 0, 0, 0.35); padding: calc(2px * var(--gui-scale)); }
+.pause-hosting { width: 100%; font-size: calc(8px * var(--gui-scale)); color: #ffff88; text-align: center; background: rgba(0, 0, 0, 0.35); padding: calc(2px * var(--gui-scale)); }
 #disconnected-menu { z-index: 46; background: rgba(0, 0, 0, 0.7); }
-#join-code { text-transform: uppercase; letter-spacing: calc(2px * var(--gui-scale)); }
+#join-code { text-transform: uppercase; letter-spacing: 0; }
 
 /* ---- Account screen (Update #6) ---- */
 .account-content { width: calc(200px * var(--gui-scale)); }
@@ -269,8 +270,40 @@
 .acct-tab.active { opacity: 1; background: linear-gradient(#a8a8ff, #7f7fbf); color: #ffffa0; }
 .acct-form { width: 100%; display: flex; flex-direction: column; gap: calc(4px * var(--gui-scale)); padding: calc(6px * var(--gui-scale)); background: rgba(0, 0, 0, 0.35); border: calc(1px * var(--gui-scale)) solid #000; }
 .acct-form label { display: flex; flex-direction: column; gap: calc(1px * var(--gui-scale)); font-size: calc(8px * var(--gui-scale)); color: #ccc; }
-.acct-form input { background: #000; color: #e0e0e0; border: calc(1px * var(--gui-scale)) solid #a0a0a0; padding: calc(2px * var(--gui-scale)); outline: none; font-size: calc(9px * var(--gui-scale)); }
+.acct-form input { background: #000; color: #e0e0e0; border: calc(1px * var(--gui-scale)) solid #a0a0a0; padding: calc(2px * var(--gui-scale)); outline: none; font-size: calc(8px * var(--gui-scale)); }
 .acct-form input:focus { border-color: #ffff88; }
 .acct-error { color: #ff6b6b; font-size: calc(8px * var(--gui-scale)); text-align: center; min-height: calc(9px * var(--gui-scale)); }
-.acct-note { color: #bbb; font-size: calc(6.5px * var(--gui-scale)); text-align: center; line-height: 1.3; }
+.acct-note { color: #bbb; font-size: calc(8px * var(--gui-scale)); text-align: center; line-height: 1.3; }
 .menu-account { display: flex; align-items: center; gap: calc(4px * var(--gui-scale)); font-size: calc(8px * var(--gui-scale)); color: #ffff88; margin-top: calc(4px * var(--gui-scale)); }
+
+/* Server Settings (Update #9 §1) */
+.srv-sub { width: 100%; color: #ffff88; font-size: calc(8px * var(--gui-scale)); margin-top: calc(2px * var(--gui-scale)); }
+.srv-list { width: 100%; display: flex; flex-direction: column; gap: calc(2px * var(--gui-scale)); max-height: 40vh; overflow-y: auto; }
+.srv-row { display: flex; align-items: center; gap: calc(4px * var(--gui-scale)); width: 100%; font-size: calc(8px * var(--gui-scale)); color: #ccc; background: rgba(0, 0, 0, 0.35); padding: calc(2px * var(--gui-scale)); box-sizing: border-box; }
+.srv-row.online .srv-name { color: #fff; }
+.srv-name { flex: 1; min-width: calc(40px * var(--gui-scale)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srv-row select { background: #000; color: #e0e0e0; border: calc(1px * var(--gui-scale)) solid #a0a0a0; }
+.srv-perm { display: flex; align-items: center; gap: calc(2px * var(--gui-scale)); white-space: nowrap; cursor: pointer; }
+.srv-empty { color: #888; font-size: calc(8px * var(--gui-scale)); }
+
+/* Options sections + Performance (Update #9 §7) */
+.options-section { grid-column: 1 / -1; color: #ffff88; font-size: calc(8px * var(--gui-scale)); margin-top: calc(2px * var(--gui-scale)); text-shadow: var(--text-shadow); }
+.option-row.wide { grid-column: 1 / -1; background: none; padding: 0; }
+.options-buttons { display: flex; gap: calc(3px * var(--gui-scale)); width: 100%; }
+.options-buttons .mc-button { flex: 1 1 0; width: auto; }
+.perf-popup { position: fixed; top: calc(24px * var(--gui-scale)); left: 50%; transform: translateX(-50%); z-index: 45; width: calc(200px * var(--gui-scale)); background: rgba(20, 20, 30, 0.92); border: calc(1px * var(--gui-scale)) solid #ffcc55; padding: calc(4px * var(--gui-scale)); display: flex; flex-direction: column; gap: calc(3px * var(--gui-scale)); font-size: calc(8px * var(--gui-scale)); text-shadow: var(--text-shadow); }
+.perf-popup.hidden { display: none; }
+.perf-title { color: #ffe08a; }
+.perf-text { color: #ddd; }
+.perf-buttons { display: flex; gap: calc(3px * var(--gui-scale)); }
+.perf-buttons .mc-button { flex: 1 1 0; width: auto; }
+
+/* Death screen (Update #9 §8) */
+.overlay-screen.death { background: rgba(110, 0, 0, 0.6); z-index: 36; }
+.death-title { color: #fff; font-size: calc(32px * var(--gui-scale)); }
+
+/* Shaders screen (Update #9 §4) */
+.shaders-footer { display: flex; justify-content: space-between; align-items: center; width: 100%; font-size: calc(8px * var(--gui-scale)); color: #ccc; gap: calc(4px * var(--gui-scale)); }
+.shaders-fps { color: #ffff88; white-space: nowrap; }
+.shaders-note { color: #999; text-align: right; }
+.option-row.inactive { opacity: 0.55; }
