@@ -9,6 +9,7 @@ export const State = Object.freeze({
   PLAYING: 'PLAYING',
   PAUSED: 'PAUSED',
   INVENTORY: 'INVENTORY',
+  DEAD: 'DEAD',           // the "You died!" screen (Update #9 §8): the world keeps running, the player waits to respawn
 });
 
 export class GameState {
@@ -22,12 +23,12 @@ export class GameState {
 
   /** True while a world is loaded and being rendered. */
   get inWorld() {
-    return this.current === State.PLAYING || this.current === State.PAUSED || this.current === State.INVENTORY;
+    return this.current === State.PLAYING || this.current === State.PAUSED || this.current === State.INVENTORY || this.current === State.DEAD;
   }
 
-  /** True when physics should tick (playing or inventory open). */
+  /** True when physics should tick (playing, inventory open, or dead: the world goes on around the body). */
   get simulating() {
-    return this.current === State.PLAYING || this.current === State.INVENTORY;
+    return this.current === State.PLAYING || this.current === State.INVENTORY || this.current === State.DEAD;
   }
 
   set(state) {

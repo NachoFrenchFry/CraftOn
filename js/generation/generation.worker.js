@@ -2,6 +2,7 @@
 // → {id, cx, cz, blocks, heightMap, biomeMap, springs} with transferred buffers. Never imports Three.js.
 
 import { WorldGenerator } from './WorldGenerator.js';
+import { computeChunkLight, lastPhases } from '../world/lighting/SkyLight.js';
 
 let generator = null;
 
@@ -9,6 +10,13 @@ self.onmessage = (e) => {
   const msg = e.data;
   if (msg.type === 'init') {
     generator = new WorldGenerator(msg.seed);
+    return;
+  }
+  if (msg.type === 'light') {
+    // Initial sky light of one chunk (Update #10): the chunk manager hands light jobs to whichever pool is idler.
+    const t0 = performance.now();
+    const light = computeChunkLight(msg.grid, msg.tops || null);
+    self.postMessage({ id: msg.id, cx: msg.cx, cz: msg.cz, version: msg.version, light, ms: performance.now() - t0, phases: { ...lastPhases } }, [light.buffer]);
     return;
   }
   if (msg.type === 'generate') {

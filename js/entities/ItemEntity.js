@@ -91,7 +91,8 @@ export class ItemEntity {
   }
 
   /** Visual update: interpolate, spin and bob. */
-  render(alpha, time) {
+  render(alpha, time, light = 1) {
+    if (this.mesh.material.color.r !== light) this.mesh.material.color.setScalar(light); // own clone (EntityManager), lit by the sky light at the item (Update #10)
     const g = this.group;
     g.position.lerpVectors(this.prevPosition, this.position, alpha);
     g.position.y += Math.sin(time * 2 + this.spinOffset) * 0.05 + 0.05;

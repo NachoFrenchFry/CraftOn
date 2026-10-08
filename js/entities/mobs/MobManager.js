@@ -31,6 +31,11 @@ export class MobManager {
     this.stored = new Map();
     this.waterSim = null;
     this.renderDistanceBlocks = 128;
+    /** (x, y, z) → brightness factor of the sky light there (Update #10), set by Game. */
+    this.lightAt = null;
+    /** Update #9 §7: mobs farther than this freeze (simulation distance) / are hidden (entity distance). */
+    this.simDistanceBlocks = 96;
+    this.entityDistanceBlocks = 128;
     this._ray = { mob: null, distance: Infinity };
     this.nextId = 1;
     /** @type {Map<number, Mob>} */
@@ -139,8 +144,9 @@ export class MobManager {
       m.updateAABB();
       if (m.invulnTimer > 0) m.invulnTimer -= dt;
       if (m.isDying) { m.deathTimer += dt; if (m.deathTimer >= MOB_DEATH_SECONDS) { this._drop(i); continue; } }
-      m.frozen = Math.hypot(m.position.x - px, m.position.z - pz) > far;
-      m.root.visible = !m.frozen;
+      const d = Math.hypot(m.position.x - px, m.position.z - pz);
+      m.frozen = d > far;
+      m.root.visible = !m.frozen && d <= this.entityDistanceBlocks;
     }
   }
 
@@ -214,12 +220,12 @@ export class MobManager {
   fixedUpdate(dt, player) {
     if (this.remote) { this._mirror(dt, player); return; }
     const px = player.position.x, pz = player.position.z;
-    const far = this.renderDistanceBlocks;
+    const far = Math.min(this.renderDistanceBlocks, this.simDistanceBlocks);
     for (let i = this.mobs.length - 1; i >= 0; i--) {
       const m = this.mobs[i];
       const d = Math.hypot(m.position.x - px, m.position.z - pz);
       m.frozen = d > far;
-      m.root.visible = !m.frozen;
+      m.root.visible = !m.frozen && d <= this.entityDistanceBlocks;
       if (m.frozen) continue;
       const wasGround = m.walkDistance;
       m.fixedUpdate(dt, this.world, this.waterSim);
@@ -243,10 +249,12 @@ export class MobManager {
   }
 
   render(alpha, dt) {
-    for (const m of this.mobs) if (!m.frozen) m.render(alpha, dt);
+    for (const m of this.mobs) if (!m.frozen) m.render(alpha, dt, this.lightAt ? this.lightAt(m.position.x, m.position.y + 0.5, m.position.z) : 1);
   }
 
   setRenderDistance(chunks) { this.renderDistanceBlocks = chunks * CHUNK_SIZE; }
+  setSimulationDistance(blocks) { this.simDistanceBlocks = blocks; }
+  setEntityDistance(blocks) { this.entityDistanceBlocks = blocks; }
 
   serialize() {
     const out = this.mobs.filter((m) => !m.isDying).map((m) => m.serialize());

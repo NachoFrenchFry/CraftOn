@@ -26,6 +26,8 @@ export const GENERATED_TEXTURES = Object.freeze([
   // Update #3: tools, buckets, meats
   'stone_pickaxe', 'wooden_sword', 'stone_sword', 'iron_sword', 'diamond_sword', 'bucket', 'water_bucket',
   'raw_beef', 'raw_mutton', 'raw_porkchop',
+  // Update #9: cooked meats
+  'cooked_beef', 'cooked_porkchop', 'cooked_mutton',
   // Update #4: axes
   'wooden_axe', 'stone_axe', 'iron_axe', 'diamond_axe',
   // Update #5: armor and spawn eggs
@@ -43,7 +45,9 @@ export const GENERATED_TEXTURES = Object.freeze([
  * for the checkerboard crit stars).
  */
 export const PARTICLE_TEXTURES = Object.freeze(['crit_star']);
-export const EXTRA_ATLAS_TEXTURES = PARTICLE_TEXTURES;
+/** Tiles the atlas derives from other tiles at load time (no file): fast leaves = leaves with the holes filled (Update #9 §7). */
+export const DERIVED_TEXTURES = Object.freeze(['leaves_fast']);
+export const EXTRA_ATLAS_TEXTURES = Object.freeze([...PARTICLE_TEXTURES, ...DERIVED_TEXTURES]);
 
 /** Mob texture sheets (64×32 Minecraft-style box-UV nets) in textures/entity/. Not part of the atlas. */
 export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool']);

@@ -111,6 +111,7 @@ export class WorldSession {
     p.sneaking = false;
     g.cameraController.perspective = 0;
     g.inventory.clear();
+    p.dead = false; p.health = p.maxHealth; g.health.reset();
     if (meta.player) {
       p.deserialize(meta.player);
       g.inventory.deserialize(meta.inventory);
@@ -186,6 +187,7 @@ export class WorldSession {
     const now = performance.now() / 1000;
     for (const p of w.players || []) { const rp = g.remotePlayers.add(p.id, p.name); rp.setMeta(p); if (p.state) rp.snapshot(now, p.state); }
     const p = g.player;
+    p.dead = false; p.health = p.maxHealth; g.health.reset();
     p.gameMode = Object.values(GameMode).includes(meta.gameMode) ? meta.gameMode : GameMode.SURVIVAL;
     p.spectatorSpeed = 1;
     p.flying = false;
@@ -291,6 +293,14 @@ export class WorldSession {
       if (!g.world.isSolid(x, y0, z) && !g.world.isSolid(x, y1, z)) break;
       p.teleport(p.position.x, p.position.y + 1, p.position.z);
     }
+  }
+
+  /** After a respawn at the world spawn: make sure the player is not inside blocks (the spawn column may have changed). */
+  settleAfterRespawn() {
+    const g = this.game;
+    if (this.meta && !this.meta.remote) this.changedSinceSave = true;
+    this._settleIfBuried();
+    void g;
   }
 
   /** The game mode column is written right away (fire and forget; a failure only shows the toast). */

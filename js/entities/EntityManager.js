@@ -44,6 +44,11 @@ export class EntityManager {
     this.byId = new Map();
     /** Guest of a LAN server: items are host-authoritative. */
     this.remote = false;
+    /** Update #9 §7: items farther than this do not update (simulation distance) / are hidden (entity distance). */
+    this.simDistanceBlocks = Infinity;
+    this.entityDistanceBlocks = Infinity;
+    /** (x, y, z) → brightness factor of the sky light there (Update #10), set by Game. */
+    this.lightAt = null;
     /** Host hooks (set by HostServer): broadcast spawns and removals. */
     this.onSpawn = null;
     this.onRemove = null;
@@ -52,7 +57,7 @@ export class EntityManager {
   }
 
   clear() {
-    for (const it of this.items) this.scene.remove(it.group);
+    for (const it of this.items) { this.scene.remove(it.group); it.mesh.material.dispose(); }
     this.items.length = 0;
     this.byId.clear();
     if (this.mobs) this.mobs.clear();
@@ -71,6 +76,7 @@ export class EntityManager {
 
   _dropped(it) {
     this.scene.remove(it.group);
+    it.mesh.material.dispose();
     if (it.id !== null) { this.byId.delete(it.id); if (this.onRemove && !this.remote) this.onRemove(it); }
   }
 
@@ -90,7 +96,7 @@ export class EntityManager {
    * item gets one; a guest's purely local items (crafting leftovers) have none and are picked up locally.
    */
   spawnItem(x, y, z, itemId, count, vx = null, vy = null, vz = null, pickupDelay = ITEM_PICKUP_DELAY, id = null) {
-    const mat = PASS[itemId] === RenderPass.TRANSLUCENT ? this.materialTranslucent : this.material;
+    const mat = (PASS[itemId] === RenderPass.TRANSLUCENT ? this.materialTranslucent : this.material).clone(); // per item: its colour follows the light where it lies
     const ivx = vx ?? (Math.random() - 0.5) * 2.5;
     const ivy = vy ?? 3 + Math.random() * 1.5;
     const ivz = vz ?? (Math.random() - 0.5) * 2.5;
@@ -129,8 +135,10 @@ export class EntityManager {
     const minZ = box.minZ - ITEM_PICKUP_EXPAND_XZ, maxZ = box.maxZ + ITEM_PICKUP_EXPAND_XZ;
     const canPickUp = !p.isSpectator;
     if (this.mobs) this.mobs.fixedUpdate(dt, p);
+    const simFar = this.simDistanceBlocks;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
+      if (simFar !== Infinity && !it.dead && Math.hypot(it.position.x - p.position.x, it.position.z - p.position.z) > simFar) continue; // outside the simulation distance: frozen
       it.fixedUpdate(dt);
       if (it.requestTimer > 0) it.requestTimer -= dt;
       if (it.dead) continue;
@@ -173,7 +181,11 @@ export class EntityManager {
 
   render(alpha, dt) {
     this.time += dt;
-    for (const it of this.items) it.render(alpha, this.time);
+    const far = this.entityDistanceBlocks, p = this.player.position;
+    for (const it of this.items) {
+      it.group.visible = far === Infinity || Math.hypot(it.position.x - p.x, it.position.z - p.z) <= far;
+      if (it.group.visible) it.render(alpha, this.time, this.lightAt ? this.lightAt(it.position.x, it.position.y + 0.2, it.position.z) : 1);
+    }
     if (this.mobs) this.mobs.render(alpha, dt);
   }
 

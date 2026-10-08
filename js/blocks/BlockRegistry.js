@@ -23,6 +23,8 @@ export const STONE_TYPE = new Uint8Array(BLOCK_COUNT);
 export const WOOD_TYPE = new Uint8Array(BLOCK_COUNT);
 /** 1 = faces between two blocks of this type are culled (glass, water); 0 = kept (fancy leaves). */
 export const CULL_SAME = new Uint8Array(BLOCK_COUNT);
+/** Light opacity 0–15 (Update #10): air / glass / plants 0, leaves / water / ice 1, full solid blocks 15 (block light completely). */
+export const LIGHT_OPACITY = new Uint8Array(BLOCK_COUNT);
 /** Atlas tile index per (block, face): FACE_TILE[id * 6 + direction]. */
 export const FACE_TILE = new Int16Array(BLOCK_COUNT * 6);
 /** Texture name per (block, face). */
@@ -58,6 +60,7 @@ for (const def of BLOCK_DEFINITIONS) {
   PASS[id] = PASS_MAP[def.pass] ?? RenderPass.OPAQUE;
   BREAK_TIME[id] = def.breakTime;
   NEEDS_SUPPORT[id] = def.needsSupport ? 1 : 0;
+  LIGHT_OPACITY[id] = def.lightOpacity !== undefined ? def.lightOpacity : def.opaque ? 15 : (RENDER_TYPE[id] === RenderType.CROSS || RENDER_TYPE[id] === RenderType.NONE) ? 0 : 1;
   STONE_TYPE[id] = def.stoneType ? 1 : 0;
   WOOD_TYPE[id] = def.woodType ? 1 : 0;
   CULL_SAME[id] = def.cullSameType === false ? 0 : 1;
@@ -105,6 +108,7 @@ export const BlockRegistry = {
   isAir(id) { return id === BlockIds.AIR; },
   isLiquid(id) { return RENDER_TYPE[id] === RenderType.LIQUID; },
   isCross(id) { return RENDER_TYPE[id] === RenderType.CROSS; },
+  lightOpacity(id) { return LIGHT_OPACITY[id]; },
   needsSupport(id) { return NEEDS_SUPPORT[id] === 1; },
   breakTime(id) { return BREAK_TIME[id]; },
   soundGroup(id) { const d = defsById[id]; return d ? d.soundGroup : 'stone'; },

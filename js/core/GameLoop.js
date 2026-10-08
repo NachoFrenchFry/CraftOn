@@ -15,6 +15,8 @@ export class GameLoop {
     this.lastTime = 0;
     this.frameId = 0;
     this.fps = 0;
+    /** Frame cap (Update #9 §7): 0 = unlimited; otherwise frames closer together than 1 / maxFps are skipped. */
+    this.maxFps = 0;
     this._fpsFrames = 0;
     this._fpsTime = 0;
     /** When true, ticks come from setTimeout instead of requestAnimationFrame (testing / background). */
@@ -80,6 +82,7 @@ export class GameLoop {
 
   _tick(now) {
     if (!this.running) return;
+    if (this.maxFps > 0 && !this.workerMode && now - this.lastTime < 1000 / this.maxFps - 1) { this._schedule(); return; } // FPS cap
     this._schedule();
     let dt = (now - this.lastTime) / 1000;
     this.lastTime = now;

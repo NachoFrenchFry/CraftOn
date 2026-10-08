@@ -165,7 +165,7 @@ export class Mob {
   }
 
   /** Visual update: interpolation, leg/head animation, hurt flash, death tip-over. */
-  render(alpha, dt) {
+  render(alpha, dt, light = 1) {
     const root = this.root;
     root.position.lerpVectors(this.prevPosition, this.position, alpha);
     root.rotation.y = this.yaw;
@@ -179,8 +179,10 @@ export class Mob {
       this.headYaw += angleDelta(target, this.headYaw) * (1 - Math.exp(-6 * dt));
       head.rotation.y = clamp(angleDelta(this.headYaw, this.yaw), -1.2, 1.2);
     }
-    if (this.flashTimer > 0) { this.flashTimer -= dt; for (const m of this.model.materials) m.color.copy(HURT_RED); }
-    else for (const m of this.model.materials) if (!m.color.equals(WHITE)) m.color.copy(WHITE);
+    // Hurt flash, then the voxel light at the mob (Update #10): a cow in a cave is darker too.
+    if (this.flashTimer > 0) this.flashTimer -= dt;
+    const base = this.flashTimer > 0 ? HURT_RED : WHITE;
+    for (const m of this.model.materials) m.color.copy(base).multiplyScalar(light);
     if (this.isDying) {
       const t = clamp(this.deathTimer / C.MOB_DEATH_SECONDS, 0, 1);
       root.rotation.z = (t * t * (3 - 2 * t)) * (Math.PI / 2);

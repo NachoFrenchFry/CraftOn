@@ -1,6 +1,6 @@
 // Settings.js — user options persisted in localStorage with change events.
 
-import { DEFAULT_SETTINGS } from '../config/DefaultSettings.js';
+import { DEFAULT_SETTINGS, normalizeSetting } from '../config/DefaultSettings.js';
 
 const STORAGE_KEY = 'crafton.settings.v1';
 
@@ -18,7 +18,7 @@ export class Settings {
       if (raw) {
         const parsed = JSON.parse(raw);
         for (const key of Object.keys(DEFAULT_SETTINGS)) {
-          if (key in parsed && typeof parsed[key] === typeof DEFAULT_SETTINGS[key]) this.values[key] = parsed[key];
+          if (key in parsed && typeof parsed[key] === typeof DEFAULT_SETTINGS[key]) this.values[key] = normalizeSetting(key, parsed[key]);
         }
       }
     } catch (e) {
@@ -47,5 +47,10 @@ export class Settings {
 
   reset() {
     for (const key of Object.keys(DEFAULT_SETTINGS)) this.set(key, DEFAULT_SETTINGS[key]);
+  }
+
+  /** Apply several values at once (a preset button). */
+  applyPreset(values) {
+    for (const [key, value] of Object.entries(values)) this.set(key, value);
   }
 }

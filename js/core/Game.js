@@ -35,6 +35,13 @@ import { SessionGuard } from './SessionGuard.js';
 import { HostServer } from '../net/HostServer.js';
 import { GuestClient } from '../net/GuestClient.js';
 import { RemotePlayerManager } from '../net/RemotePlayer.js';
+import { remotePlayersBlockAt, mobBlocksAt } from '../player/PlacementRules.js';
+import { PerformanceMonitor } from './PerformanceMonitor.js';
+import { HealthSystem } from '../player/HealthSystem.js';
+import { ShaderPipeline } from '../rendering/shaders/ShaderPipeline.js';
+import { applyBrightness, lightFactor } from '../rendering/LightUniforms.js';
+import { getTileIndex } from '../rendering/AtlasLayout.js';
+import { CHUNK_SIZE } from '../config/Constants.js';
 import { MAX_PLAYERS_DEFAULT } from '../net/Protocol.js';
 import { chunkKeyString } from '../world/ChunkCoords.js';
 import { intersectsSolid } from '../entities/EntityPhysics.js';
@@ -192,20 +199,51 @@ export class Game {
       selectionBox: this.selectionBox, breakOverlay: this.breakOverlay, particles: this.particles,
       entities: this.entities, audio: this.audio, events: this.events, actions: this.actions, input: this.input,
       isGuest: () => !!(this.net && !this.net.isHost),
+      entityBlocks: (x, y, z) => remotePlayersBlockAt(this.remotePlayers, x, y, z) || mobBlocksAt(this.entities.mobs.mobs, x, y, z),
+      canEat: () => this.health.canEat(),
     });
+    this.health = new HealthSystem(this);
     this.blockModelMaterial = createBlockModelMaterial(this.atlas.texture, true);
     this.handBlockMaterial = createBlockModelMaterial(this.atlas.texture, false);
-    for (const l of createModelLights()) scene.add(l);
+    /** [hemisphere, directional]: light the Lambert character materials; the shader pipeline reuses them as sky + sun light. */
+    this.modelLights = createModelLights();
+    for (const l of this.modelLights) scene.add(l);
     this.playerModel = new PlayerModel(this.blockModelMaterial, this.atlas, this.entityTextures);
     this.playerModel.root.visible = false;
     scene.add(this.playerModel.root);
     this.hand = new FirstPersonHand(this.renderer.handScene, this.handBlockMaterial, this.atlas, this.entityTextures);
     this.remotePlayers = new RemotePlayerManager(this);
+    this.interaction.remotePlayers = this.remotePlayers;
     this.ui.init();
     this._wireEvents();
+    this.perf = new PerformanceMonitor(this);
+    this._applyPerformanceSettings();
+    // Voxel lighting (Update #10): everything coloured on the CPU reads the sky light at its position.
+    applyBrightness(this.settings.get('brightness'));
+    this.lightAt = (x, y, z) => lightFactor(this.world.getSkyLightAt(x, y, z));
+    this.entities.lightAt = this.lightAt;
+    this.entities.mobs.lightAt = this.lightAt;
+    this.particles.lightAt = this.lightAt;
+    this.shaders = new ShaderPipeline(this);
+    this.shaders.apply();
     this.loop.start();
     T.end(buildPhase);
     await cloudTask; // the account and save manager exist before any screen can need them
+  }
+
+  /** Push the Performance options (Update #9 §7) into the loop, entities, water and particles. */
+  _applyPerformanceSettings() {
+    const s = this.settings;
+    this.loop.maxFps = s.get('maxFps');
+    const simBlocks = s.get('simulationDistance') * CHUNK_SIZE;
+    const entityBlocks = s.get('renderDistance') * CHUNK_SIZE * (s.get('entityDistance') / 100);
+    this.entities.mobs.setSimulationDistance(simBlocks);
+    this.entities.mobs.setEntityDistance(entityBlocks);
+    this.entities.simDistanceBlocks = simBlocks;
+    this.entities.entityDistanceBlocks = entityBlocks;
+    this.remotePlayers.entityDistanceBlocks = entityBlocks;
+    this.waterSim.simRadius = simBlocks;
+    this.particles.level = s.get('particles');
   }
 
   /** Start loading the world list now (login, boot, after Save & Quit); the world menu consumes it with takeWorldList(). */
@@ -233,9 +271,12 @@ export class Game {
   _wireEvents() {
     const ev = this.events;
     ev.on('settings:changed', (key, value) => {
-      if (key === 'renderDistance') { this.sky.setRenderDistance(value); this.chunkManager.invalidate(); this.entities.mobs.setRenderDistance(value); }
-      else if (key === 'smoothLighting') this.chunkManager.remeshAll();
-      else if (key === 'renderScale') this.renderer.resize();
+      if (key === 'renderDistance') { this.sky.setRenderDistance(value); this.chunkManager.invalidate(); this.entities.mobs.setRenderDistance(value); this._applyPerformanceSettings(); }
+      else if (key === 'smoothLighting' || key === 'fancyLeaves') this.chunkManager.remeshAll();
+      else if (key === 'renderScale') { this.renderer.autoScale = 1; this.renderer.resize(); }
+      else if (key === 'maxFps' || key === 'simulationDistance' || key === 'entityDistance' || key === 'particles') this._applyPerformanceSettings();
+      else if (key === 'shadersOn' || (key.startsWith('sh') && key !== 'shaderPreset' && key !== 'showFps')) this.shaders.apply();
+      else if (key === 'brightness') applyBrightness(value); // live: a shader uniform, no re-bake
     });
     ev.on('player:swing', () => { this.hand.swing(); this.playerModel.swing(); });
     ev.on('inventory:selected', () => this._updateHeld());
@@ -243,7 +284,20 @@ export class Game {
     ev.on('player:land', (fall) => {
       const under = this._blockUnderPlayer();
       this.audio.playStep(under, Math.min(0.9, 0.35 + fall * 0.08), fall > 3 ? 0.75 : 0.95);
+      this.health.onLand(fall);
     });
+    ev.on('player:void', () => this.health.onVoid());
+    // Multiplayer (Update #9 §8): the host validates its own hits like any guest's; deaths are announced.
+    ev.on('player:hitPlayer', (targetId, crit) => { if (this.net && this.net.isHost) this.net.hitPlayer(targetId, crit); });
+    ev.on('player:died', (cause) => { if (this.net && this.net.isHost) this.net.announceOwnDeath(cause); });
+    // Eating (Update #9 §8): chewing sounds + crumbs of the food's icon from the mouth; healing when done.
+    ev.on('player:eating', (itemId) => {
+      this.audio.playPlayer('eat', 0.7);
+      const item = ItemRegistry.get(itemId);
+      const eye = this.player.getEyePosition(this._eye); const dir = this.player.getLookDirection(this._dir);
+      if (item) this.particles.spawnItemCrumbs(eye.x + dir.x * 0.5, eye.y - 0.25 + dir.y * 0.5, eye.z + dir.z * 0.5, getTileIndex(item.texture), 4);
+    });
+    ev.on('player:ate', (itemId, heal) => { this.health.heal(heal); this.audio.playPlayer('eat_done', 0.8); });
     ev.on('player:jump', () => this.audio.playStep(this._blockUnderPlayer(), 0.18));
     ev.on('player:splash', () => this.audio.playPlayer('splash', 0.8));
     ev.on('item:pickup', () => this.audio.playUI('pop', 0.9));
@@ -334,6 +388,12 @@ export class Game {
     client.onHostClosed = (reason) => this._connectionLost(reason);
     const ok = await this.session.startRemote(client, welcome);
     if (!ok) { this._dropNet(); return false; }
+    // The host decides the guest's game mode and whether it may change it (Update #9 §1).
+    const you = welcome.you || {};
+    client.canChangeMode = !!you.canChangeMode;
+    if (this.worldMeta) { this.worldMeta.keepInventory = !!welcome.keepInventory; this.worldMeta.pvp = welcome.pvp !== false; }
+    const mode = you.mode || welcome.gameMode;
+    if (mode && this.player.gameMode !== mode) this.setGameMode(mode, true);
     this.events.emit('net:changed');
     return true;
   }
@@ -429,9 +489,14 @@ export class Game {
     this.input.exitPointerLock();
   }
 
-  resume() {
-    if (this.state.is(State.PAUSED)) { this.state.set(State.PLAYING); this.requestPointerLock(); }
-    else if (this.state.is(State.INVENTORY)) this.closeInventory();
+  /**
+   * Back to the game. `lock` is false when a key (Esc) closed the menu: browsers refuse pointer lock right after
+   * Esc (about a 1 s cooldown and no user activation), so the game resumes unlocked behind a small "Click to
+   * resume" overlay and the next click captures the mouse. The Resume button (a click) locks immediately.
+   */
+  resume(lock = true) {
+    if (this.state.is(State.PAUSED)) { this.state.set(State.PLAYING); if (lock) this.requestPointerLock(); }
+    else if (this.state.is(State.INVENTORY)) this.closeInventory(lock);
   }
 
   /** @param {'inventory'|'crafting_table'|'furnace'} station recipe list to show */
@@ -445,12 +510,12 @@ export class Game {
     this.audio.playUI('inv_open');
   }
 
-  closeInventory() {
+  closeInventory(lock = true) {
     if (!this.state.is(State.INVENTORY)) return;
     this.ui.inventory.close();
     this.state.set(State.PLAYING);
     this.audio.playUI('inv_close');
-    this.requestPointerLock();
+    if (lock) this.requestPointerLock();
   }
 
   /** Survival → Creative → Spectator → Survival. */
@@ -462,7 +527,9 @@ export class Game {
   /** @deprecated use cycleGameMode */
   toggleGameMode() { this.cycleGameMode(); }
 
-  setGameMode(mode) {
+  /** `forced` is the host's decision (the WELCOME or a MODE message); a guest cannot change its own mode without permission. */
+  setGameMode(mode, forced = false) {
+    if (!forced && this.isGuest && !this.net.canChangeMode) { this.ui.hud.showMessage('The host controls your game mode.'); return false; }
     const p = this.player;
     const wasSpectator = p.isSpectator;
     p.gameMode = mode;
@@ -518,15 +585,19 @@ export class Game {
     // Esc closes the topmost menu screen first (Controls, then Options), wherever it was opened from.
     if (escape && this.ui.controls.isOpen) { this.ui.controls.close(); return; }
     if (escape && this.ui.options.isOpen) { this.ui.options.close(); return; }
+    if (escape && this.ui.shaders.isOpen) { this.ui.shaders.close(); return; }
     if (!st.inWorld) return;
+    // Esc while the mouse is locked makes the browser release the lock, and that release opens the pause menu
+    // (UIManager._onPointerLock). Esc on an open screen closes it without a lock request (Update #9): the game
+    // resumes behind the "Click to resume" overlay. Esc while playing unlocked does nothing; the menu never
+    // reopens on its own.
     if (escape) {
-      if (st.is(State.INVENTORY)) this.closeInventory();
-      else if (st.is(State.PAUSED)) this.resume();
-      else if (st.is(State.PLAYING) && !this.input.pointerLocked) this.pause();
+      if (st.is(State.INVENTORY)) this.closeInventory(false);
+      else if (st.is(State.PAUSED)) this.resume(false);
     }
     if (a.wasPressed('inventory')) {
       if (st.is(State.PLAYING)) this.openInventory();
-      else if (st.is(State.INVENTORY)) this.closeInventory();
+      else if (st.is(State.INVENTORY)) this.closeInventory(false);
     }
     if (!st.is(State.PLAYING)) return;
     if (a.wasPressed('perspective')) this.cameraController.cycle();
@@ -578,14 +649,14 @@ export class Game {
 
   fixedUpdate(dt) {
     if (!this.state.simulating) return;
-    this.physics.step(dt);
+    if (!this.player.dead) this.physics.step(dt); // a dead player's body waits for Respawn
     this.entities.fixedUpdate(dt);
     // Scheduled water updates every WATER_TICK_SECONDS (only blocks touched by a change are processed); the host
     // of a LAN server runs them for everyone, guests only mirror.
     this._waterTimer += dt;
     if (this._waterTimer >= WATER_TICK_SECONDS) {
       this._waterTimer -= WATER_TICK_SECONDS;
-      if (!this.isGuest) this.waterSim.tick();
+      if (!this.isGuest) { this.waterSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.waterSim.tick(); }
     }
   }
 
@@ -612,10 +683,13 @@ export class Game {
       this.chunkManager.update(p.position.x, p.position.z, this._dir.x, this._dir.z);
       this.entities.render(alpha, dt);
       this.particles.update(dt, this.renderer.camera);
-      this.hand.visible = first && !spectator;
+      this.hand.visible = first && !spectator && !p.dead;
+      this.hand.eating = this.interaction.eatProgress;
+      this.hand.setLight(this.lightAt(this._eye.x, this._eye.y, this._eye.z));
       this.hand.update(dt, p, this.cameraController.bobPhase, this.cameraController.handBobFactor);
+      this.health.update(dt);
       this.playerModel.root.visible = !first && !spectator;
-      if (!first && !spectator) this.playerModel.update(dt, p);
+      if (!first && !spectator) { this.playerModel.setLight(this.lightAt(p.renderPosition.x, p.renderPosition.y + 1, p.renderPosition.z)); this.playerModel.update(dt, p); }
       this.ui.hud.setHotbarVisible(!spectator && !this.state.is(State.INVENTORY));
       this.sky.setUnderwater(p.headInWater);
       this.sky.update(this.renderer.camera);
@@ -626,7 +700,9 @@ export class Game {
       this.session.update(dt);
       if (this.net) this.net.update(dt);
       this.remotePlayers.update(dt);
+      this.perf.update(dt);
       this.renderer.handVisible = first;
+      this.shaders.update(dt);
       if (!hidden) this.renderer.render();
       if (this.afterRender) this.afterRender();
     } else if (st.is(State.LOADING)) {

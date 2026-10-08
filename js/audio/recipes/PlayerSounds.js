@@ -30,6 +30,24 @@ export function registerPlayerSounds(bank) {
     ping(ctx, dest, rng, { freq: 1900, decay: 0.16, gain: 0.3 });
     ping(ctx, dest, rng, { freq: 2800, decay: 0.12, gain: 0.18, start: 0.03 });
   }, 0.3);
+  // Health (Update #9 §8): a short "oof" when hurt, a deeper one on death, crunchy chewing and a gulp.
+  bank.define('player.hurt', (ctx, dest, rng) => {
+    tone(ctx, dest, { type: 'sine', freq: 230 * (1 + (rng.next() - 0.5) * 0.15), freqEnd: 140, attack: 0.004, decay: 0.2, gain: 0.35 });
+    noiseBurst(ctx, dest, rng, { type: 'brown', attack: 0.003, decay: 0.12, gain: 0.3, filter: { type: 'lowpass', freq: 600, Q: 0.8 } });
+  }, 0.3);
+  bank.define('player.death', (ctx, dest, rng) => {
+    tone(ctx, dest, { type: 'sine', freq: 190, freqEnd: 70, attack: 0.005, decay: 0.5, gain: 0.4 });
+    noiseBurst(ctx, dest, rng, { type: 'brown', attack: 0.005, decay: 0.35, gain: 0.35, filter: { type: 'lowpass', freq: 420, Q: 0.8 } });
+  }, 0.6);
+  bank.define('player.eat', (ctx, dest, rng) => {
+    noiseBurst(ctx, dest, rng, { type: 'white', attack: 0.002, decay: 0.07, gain: 0.35, filter: { type: 'bandpass', freq: 1500 + rng.next() * 900, Q: 1.3 }, gate: { rate: 60 + rng.next() * 40, depth: 0.7 } });
+    click(ctx, dest, rng, { gain: 0.25, start: 0.01 });
+    click(ctx, dest, rng, { gain: 0.18, start: 0.05 });
+  }, 0.15);
+  bank.define('player.eat_done', (ctx, dest, rng) => {
+    tone(ctx, dest, { type: 'sine', freq: 320, freqEnd: 150, attack: 0.01, decay: 0.22, gain: 0.3 });
+    noiseBurst(ctx, dest, rng, { type: 'brown', attack: 0.01, decay: 0.18, gain: 0.2, filter: { type: 'lowpass', freq: 500, Q: 0.7 } });
+  }, 0.35);
   // Critical hit: a short bright crack with a high ping on top.
   bank.define('player.crit', (ctx, dest, rng) => {
     noiseBurst(ctx, dest, rng, { type: 'white', attack: 0.002, decay: 0.09, gain: 0.5, filter: { type: 'highpass', freq: 2500, Q: 0.8 } });
