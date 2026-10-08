@@ -18,6 +18,7 @@
   {
     "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
       "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm"
     }
   }
@@ -39,9 +40,13 @@
   <!-- ===================== HUD ===================== -->
   <div id="hud" class="hidden">
     <div id="crosshair"></div>
-    <!-- Reserved container for future status bars (health, hunger, armor, XP).
-         Intentionally empty: CraftOn currently has no health/hunger/armor/XP. -->
-    <div id="status-bars" aria-hidden="true"></div>
+    <!-- Status bars: the 100-health bar above the right end of the hotbar (Update #9 §8). -->
+    <div id="status-bars">
+      <div id="health-bar" class="health-bar hidden" aria-label="Health">
+        <div class="hb-chip"></div><div class="hb-fill"></div><span class="hb-text">100 / 100</span>
+      </div>
+    </div>
+    <div id="hurt-overlay" class="hidden"></div>
     <div id="item-name-popup"></div>
     <div id="hotbar"></div>
     <div id="pointer-hint" class="hidden">Click to resume</div>
@@ -209,8 +214,26 @@
     <div class="menu-content options-content">
       <h2 class="menu-heading">Options</h2>
       <div id="options-list" class="options-list"></div>
-      <button id="btn-options-controls" class="mc-button">Controls…</button>
+      <div class="options-buttons">
+        <button id="btn-options-controls" class="mc-button">Controls…</button>
+        <button id="btn-options-shaders" class="mc-button">Shaders…</button>
+      </div>
       <button id="btn-options-done" class="mc-button">Done</button>
+    </div>
+  </div>
+
+  <!-- Shaders (Update #9 §4): master switch, preset, one row per effect, live FPS -->
+  <div id="shaders-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content options-content">
+      <h2 class="menu-heading">Shaders</h2>
+      <div class="options-buttons">
+        <button id="btn-shaders-master" class="mc-button">Shaders: OFF</button>
+        <button id="btn-shaders-preset" class="mc-button">Preset: Medium</button>
+      </div>
+      <div id="shaders-list" class="options-list"></div>
+      <div class="shaders-footer"><span id="shaders-fps" class="shaders-fps">0 fps</span><span class="shaders-note">Low runs on integrated graphics; shaders never change the game itself.</span></div>
+      <button id="btn-shaders-done" class="mc-button">Done</button>
     </div>
   </div>
 
@@ -236,6 +259,16 @@
     </div>
   </div>
 
+  <!-- Death screen (Update #9 §8) -->
+  <div id="death-screen" class="screen overlay-screen death hidden">
+    <div class="menu-content">
+      <h2 class="menu-heading death-title">You died!</h2>
+      <div id="death-cause" class="menu-text">Fell from a high place</div>
+      <button id="btn-respawn" class="mc-button">Respawn</button>
+      <button id="btn-death-leave" class="mc-button">Leave World</button>
+    </div>
+  </div>
+
   <div id="pause-menu" class="screen overlay-screen hidden">
     <div class="menu-content">
       <h2 class="menu-heading">Game Menu</h2>
@@ -243,8 +276,37 @@
       <button id="btn-pause-options" class="mc-button">Options</button>
       <button id="btn-gamemode" class="mc-button">Game Mode: Survival</button>
       <div id="pause-hosting" class="pause-hosting hidden"></div>
+      <button id="btn-server-settings" class="mc-button hidden">Server Settings…</button>
       <button id="btn-stop-hosting" class="mc-button hidden">Stop Hosting</button>
       <button id="btn-save-quit" class="mc-button">Save & Quit to Title</button>
+    </div>
+  </div>
+
+  <!-- One-time Performance mode suggestion on a weak device (Update #9 §7) -->
+  <div id="perf-suggest" class="perf-popup hidden">
+    <div class="perf-title">Slow device?</div>
+    <div id="perf-suggest-text" class="perf-text">This device looks weak. Performance mode lowers the render scale and distances for a smoother game.</div>
+    <div class="perf-buttons">
+      <button id="btn-perf-apply" class="mc-button small">Use Performance mode</button>
+      <button id="btn-perf-dismiss" class="mc-button small">Not now</button>
+    </div>
+  </div>
+
+  <!-- Host's Server Settings (Update #9 §1): default / host / per-player game modes and permissions -->
+  <div id="server-settings" class="screen overlay-screen hidden">
+    <div class="menu-content">
+      <h2 class="menu-heading" id="srv-title">Server Settings</h2>
+      <label class="host-max srv-host-only">Default game mode for new players
+        <select id="srv-default-mode"><option value="survival">Survival</option><option value="creative">Creative</option><option value="spectator">Spectator</option></select>
+      </label>
+      <label class="host-max srv-host-only">Your game mode
+        <select id="srv-host-mode"><option value="survival">Survival</option><option value="creative">Creative</option><option value="spectator">Spectator</option></select>
+      </label>
+      <label class="host-max srv-host-only"><span>PvP (players can hurt each other)</span><input id="srv-pvp" type="checkbox" checked></label>
+      <label class="host-max"><span>Keep inventory on death</span><input id="srv-keep-inv" type="checkbox"></label>
+      <div class="srv-sub srv-host-only">Players</div>
+      <div id="srv-players" class="srv-list srv-host-only"></div>
+      <button id="btn-srv-back" class="mc-button">Done</button>
     </div>
   </div>
 
