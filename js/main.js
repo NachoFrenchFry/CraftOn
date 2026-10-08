@@ -101,6 +101,7 @@ async function main() {
   if (params.has('atlas')) game.ui.toggleAtlasView();
   if (params.has('debuglog')) {
     game.ignoreHidden = true;
+    game.perfSuggestForced = params.has('perfsuggest'); // the one-time Performance mode popup is otherwise suppressed in tests
     if (params.has('rd')) game.settings.set('renderDistance', Number(params.get('rd')));
     game.loop.timerMode = true;
     game.loop.timerInterval = Number(params.get('tick') || 60);

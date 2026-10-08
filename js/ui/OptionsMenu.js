@@ -1,6 +1,6 @@
 // OptionsMenu.js — sliders/toggles generated from SETTING_SCHEMA, bound live to Settings.
 
-import { SETTING_SCHEMA } from '../config/DefaultSettings.js';
+import { SETTING_SCHEMA, SETTING_SECTIONS, PERFORMANCE_MODE } from '../config/DefaultSettings.js';
 
 export class OptionsMenu {
   /** @param {import('../core/Game.js').Game} game */
@@ -18,6 +18,19 @@ export class OptionsMenu {
       this.root.classList.add('hidden');
       game.ui.controls.open(() => this.root.classList.remove('hidden'));
     });
+    document.getElementById('btn-options-shaders').addEventListener('click', () => {
+      game.audio.playUI('click');
+      if (!game.ui.shaders) return;
+      this.root.classList.add('hidden');
+      game.ui.shaders.open(() => this.root.classList.remove('hidden'));
+    });
+  }
+
+  /** The Performance mode preset (Update #9 §7): half render scale, short distances, fast leaves, no AO, no shaders. */
+  applyPerformanceMode() {
+    this.settings.applyPreset(PERFORMANCE_MODE);
+    this.refresh();
+    this.game.ui.hud.showToast('Performance mode applied', false);
   }
 
   _format(schema, value) {
@@ -28,7 +41,27 @@ export class OptionsMenu {
   }
 
   _build() {
-    for (const schema of SETTING_SCHEMA) {
+    for (const [section, title] of SETTING_SECTIONS) {
+      const heading = document.createElement('div');
+      heading.className = 'options-section';
+      heading.textContent = title;
+      this.list.appendChild(heading);
+      for (const schema of SETTING_SCHEMA) if ((schema.section || 'general') === section) this._buildRow(schema);
+      if (section === 'performance') {
+        const row = document.createElement('div');
+        row.className = 'option-row wide';
+        const b = document.createElement('button');
+        b.id = 'btn-performance-mode'; b.className = 'mc-button'; b.textContent = 'Performance mode';
+        b.title = 'Render scale 50%, render distance 4, simulation distance 3, decreased particles, fast leaves, AO off, shaders off';
+        b.addEventListener('click', () => { this.game.audio.playUI('click'); this.applyPerformanceMode(); });
+        row.appendChild(b);
+        this.list.appendChild(row);
+      }
+    }
+  }
+
+  _buildRow(schema) {
+    {
       const row = document.createElement('div');
       row.className = 'option-row';
       const label = document.createElement('label');

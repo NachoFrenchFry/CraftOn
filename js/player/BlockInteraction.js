@@ -4,6 +4,7 @@
 import { BlockIds } from '../blocks/BlockIds.js';
 import { BlockRegistry, SOLID, NEEDS_SUPPORT, BREAK_TIME, RENDER_TYPE, RenderType, PASS, RenderPass } from '../blocks/BlockRegistry.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
+import { EAT_SECONDS } from './Damage.js';
 import { ItemStack } from '../items/ItemStack.js';
 import { effectiveBreakTime, attackDamage, isSword } from '../items/Tools.js';
 import { ItemIds } from '../items/ItemDefinitions.js';
@@ -40,7 +41,14 @@ export class BlockInteraction {
     this.attackLockTimer = 0;
     this.attackLatched = false;
     this.mineSendTimer = 0;
+    /** Eating (Update #9 §8): seconds the use button has been held with food while below max health. */
+    this.eatTimer = 0;
+    this.chewTimer = 0;
+    /** Other player under the crosshair (multiplayer), or null. */
+    this.targetPlayer = null;
   }
+
+  get eatProgress() { return this.eatTimer > 0 ? Math.min(1, this.eatTimer / EAT_SECONDS) : 0; }
 
   get heldItemId() { const s = this.inventory.getSelected(); return s ? s.itemId : null; }
   /** Guest of a LAN server: the host owns mobs and drops (deps.isGuest is optional). */
@@ -59,13 +67,18 @@ export class BlockInteraction {
     const mobs = this.entities.mobs;
     const mobHit = mobs && !this.player.isSpectator ? mobs.raycast(ex, ey, ez, dx, dy, dz, ATTACK_REACH) : null;
     this.targetMob = mobHit && (!t.hit || mobHit.distance < t.distance) ? mobHit.mob : null;
-    if (this.targetMob) this.selectionBox.hide(); else this.selectionBox.update(t);
+    // Other players (Update #9 §8 PvP): the nearest of block / mob / player wins.
+    const rpHit = this.remotePlayers && !this.player.isSpectator ? this.remotePlayers.raycast(ex, ey, ez, dx, dy, dz, ATTACK_REACH) : null;
+    this.targetPlayer = rpHit && (!t.hit || rpHit.distance < t.distance) && (!mobHit || rpHit.distance < mobHit.distance) ? rpHit.player : null;
+    if (this.targetPlayer) this.targetMob = null;
+    if (this.targetMob || this.targetPlayer) this.selectionBox.hide(); else this.selectionBox.update(t);
     const key = t.hit ? `${t.blockPos.x},${t.blockPos.y},${t.blockPos.z}` : null;
     if (key !== this.lastTargetKey) { this.progress = 0; this.lastTargetKey = key; }
 
     if (!this.enabled || !this.input.pointerLocked || this.player.isSpectator) {
       this._stopMining();
       this.placeTimer = 0;
+      this.eatTimer = 0;
       return;
     }
 
@@ -75,20 +88,39 @@ export class BlockInteraction {
     const use = this.actions.isActive('use');
     if (!attack) this.attackLatched = false;
 
-    if (this.targetMob) {
+    if (this.targetPlayer) {
+      this._stopMining();
+      if (this.actions.wasPressed('attack')) this._attackPlayer(this.targetPlayer);
+    } else if (this.targetMob) {
       // A ray that hits a mob only ever attacks; the block behind it is never touched.
       this._stopMining();
       if (this.actions.wasPressed('attack')) this._attackMob(this.targetMob);
     } else if (attack && t.hit && !this.attackLatched && this.attackLockTimer <= 0 && !(this.player.isCreative && isSword(held))) this._mine(dt); // swords never break blocks in Creative
     else this._stopMining();
 
-    if (use) {
-      if (this.actions.wasPressed('use')) { this._place(false); this.placeTimer = 0; }
-      else {
-        this.placeTimer += dt;
-        if (this.placeTimer >= PLACE_REPEAT_SECONDS) { this.placeTimer = 0; this._place(true); }
+    // Eating (Update #9 §8): hold use with food while below max health; 1.6 s with chewing sounds and crumbs.
+    const food = held != null ? ItemRegistry.food(held) : null;
+    if (food && use && this.canEat && this.canEat()) {
+      if (this.eatTimer === 0) this.chewTimer = 0.15;
+      this.eatTimer += dt;
+      this.chewTimer -= dt;
+      if (this.chewTimer <= 0) { this.chewTimer = 0.28; this.events.emit('player:eating', held, this.eatProgress); }
+      if (this.eatTimer >= EAT_SECONDS) {
+        this.eatTimer = 0;
+        if (!this.player.isCreative) this.inventory.removeFromSlot(this.inventory.selectedIndex, 1);
+        this.events.emit('player:ate', held, food.heal);
       }
-    } else this.placeTimer = 0;
+      this.placeTimer = 0;
+    } else {
+      this.eatTimer = 0;
+      if (use) {
+        if (this.actions.wasPressed('use')) { this._place(false); this.placeTimer = 0; }
+        else {
+          this.placeTimer += dt;
+          if (this.placeTimer >= PLACE_REPEAT_SECONDS) { this.placeTimer = 0; this._place(true); }
+        }
+      } else this.placeTimer = 0;
+    }
 
     if (this.actions.wasPressed('pick') && t.hit) this._pickBlock(t.blockId);
   }
@@ -106,6 +138,16 @@ export class BlockInteraction {
     const damage = attackDamage(this.heldItemId) * (crit ? 1.5 : 1);
     if (this.guest) { this.events.emit('player:attack', mob.id, damage, crit); return; } // the host applies it and tells everyone
     this.entities.mobs.hit(mob, damage, p.position.x, p.position.z, crit);
+  }
+
+  /** Hit another player (multiplayer): the host validates and applies the damage; the swing shows at once. */
+  _attackPlayer(rp) {
+    const p = this.player;
+    const crit = p.velocity.y < 0 && !p.onGround && !p.inWater && !p.flying;
+    this.events.emit('player:swing');
+    this.attackLockTimer = ATTACK_BLOCK_SECONDS;
+    this.attackLatched = true;
+    this.events.emit('player:hitPlayer', rp.id, crit);
   }
 
   /** Spawn egg (Creative catalog only): the mob appears on top of the clicked face. */
@@ -251,15 +293,20 @@ export class BlockInteraction {
     const cur = this.world.getBlock(px, py, pz);
     if (!BlockRegistry.isReplaceable(cur)) return;
     if (!this.world.isLoadedAt(px, pz)) return;
-    if (SOLID[id] === 1 && this.player.aabb.intersectsBox(px, py, pz, px + 1, py + 1, pz + 1)) return;
+    // Never inside anyone: the local player, other players or a mob (checked before the item is consumed; on a
+    // LAN server the host runs the same check, so a rejection for this reason is rare and refunds the item).
+    if (SOLID[id] === 1 && (this.player.aabb.intersectsBox(px, py, pz, px + 1, py + 1, pz + 1) || (this.entityBlocks && this.entityBlocks(px, py, pz)))) return;
     if (NEEDS_SUPPORT[id] === 1 && !this.world.isSolid(px, py - 1, pz)) return;
+    const slot = this.inventory.selectedIndex, consumedId = stack.itemId;
     this.world.setBlock(px, py, pz, id);
     this.audio.playBlock('place', id, px + 0.5, py + 0.5, pz + 0.5);
     this.events.emit('player:swing');
+    let consumed = null;
     if (!this.player.isCreative) {
-      this.inventory.removeFromSlot(this.inventory.selectedIndex, 1);
+      this.inventory.removeFromSlot(slot, 1);
+      consumed = { itemId: consumedId, slot };
     }
-    this.events.emit('block:placed', px, py, pz, id);
+    this.events.emit('block:placed', px, py, pz, id, consumed);
   }
 
   /** Held armor → its armor slot (swapping with the worn piece), with a wooden clunk or a metal clink and a swing. */

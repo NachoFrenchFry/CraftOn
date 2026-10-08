@@ -7,7 +7,9 @@
 
 import { Msg, PING_SECONDS, PEER_TIMEOUT_SECONDS, encode, decode } from './Protocol.js';
 
-const GATHER_TIMEOUT_MS = 5000;
+const GATHER_TIMEOUT_MS = 3000;
+/** Non-trickle ICE: once at least one candidate is in and none arrived for this long, the description is sent as is. */
+const GATHER_QUIET_MS = 400;
 
 export class PeerLink {
   /**
@@ -73,9 +75,13 @@ export class PeerLink {
   _gathered() {
     if (this.pc.iceGatheringState === 'complete') return Promise.resolve();
     return new Promise((resolve) => {
-      const done = () => { this.pc.removeEventListener('icegatheringstatechange', check); resolve(); };
+      let quiet = null, candidates = 0, finished = false;
+      const done = () => { if (finished) return; finished = true; this.pc.removeEventListener('icegatheringstatechange', check); this.pc.removeEventListener('icecandidate', onCandidate); if (quiet) clearTimeout(quiet); resolve(); };
       const check = () => { if (this.pc.iceGatheringState === 'complete') done(); };
+      // Host candidates arrive within milliseconds; the rest of the "complete" wait is mDNS / IPv6 timeouts.
+      const onCandidate = (e) => { if (!e.candidate) { done(); return; } candidates++; if (quiet) clearTimeout(quiet); quiet = setTimeout(() => { if (candidates > 0) done(); }, GATHER_QUIET_MS); };
       this.pc.addEventListener('icegatheringstatechange', check);
+      this.pc.addEventListener('icecandidate', onCandidate);
       setTimeout(done, GATHER_TIMEOUT_MS);
     });
   }

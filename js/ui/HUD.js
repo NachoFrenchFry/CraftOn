@@ -1,5 +1,5 @@
-// HUD.js — crosshair, hotbar container, item-name popup, pointer hint and the underwater tint.
-// The #status-bars container is intentionally empty (no health/hunger/armor/XP yet).
+// HUD.js — crosshair, hotbar container, the health bar (Update #9 §8), item-name popup, pointer hint, the
+// underwater tint and the red hurt vignette.
 
 import { Hotbar } from './Hotbar.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
@@ -17,6 +17,13 @@ export class HUD {
     this.hint = document.getElementById('pointer-hint');
     this.underwater = document.getElementById('underwater-overlay');
     this.fpsCounter = document.getElementById('fps-counter');
+    this.healthBar = document.getElementById('health-bar');
+    this.hbFill = this.healthBar.querySelector('.hb-fill');
+    this.hbChip = this.healthBar.querySelector('.hb-chip');
+    this.hbText = this.healthBar.querySelector('.hb-text');
+    this.hurtOverlay = document.getElementById('hurt-overlay');
+    this._hbShown = null; this._hbHealth = -1; this._hbLow = false; this._hurtShown = false; this._chipTimer = null;
+    game.events.on('player:damaged', () => { this.healthBar.classList.remove('hit'); void this.healthBar.offsetWidth; this.healthBar.classList.add('hit'); });
     this.fpsTimer = 0;
     this._fpsShown = false;
     this.hotbar = new Hotbar(document.getElementById('hotbar'), game.inventory, game.icons, game.events);
@@ -80,6 +87,27 @@ export class HUD {
     }
   }
 
+  /** The health bar: red fill, white "recent damage" chip that shrinks after a hit, pulse under 20, hidden outside Survival. */
+  _updateHealth() {
+    const g = this.game, p = g.player, hs = g.health;
+    const shown = !!hs && hs.active && g.state.inWorld;
+    if (shown !== this._hbShown) { this._hbShown = shown; this.healthBar.classList.toggle('hidden', !shown); }
+    if (shown && p.health !== this._hbHealth) {
+      const prev = this._hbHealth;
+      this._hbHealth = p.health;
+      const pct = Math.max(0, Math.min(100, p.health / p.maxHealth * 100));
+      this.hbFill.style.width = `${pct}%`;
+      this.hbText.textContent = `${Math.round(p.health)} / ${p.maxHealth}`;
+      if (prev < 0 || p.health > prev) this.hbChip.style.width = `${pct}%`; // healing: the chip follows at once
+      else this.hbChip.style.width = `${pct}%`; // damage: the CSS transition (delayed) shrinks it from the old width
+      const low = p.health < 20;
+      if (low !== this._hbLow) { this._hbLow = low; this.healthBar.classList.toggle('low', low); }
+    }
+    const hurt = !!hs && hs.hurtFlash > 0 && shown;
+    if (hurt !== this._hurtShown) { this._hurtShown = hurt; this.hurtOverlay.classList.toggle('hidden', !hurt); }
+    if (hurt) this.hurtOverlay.style.opacity = String(Math.min(1, hs.hurtFlash / 0.35));
+  }
+
   setCrosshairVisible(v) {
     if (v === this._crosshairShown) return;
     this._crosshairShown = v;
@@ -104,6 +132,7 @@ export class HUD {
       this.fpsTimer -= dt;
       if (this.fpsTimer <= 0) { this.fpsTimer = 0.25; this.fpsCounter.textContent = `${this.game.loop.fps} fps`; }
     }
+    this._updateHealth();
     const uw = this.game.player.headInWater;
     if (uw !== this._underwaterShown) {
       this._underwaterShown = uw;

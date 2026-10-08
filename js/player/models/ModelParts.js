@@ -11,7 +11,7 @@ export const PX = 1.8 / 32;
  * plane into the swing plane, so the pickaxe point, the axe blade and the sword edge face -Z — the
  * direction the head travels during a swing — instead of the flat side.
  */
-export const TOOL_EDGE_TURN = Math.PI / 2;
+export const TOOL_EDGE_TURN = Math.PI / 2 + 10 * Math.PI / 180; // 100°: the Update #8 edge turn plus 10° the other way (Update #9 follow-up)
 /** Euler for a tool handle group inside a swing pivot: roll first (diagonal → +Y), then the edge turn. */
 export function setToolHandleRotation(group) { group.rotation.set(0, TOOL_EDGE_TURN, Math.PI / 4, 'XYZ'); return group; }
 
@@ -51,4 +51,20 @@ export function createModelLights() {
   const dir = new THREE.DirectionalLight(0xffffff, 0.9);
   dir.position.set(0.5, 1, 0.3);
   return [hemi, dir];
+}
+
+const ownerOf = new WeakMap();   // material → model that owns the clone
+const baseColorOf = new WeakMap();
+/**
+ * Voxel lighting for a character model (Update #10): every part gets its own material clone (lazily, once) whose
+ * colour is the base colour × the brightness factor of the sky light at the model. Meshes swapped to a hurt
+ * variant (userData.baseMaterial set) are left alone until the flash ends.
+ */
+export function tintModelLight(owner, root, factor) {
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material || o.userData.baseMaterial) return;
+    let m = o.material;
+    if (ownerOf.get(m) !== owner) { m = m.clone(); ownerOf.set(m, owner); baseColorOf.set(m, m.color.clone()); o.material = m; }
+    m.color.copy(baseColorOf.get(m)).multiplyScalar(factor);
+  });
 }

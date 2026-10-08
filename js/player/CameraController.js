@@ -17,6 +17,7 @@ export class CameraController {
    * @param {import('../core/Settings.js').Settings} settings
    */
   constructor(camera, player, raycaster, settings) {
+    this.hurtTilt = 0; this.hurtSide = 1;
     this.camera = camera;
     this.player = player;
     this.raycaster = raycaster;
@@ -42,6 +43,13 @@ export class CameraController {
   }
 
   /** Update camera transform and FOV; returns the bob phase for the hand. */
+  /** A hit landed: tilt the camera (the side follows the knockback direction when known). */
+  hurt(kx = 0, kz = 0) {
+    this.hurtTilt = 1;
+    const right = Math.cos(this.player.yaw) * kx - Math.sin(this.player.yaw) * kz;
+    this.hurtSide = right < 0 ? -1 : 1;
+  }
+
   update(dt) {
     const p = this.player;
     const cam = this.camera;
@@ -58,6 +66,9 @@ export class CameraController {
     this.bobFactor = damp(this.bobFactor, targetBob, 10, dt);
     this.handBobFactor = this.bobFactor * this.bobIntensity;
     this.bobPhase = p.walkDistance * BOB_PHASE_PER_BLOCK; // slower cycle (Update #8): each step reads as a step
+    // Hurt tilt (Update #9 §8): a quick roll away from the hit that eases back.
+    this.hurtTilt = damp(this.hurtTilt, 0, 7, dt);
+    const hurtRoll = Math.sin(Math.min(1, this.hurtTilt) * Math.PI) * 0.14 * this.hurtSide;
 
     // FOV: +10% sprinting, a bit more when flying fast.
     let targetScale = 1;
@@ -74,7 +85,7 @@ export class CameraController {
         cam.position.addScaledVector(this._right, Math.sin(this.bobPhase) * BOB_SIDE * f);
         cam.position.y += Math.abs(Math.cos(this.bobPhase)) * BOB_VERTICAL * f;
       }
-      this._euler.set(p.pitch, p.yaw, f > 0.001 ? Math.sin(this.bobPhase) * BOB_ROLL * f : 0);
+      this._euler.set(p.pitch, p.yaw, (f > 0.001 ? Math.sin(this.bobPhase) * BOB_ROLL * f : 0) + hurtRoll);
       cam.quaternion.setFromEuler(this._euler);
     } else if (this.perspective === Perspective.THIRD_BACK) {
       const d = this._collide(-this.dir.x, -this.dir.y, -this.dir.z);

@@ -10,30 +10,44 @@ import { BreakOverlay } from '../rendering/BreakOverlay.js';
 import { Interpolator } from './Interpolator.js';
 import { decodePlayerState } from './Protocol.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
-import { PLAYER_HEIGHT, SWIM_STROKE_INTERVAL } from '../config/Constants.js';
+import { PLAYER_HEIGHT, PLAYER_WIDTH, SWIM_STROKE_INTERVAL } from '../config/Constants.js';
 
 const STEP_DISTANCE = 1.6;
 const NAMETAG_HEIGHT = PLAYER_HEIGHT + 0.45;
+/** The pixel font (font/Minecraft.ttf, Update #9) for canvas text; resolves once it is loaded. */
+export const FONT_READY = (typeof document !== 'undefined' && document.fonts ? document.fonts.load('16px CraftOnFont').then(() => true, () => false) : Promise.resolve(false));
+export const CANVAS_FONT = '32px CraftOnFont, monospace';
+
+/** Draw the name into a canvas with the pixel font (nearest-neighbour sprite, 8 px grid, drop shadow). */
+function paintNametag(canvas, name) {
+  const ctx = canvas.getContext('2d');
+  ctx.font = CANVAS_FONT;
+  const w = Math.ceil(ctx.measureText(name).width) + 24;
+  canvas.width = Math.max(64, Math.ceil(w / 8) * 8); canvas.height = 48;
+  ctx.font = CANVAS_FONT;
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#3f3f3f';
+  ctx.fillText(name, canvas.width / 2 + 2, canvas.height / 2 + 4);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(name, canvas.width / 2, canvas.height / 2 + 2);
+}
 
 function makeNametag(name) {
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.font = 'bold 40px sans-serif';
-  const w = Math.ceil(ctx.measureText(name).width) + 32;
-  canvas.width = Math.max(64, w); canvas.height = 56;
-  ctx.font = 'bold 40px sans-serif';
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#fff';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(name, canvas.width / 2, canvas.height / 2 + 2);
+  paintNametag(canvas, name);
   const tex = new THREE.CanvasTexture(canvas);
-  tex.minFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.NearestFilter; tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false;
   const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, fog: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(canvas.width / 160, canvas.height / 160, 1);
+  const fit = () => sprite.scale.set(canvas.width / 128, canvas.height / 128, 1);
+  fit();
   sprite.renderOrder = 20;
   sprite.name = 'nametag';
+  // Redraw once the font file has loaded (the first paint may have used the fallback).
+  FONT_READY.then(() => { paintNametag(canvas, name); fit(); tex.needsUpdate = true; });
   return sprite;
 }
 
@@ -84,13 +98,32 @@ export class RemotePlayer {
     if (meta.mode) this.mode = meta.mode;
   }
 
+  /** A snapshot can arrive before the name does (placeholder 'player'): take the real name and repaint the nametag. */
+  rename(name) {
+    if (!name || name === this.name) return;
+    this.name = name;
+    this.model.root.name = 'remote:' + name;
+    const tex = this.nametag.material.map, canvas = tex.image;
+    paintNametag(canvas, name);
+    this.nametag.scale.set(canvas.width / 128, canvas.height / 128, 1);
+    tex.needsUpdate = true;
+  }
+
   swing() { this.model.swing(); }
+
+  /** This player was hurt (Update #9 §8): red flash, hurt sound at its position, crit stars on a critical hit. */
+  hurt(crit = false, amount = 0) {
+    this.model.flash(0.35);
+    const p = this.state.renderPosition;
+    this.game.audio.playAt(amount > 0 || crit ? 'player.hurt' : 'player.hurt', p.x, p.y + 1, p.z, 'blocks', 0.8);
+    if (crit) this.game.particles.spawnCrit(p.x, p.y + 1.2, p.z, 32, 0.45, 1.6);
+  }
 
   mining(x, y, z, progress) { this.overlay.update(x, y, z, progress); this.mineTimer = 1.5; }
   miningStop() { this.overlay.hide(); this.mineTimer = 0; }
 
   /** Per frame: interpolate, animate the model, nametag, sounds. */
-  update(dt, now, localPlayer, audio, world) {
+  update(dt, now, localPlayer, audio, world, maxDistance = Infinity) {
     const o = this.interp.sample(now);
     if (!this.interp.hasData) return;
     const st = this.state;
@@ -102,10 +135,10 @@ export class RemotePlayer {
     st.velocity.x = s.vx; st.velocity.y = s.vy; st.velocity.z = s.vz;
     st.horizontalSpeed = Math.hypot(s.vx, s.vz);
     if (st.swimming) st.swimTime += dt * Math.max(0.5, Math.hypot(s.vx, s.vy, s.vz) / 5.5);
-    const visible = !st.spectator || localPlayer.isSpectator;
+    const visible = (!st.spectator || localPlayer.isSpectator) && Math.hypot(o.x - localPlayer.position.x, o.z - localPlayer.position.z) <= maxDistance;
     this.visible = visible;
     this.model.root.visible = visible;
-    if (visible) this.model.update(dt, st);
+    if (visible) { if (this.game.lightAt) this.model.setLight(this.game.lightAt(o.x, o.y + 1, o.z)); this.model.update(dt, st); }
     this.nametag.visible = visible && !st.sneaking;
     this.nametag.position.set(o.x, o.y + (st.crawling || st.swimming ? 0.9 : NAMETAG_HEIGHT), o.z);
     if (this.mineTimer > 0) { this.mineTimer -= dt; if (this.mineTimer <= 0) this.overlay.hide(); }
@@ -148,12 +181,14 @@ export class RemotePlayerManager {
     this.game = game;
     /** @type {Map<string, RemotePlayer>} */
     this.players = new Map();
+    /** Update #9 §7: players farther than this are hidden (entity distance). */
+    this.entityDistanceBlocks = Infinity;
   }
 
   get count() { return this.players.size; }
 
   add(id, name) {
-    if (this.players.has(id)) return this.players.get(id);
+    if (this.players.has(id)) { const rp = this.players.get(id); if (name && name !== 'player') rp.rename(name); return rp; }
     const rp = new RemotePlayer(id, name, this.game);
     this.players.set(id, rp);
     return rp;
@@ -170,10 +205,31 @@ export class RemotePlayerManager {
 
   clear() { for (const id of [...this.players.keys()]) this.remove(id); }
 
+  /** Nearest visible player hit by a ray (for attacks): { player, distance } or null. */
+  raycast(ox, oy, oz, dx, dy, dz, maxDistance) {
+    let best = null, bestT = maxDistance;
+    for (const rp of this.players.values()) {
+      if (!rp.visible || rp.state.spectator || !rp.interp.hasData) continue;
+      const p = rp.position, hw = PLAYER_WIDTH / 2;
+      const h = rp.state.crawling || rp.state.swimming ? 0.6 : rp.state.sneaking ? 1.5 : PLAYER_HEIGHT;
+      let tmin = 0, tmax = bestT, ok = true;
+      const axes = [[ox, dx, p.x - hw, p.x + hw], [oy, dy, p.y, p.y + h], [oz, dz, p.z - hw, p.z + hw]];
+      for (const [o, d, lo, hi] of axes) {
+        if (Math.abs(d) < 1e-9) { if (o < lo || o > hi) { ok = false; break; } continue; }
+        let t1 = (lo - o) / d, t2 = (hi - o) / d;
+        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+        tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+        if (tmin > tmax) { ok = false; break; }
+      }
+      if (ok && tmin < bestT) { bestT = tmin; best = rp; }
+    }
+    return best ? { player: best, distance: bestT } : null;
+  }
+
   update(dt) {
     if (!this.players.size) return;
     const g = this.game;
     const now = performance.now() / 1000;
-    for (const rp of this.players.values()) rp.update(dt, now, g.player, g.audio, g.world);
+    for (const rp of this.players.values()) rp.update(dt, now, g.player, g.audio, g.world, this.entityDistanceBlocks);
   }
 }

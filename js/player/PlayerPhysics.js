@@ -280,9 +280,6 @@ export class PlayerPhysics {
     p.horizontalSpeed = Math.hypot(movedX, movedZ) / dt;
     if (p.onGround && !p.inWater) p.walkDistance += Math.hypot(movedX, movedZ);
 
-    if (p.position.y < C.VOID_Y) {
-      p.teleport(p.spawn.x, p.spawn.y, p.spawn.z);
-      this.events.emit('player:respawn');
-    }
+    if (p.position.y < C.VOID_Y) this.events.emit('player:void'); // Survival dies (Update #9 §8); other modes are put back at the spawn
   }
 }

@@ -26,6 +26,13 @@ export class Chunk {
     this.meshed = false;
     this.meshing = false;
     this.meshRequested = false;
+    /** Sky / block light (Update #10): padded 18×18×256 bytes (LightStorage.js), computed in a worker before meshing; null until then. */
+    this.light = null;
+    this.lit = false;
+    this.lighting = false;
+    /** Sections whose light changed since their mesh was built (partial remesh), and sections to remesh next. */
+    this.lightDirty = 0;
+    this.remeshMask = 0;
   }
 
   get(lx, ly, lz) {

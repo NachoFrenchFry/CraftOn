@@ -10,6 +10,9 @@ import { PauseMenu } from './PauseMenu.js';
 import { DebugOverlay } from './DebugOverlay.js';
 import { AccountScreen } from './AccountScreen.js';
 import { MultiplayerMenu } from './MultiplayerMenu.js';
+import { ServerSettingsMenu } from './ServerSettingsMenu.js';
+import { DeathScreen } from './DeathScreen.js';
+import { ShadersMenu } from './ShadersMenu.js';
 import { State } from '../core/GameState.js';
 
 export class UIManager {
@@ -24,15 +27,18 @@ export class UIManager {
   init() {
     const game = this.game;
     this.controls = new ControlsMenu(game);
+    this.shaders = new ShadersMenu(game);
     this.options = new OptionsMenu(game);
     this.account = new AccountScreen(game);
     this.mainMenu = new MainMenu(game);
     this.multiplayer = new MultiplayerMenu(game);
     this.loading = new LoadingScreen();
+    this.serverSettings = new ServerSettingsMenu(game);
     this.pause = new PauseMenu(game);
     this.hud = new HUD(game);
     this.inventory = new InventoryScreen(game);
     this.debug = new DebugOverlay(game);
+    this.death = new DeathScreen(game);
     this.atlasView.addEventListener('click', () => this.toggleAtlasView());
     game.events.on('state:changed', (state) => this._onState(state));
     game.events.on('input:pointerlock', (locked) => this._onPointerLock(locked));
@@ -44,9 +50,10 @@ export class UIManager {
 
   _onState(state) {
     if (state !== State.BOOT) this.game.bootScreen.hide(); // the static boot screen gives way to the first real screen
-    const inWorld = state === State.PLAYING || state === State.PAUSED || state === State.INVENTORY;
+    const inWorld = state === State.PLAYING || state === State.PAUSED || state === State.INVENTORY || state === State.DEAD;
     if (inWorld) this.hud.show(); else this.hud.hide();
     this.options.root.classList.toggle('in-world', inWorld);
+    this.shaders.root.classList.toggle('in-world', inWorld);
     this.controls.root.classList.toggle('in-world', inWorld);
     this.mainMenu.hide();
     this.mainMenu.hideWorlds();
@@ -56,6 +63,7 @@ export class UIManager {
     if (state === State.MENU) { this.mainMenu.show(); this.hud.setPointerHint(false); }
     if (state === State.LOADING) this.loading.show(); else this.loading.hide();
     if (state === State.PAUSED) this.pause.show(); else this.pause.hide();
+    if (state === State.DEAD) this.death.show(this.game.health.deathCause); else this.death.hide();
     if (state !== State.INVENTORY && this.inventory.visible) this.inventory.close();
     if (state === State.PLAYING) this.hud.setPointerHint(!this.game.input.pointerLocked);
     else this.hud.setPointerHint(false);
@@ -86,6 +94,7 @@ export class UIManager {
   }
 
   update(dt) {
+    this.shaders.update(dt);
     this.hud.update(dt);
     this.inventory.update(dt);
     this.debug.update(dt);

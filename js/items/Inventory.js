@@ -167,6 +167,14 @@ export class Inventory {
     return out;
   }
 
+  /** Armor points of one worn slot ('boots' count double against falls, Update #9 §8). */
+  armorPointsFor(slot) {
+    const k = ARMOR_SLOTS.indexOf(slot);
+    const s = k >= 0 ? this.slots[ARMOR_START + k] : null;
+    const a = s ? ItemRegistry.armor(s.itemId) : null;
+    return a ? a.points : 0;
+  }
+
   /** Total armor points of every worn piece. */
   armorPoints() {
     let n = 0;

@@ -169,7 +169,7 @@ export class InventoryScreen {
     // Creative: search filters live; Escape leaves the box and closes the screen; the toggle switches views.
     this.searchInput.addEventListener('input', () => this._applyFilter());
     this.searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); this.searchInput.blur(); this.game.closeInventory(); }
+      if (e.key === 'Escape') { e.preventDefault(); this.searchInput.blur(); this.game.closeInventory(false); }
       e.stopPropagation();
     });
     this.tabItems.addEventListener('click', () => this._setCreativeView('items'));

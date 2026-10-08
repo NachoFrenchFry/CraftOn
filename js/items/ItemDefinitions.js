@@ -29,6 +29,7 @@ export const ItemIds = Object.freeze({
   IRON_HELMET: 282, IRON_CHESTPLATE: 283, IRON_GAUNTLETS: 284, IRON_LEGGINGS: 285, IRON_BOOTS: 286,
   DIAMOND_HELMET: 287, DIAMOND_CHESTPLATE: 288, DIAMOND_GAUNTLETS: 289, DIAMOND_LEGGINGS: 290, DIAMOND_BOOTS: 291,
   COW_SPAWN_EGG: 292, PIG_SPAWN_EGG: 293, SHEEP_SPAWN_EGG: 294,
+  COOKED_BEEF: 295, COOKED_PORKCHOP: 296, COOKED_MUTTON: 297, // Update #9 §8: smelted from the raw meats
 });
 
 /** Armor slots in display order (the inventory's armor row). */
@@ -53,15 +54,16 @@ function armorDefs() {
   return out;
 }
 
-/** Mining speed multipliers per pickaxe (break time is divided by the multiplier on stone-type blocks). */
-export const PICKAXE_SPEED = Object.freeze({ wooden: 2, stone: 3, iron: 4, diamond: 6 });
-/** Mining speed multipliers per axe (on wood-type blocks). */
-export const AXE_SPEED = Object.freeze({ wooden: 2, stone: 3, iron: 4, diamond: 6 });
+/** Mining speed multipliers per pickaxe (break time is divided by the multiplier on stone-type blocks): stone takes 6 s by hand, 1.5 / 1 / 0.75 / 0.5 s by tier (Update #9). */
+export const PICKAXE_SPEED = Object.freeze({ wooden: 4, stone: 6, iron: 8, diamond: 12 });
+/** Mining speed multipliers per axe (on wood-type blocks): logs take 3 s by hand, 0.75 / 0.5 / 0.375 / 0.25 s by tier. */
+export const AXE_SPEED = Object.freeze({ wooden: 4, stone: 6, iron: 8, diamond: 12 });
 
 /**
  * Fields: id, name, displayName, texture (16×16 icon / held sprite), stackSize, placeable (always false),
  * tool: { type: 'pickaxe' | 'axe' | 'sword', speed (pickaxes / axes), damage } for tools and weapons;
- * armor: { slot, material, points } for armor; spawnEgg: mob type (creative-only, never dropped or crafted).
+ * armor: { slot, material, points } for armor; spawnEgg: mob type (creative-only, never dropped or crafted);
+ * food: { heal } for things you can eat (hold right click 1.6 s, Update #9 §8).
  */
 export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COAL, name: 'coal', displayName: 'Coal', texture: 'coal', stackSize: 64, placeable: false },
@@ -78,9 +80,12 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.DIAMOND_SWORD, name: 'diamond_sword', displayName: 'Diamond Sword', texture: 'diamond_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: 7 } },
   { id: ItemIds.BUCKET, name: 'bucket', displayName: 'Bucket', texture: 'bucket', stackSize: 16, placeable: false },
   { id: ItemIds.WATER_BUCKET, name: 'water_bucket', displayName: 'Water Bucket', texture: 'water_bucket', stackSize: 1, placeable: false },
-  { id: ItemIds.RAW_BEEF, name: 'raw_beef', displayName: 'Raw Beef', texture: 'raw_beef', stackSize: 64, placeable: false },
-  { id: ItemIds.RAW_PORKCHOP, name: 'raw_porkchop', displayName: 'Raw Porkchop', texture: 'raw_porkchop', stackSize: 64, placeable: false },
-  { id: ItemIds.RAW_MUTTON, name: 'raw_mutton', displayName: 'Raw Mutton', texture: 'raw_mutton', stackSize: 64, placeable: false },
+  { id: ItemIds.RAW_BEEF, name: 'raw_beef', displayName: 'Raw Beef', texture: 'raw_beef', stackSize: 64, placeable: false, food: { heal: 12 } },
+  { id: ItemIds.RAW_PORKCHOP, name: 'raw_porkchop', displayName: 'Raw Porkchop', texture: 'raw_porkchop', stackSize: 64, placeable: false, food: { heal: 12 } },
+  { id: ItemIds.RAW_MUTTON, name: 'raw_mutton', displayName: 'Raw Mutton', texture: 'raw_mutton', stackSize: 64, placeable: false, food: { heal: 10 } },
+  { id: ItemIds.COOKED_BEEF, name: 'cooked_beef', displayName: 'Cooked Beef', texture: 'cooked_beef', stackSize: 64, placeable: false, food: { heal: 30 } },
+  { id: ItemIds.COOKED_PORKCHOP, name: 'cooked_porkchop', displayName: 'Cooked Porkchop', texture: 'cooked_porkchop', stackSize: 64, placeable: false, food: { heal: 30 } },
+  { id: ItemIds.COOKED_MUTTON, name: 'cooked_mutton', displayName: 'Cooked Mutton', texture: 'cooked_mutton', stackSize: 64, placeable: false, food: { heal: 25 } },
   // Update #4: axes (wood-type blocks)
   { id: ItemIds.WOODEN_AXE, name: 'wooden_axe', displayName: 'Wooden Axe', texture: 'wooden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.wooden, damage: 3 } },
   { id: ItemIds.STONE_AXE, name: 'stone_axe', displayName: 'Stone Axe', texture: 'stone_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.stone, damage: 4 } },

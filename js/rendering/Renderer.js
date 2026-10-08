@@ -24,8 +24,12 @@ export class Renderer {
     this.width = 1;
     this.height = 1;
     this.handVisible = false;
+    /** Post-process chain of the shader pipeline (PostFX) while any post effect is on, else null. */
+    this.post = null;
     /** Draw calls / triangles of the world pass (renderer.info resets per render call). */
     this.worldStats = { calls: 0, triangles: 0 };
+    /** Render scale picked by the Auto mode (PerformanceMonitor lowers it while the FPS stays under the target). */
+    this.autoScale = 1;
     this._dprQuery = null;
     this._bindResize();
     this.resize();
@@ -48,12 +52,21 @@ export class Renderer {
     this._dprQuery.addEventListener('change', this._dprHandler);
   }
 
+  /** The render scale in use: the setting, or the Auto mode's current pick (Update #9 §7). The canvas CSS upscales it pixelated. */
+  get renderScale() { const s = this.settings.get('renderScale'); return s > 0 ? s : this.autoScale; }
+
+  setAutoScale(scale) {
+    if (scale === this.autoScale) return;
+    this.autoScale = scale;
+    this.resize();
+  }
+
   resize() {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
     this.width = w;
     this.height = h;
-    const scale = this.settings.get('renderScale');
+    const scale = this.renderScale;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * scale);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
@@ -73,7 +86,7 @@ export class Renderer {
   render() {
     const r = this.renderer;
     r.clear();
-    r.render(this.scene, this.camera);
+    if (this.post) this.post.render(); else r.render(this.scene, this.camera);
     this.worldStats.calls = r.info.render.calls;
     this.worldStats.triangles = r.info.render.triangles;
     if (this.handVisible) {

@@ -3,7 +3,7 @@
 // textured 3D layer (ArmorModel.js, Update #7), and a horizontal swimming pose with still arms and a flutter kick.
 
 import * as THREE from 'three';
-import { createPart, partMaterial, COLORS, PX, setToolHandleRotation } from './ModelParts.js';
+import { createPart, partMaterial, COLORS, PX, setToolHandleRotation, tintModelLight } from './ModelParts.js';
 import { createBlockGeometry } from '../../rendering/BlockGeometry.js';
 import { createItemSpriteGeometry } from '../../rendering/ItemSpriteGeometry.js';
 import { ItemRegistry } from '../../items/ItemRegistry.js';
@@ -20,6 +20,14 @@ export const SWIM_KICK_HZ = 2.5;
 export function flutterKick(t) {
   const k = Math.sin(t * Math.PI * 2) * SWIM_KICK_AMP;
   return { left: k, right: -k };
+}
+
+const hurtCache = new WeakMap();
+/** Red-tinted copy of a material (textured ones multiply the map by a pink tint). */
+function hurtVariant(mat) {
+  let v = hurtCache.get(mat);
+  if (!v) { v = mat.clone(); if (v.color) v.color.setRGB(1, 0.32, 0.32); if (v.emissive) v.emissive.setRGB(0.35, 0, 0); hurtCache.set(mat, v); }
+  return v;
 }
 
 export class PlayerModel {
@@ -39,7 +47,30 @@ export class PlayerModel {
     this.heldBlockId = 0;
     /** 0 = upright, 1 = horizontal swimming / crawling pose (eased). */
     this.swimBlend = 0;
+    /** Hurt flash (Update #9 §8): seconds left with every part tinted red. */
+    this.flashTimer = 0;
+    this._hurtOn = false;
     this._build();
+  }
+
+  flash(seconds = 0.35) { this.flashTimer = seconds; }
+
+  /** Brightness factor of the sky light at the model (Update #10); cheap when unchanged. */
+  setLight(factor) {
+    if (this._lightFactor !== undefined && Math.abs(factor - this._lightFactor) < 0.003) return;
+    this._lightFactor = factor;
+    tintModelLight(this, this.root, factor);
+  }
+
+  /** Swap every part to a red-tinted copy of its material (cached per material) or back. */
+  _setHurt(on) {
+    if (on === this._hurtOn) return;
+    this._hurtOn = on;
+    this.root.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      if (on) { if (!o.userData.baseMaterial) o.userData.baseMaterial = o.material; o.material = hurtVariant(o.userData.baseMaterial); }
+      else if (o.userData.baseMaterial) { o.material = o.userData.baseMaterial; o.userData.baseMaterial = null; }
+    });
   }
 
   _build() {
@@ -160,6 +191,7 @@ export class PlayerModel {
    * @param {import('../Player.js').Player} player
    */
   update(dt, player) {
+    if (this.flashTimer > 0) { this.flashTimer -= dt; this._setHurt(true); } else if (this._hurtOn) this._setHurt(false);
     const p = player;
     this.root.position.copy(p.renderPosition);
     // Body yaw lags behind the head.
@@ -177,7 +209,7 @@ export class PlayerModel {
     const poseAngle = -(Math.PI / 2 - (p.swimming ? p.pitch : 0));
     this.hips.rotation.x = sw * poseAngle;
     this.hips.position.y = HIP_HEIGHT + (PLAYER_SWIM_HEIGHT / 2 - HIP_HEIGHT) * sw;
-    // The head keeps looking along the look direction whatever the body does.
+    // The head keeps looking along the look direction whatever the body does (the sneak lean is compensated below).
     this.head.pivot.rotation.set(p.pitch - this.hips.rotation.x, delta, 0, 'YXZ');
 
     // Walk cycle.
@@ -205,9 +237,11 @@ export class PlayerModel {
     // A held item raises the arm slightly forward.
     if (this.heldMesh) this.rightArm.pivot.rotation.x += 0.35;
 
-    // Sneak tilt.
-    const tilt = p.sneaking ? 0.5 : 0;
+    // Sneak: the torso leans forward about 0.5 rad toward the look direction (the model faces -Z, so a
+    // negative x rotation tips the chest forward; Update #9 fixed the sign), the head stays level.
+    const tilt = p.sneaking ? -0.5 : 0;
     this.bodyPivot.rotation.x = damp(this.bodyPivot.rotation.x, tilt, 15, dt);
+    this.head.pivot.rotation.x -= this.bodyPivot.rotation.x;
     this.bodyPivot.position.y = -(p.sneaking ? 3 : 0) * PX;
     this.bodyPivot.position.z = p.sneaking ? 2.5 * PX : 0;
     this.leftLeg.pivot.position.z = this.rightLeg.pivot.position.z = p.sneaking ? 2 * PX : 0;

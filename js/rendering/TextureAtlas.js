@@ -4,7 +4,7 @@
 // nearest-neighbour scaled to the tile size (warning).
 
 import * as THREE from 'three';
-import { TEXTURE_FILES } from '../config/TextureManifest.js';
+import { TEXTURE_FILES, DERIVED_TEXTURES } from '../config/TextureManifest.js';
 import { TEXTURE_NAMES, TILE_SIZE, ATLAS_SIZE, MISSING_TEXTURE, getUV, tileColumn, tileRow, getTileIndex } from './AtlasLayout.js';
 import { BlockRegistry, OPAQUE, RENDER_TYPE, RenderType, markCutout } from '../blocks/BlockRegistry.js';
 
@@ -80,7 +80,7 @@ export class TextureAtlas {
   async load() {
     const missingTile = makeMissingTile();
     this.tiles.set(MISSING_TEXTURE, missingTile);
-    const names = TEXTURE_NAMES.filter((n) => n !== MISSING_TEXTURE);
+    const names = TEXTURE_NAMES.filter((n) => n !== MISSING_TEXTURE && !DERIVED_TEXTURES.includes(n));
     await Promise.all(names.map(async (name) => {
       const path = TEXTURE_FILES[name];
       if (!path) { this.missingNames.push(`${name} (not in TextureManifest)`); this.tiles.set(name, missingTile); return; }
@@ -100,10 +100,28 @@ export class TextureAtlas {
     if (this.resizedNames.length) {
       console.warn(`TextureAtlas: ${this.resizedNames.length} texture(s) are not ${TILE_SIZE}×${TILE_SIZE} and were scaled (nearest-neighbour):\n  ${this.resizedNames.join('\n  ')}`);
     }
+    this._deriveTiles();
     this._detectTransparentBlocks();
     this._compose();
     this.loaded = true;
     return this;
+  }
+
+  /** Derived tiles (DERIVED_TEXTURES): 'leaves_fast' is the leaves tile with every transparent texel filled by the average leaf colour, a little darker. */
+  _deriveTiles() {
+    const src = this.tiles.get('leaves');
+    const out = document.createElement('canvas'); out.width = TILE_SIZE; out.height = TILE_SIZE;
+    const ctx = out.getContext('2d');
+    if (src) {
+      ctx.drawImage(src, 0, 0);
+      const img = ctx.getImageData(0, 0, TILE_SIZE, TILE_SIZE); const d = img.data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] >= 128) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+      if (n) { r = Math.round(r / n * 0.8); g = Math.round(g / n * 0.8); b = Math.round(b / n * 0.8); }
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] < 128) { d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255; }
+      ctx.putImageData(img, 0, 0);
+    }
+    this.tiles.set('leaves_fast', out);
   }
 
   _compose() {

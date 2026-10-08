@@ -20,6 +20,7 @@ export class BreakOverlay {
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, vertexColors: false,
     });
     this.mesh = new THREE.Mesh(this.geometries[0], mat);
+    this.mesh.userData.noShadow = true;
     this.mesh.visible = false;
     this.mesh.renderOrder = 9;
     scene.add(this.mesh);

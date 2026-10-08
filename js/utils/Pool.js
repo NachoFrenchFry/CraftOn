@@ -48,6 +48,11 @@ export class TypedArrayBuilder {
     this.length += 3;
   }
 
+  push1(a) {
+    this.ensure(1);
+    this.array[this.length++] = a;
+  }
+
   push2(a, b) {
     this.ensure(2);
     const arr = this.array;

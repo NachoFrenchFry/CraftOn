@@ -6,7 +6,7 @@
 import { encodeChunk, decodeChunk } from '../core/cloud/ChunkCodec.js';
 
 /** Hosts and guests must match exactly ("Different game version"). */
-export const GAME_VERSION = '8';
+export const GAME_VERSION = '9';
 export const MAX_PLAYERS_DEFAULT = 8;
 export const MAX_PLAYERS_MIN = 2;
 export const MAX_PLAYERS_MAX = 8;
@@ -22,8 +22,11 @@ export const JOIN_TIMEOUT_MS = 15000;
 
 export const Msg = Object.freeze({
   HELLO: 'hello', REJECT: 'reject', WELCOME: 'welcome', CHUNKS: 'chunks',
-  BLOCK: 'block', BLOCK_REJECT: 'blockReject',
+  BLOCK: 'block', BLOCK_REJECT: 'blockReject', MODE: 'mode', // MODE: host → guest, the guest's game mode + whether it may change it (Update #9)
   ATTACK: 'attack', MOB_HURT: 'mobHurt', MOB_SPAWN: 'mobSpawn', MOB_REMOVE: 'mobRemove',
+  // Update #9 §8: HIT attacker → host (a player hit), DAMAGE host → victim (validated amount), HURT host → everyone
+  // else (flash / sound), HEALTH guest → host (its health, after fall damage too), DEATH (guest → host → all), WORLD (pvp / keep inventory)
+  HIT: 'hit', DAMAGE: 'damage', HURT: 'hurt', HEALTH: 'health', DEATH: 'death', WORLD: 'world',
   PICKUP: 'pickup', ITEM_GRANT: 'itemGrant', ITEM_SPAWN: 'itemSpawn', ITEM_REMOVE: 'itemRemove',
   META: 'meta', SWING: 'swing', MINING: 'mining', SOUND: 'sound',
   BLOCKS: 'blocks', THROW: 'throw',

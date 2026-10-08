@@ -20,6 +20,10 @@ export class ParticleSystem {
    */
   constructor(scene, atlasTexture, world) {
     this.world = world;
+    /** Update #9 §7: 'all' | 'decreased' | 'minimal' scales every spawn count. */
+    this.level = 'all';
+    /** (x, y, z) → brightness factor of the sky light there (Update #10), set by Game. */
+    this.lightAt = null;
     this.count = 0;
     this.pos = new Float32Array(MAX_PARTICLES * 3);
     this.vel = new Float32Array(MAX_PARTICLES * 3);
@@ -57,6 +61,7 @@ export class ParticleSystem {
     this.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
     const mat = new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true, alphaTest: 0.1, transparent: true, depthWrite: false, fog: true, side: THREE.DoubleSide });
     this.mesh = new THREE.Mesh(this.geometry, mat);
+    this.mesh.userData.noShadow = true;
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
     this._right = new THREE.Vector3();
@@ -64,8 +69,37 @@ export class ParticleSystem {
   }
 
   /** Spawn n particles for a broken block. */
+  /** Spawn count after the Particles setting (all / decreased 40 % / minimal 15 %, at least one). */
+  _budget(n) { return this.level === 'all' ? n : Math.max(1, Math.round(n * (this.level === 'minimal' ? 0.15 : 0.4))); }
+
   spawnBlockBreak(x, y, z, blockId, n = 16) {
+    n = this._budget(n);
     const tile = FACE_TILE[blockId * 6 + Direction.SOUTH];
+    const t4 = tile * 4;
+    const u0 = TILE_UVS[t4], v0 = TILE_UVS[t4 + 1], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
+    const texel = (u1 - u0) / TILE_SIZE;
+    for (let k = 0; k < n; k++) {
+      if (this.count >= MAX_PARTICLES) return;
+      const i = this.count++;
+      const px = x + 0.15 + Math.random() * 0.7, py = y + 0.15 + Math.random() * 0.7, pz = z + 0.15 + Math.random() * 0.7;
+      this.pos[i * 3] = px; this.pos[i * 3 + 1] = py; this.pos[i * 3 + 2] = pz;
+      this.vel[i * 3] = (px - x - 0.5) * 4 + (Math.random() - 0.5) * 2;
+      this.vel[i * 3 + 1] = Math.random() * 4 + 1.5;
+      this.vel[i * 3 + 2] = (pz - z - 0.5) * 4 + (Math.random() - 0.5) * 2;
+      this.maxLife[i] = this.life[i] = 0.6 + Math.random() * 0.4;
+      const tx = Math.floor(Math.random() * (TILE_SIZE - 4)), ty = Math.floor(Math.random() * (TILE_SIZE - 4));
+      this.uvRect[i * 4] = u0 + tx * texel;
+      this.uvRect[i * 4 + 1] = v1 - (ty + 4) * texel;
+      this.uvRect[i * 4 + 2] = u0 + (tx + 4) * texel;
+      this.uvRect[i * 4 + 3] = v1 - ty * texel;
+      this.shade[i] = 0.6 + Math.random() * 0.4;
+      this.sizes[i] = SIZE * (0.7 + Math.random() * 0.6);
+    }
+  }
+  /** Food crumbs (Update #9 §8): a few texels of an item icon from the mouth. */
+  spawnItemCrumbs(x, y, z, tileIndex, n = 6) {
+    n = this._budget(n);
+    const tile = tileIndex;
     const t4 = tile * 4;
     const u0 = TILE_UVS[t4], v0 = TILE_UVS[t4 + 1], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
     const texel = (u1 - u0) / TILE_SIZE;
@@ -96,6 +130,7 @@ export class ParticleSystem {
    * point, spinning and fading over 0.6–0.9 s with slight gravity, plus a few sparkles on the body.
    */
   spawnCrit(x, y, z, n = 48, bodyHalfWidth = 0.45, bodyHeight = 1.2) {
+    n = this._budget(n);
     const t4 = getTileIndex('crit_star') * 4;
     const u0 = TILE_UVS[t4], v0 = TILE_UVS[t4 + 1], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
     const star = (px, py, pz, vx, vy, vz, life, size, yellow) => {
@@ -129,6 +164,7 @@ export class ParticleSystem {
 
   /** @deprecated kept for older callers: the small pre-Update-#6 star burst. */
   spawnCritSmall(x, y, z, n = 14, blockId = 22) {
+    n = this._budget(n);
     const tile = FACE_TILE[blockId * 6 + Direction.SOUTH];
     const t4 = tile * 4;
     const u0 = TILE_UVS[t4], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
@@ -148,6 +184,7 @@ export class ParticleSystem {
   }
 
   spawnPuff(x, y, z, n = 10, blockId = 22) {
+    n = this._budget(n);
     const tile = FACE_TILE[blockId * 6 + Direction.SOUTH];
     const t4 = tile * 4;
     const u0 = TILE_UVS[t4], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
@@ -203,7 +240,8 @@ export class ParticleSystem {
       const cx = this.pos[b], cy = this.pos[b + 1], cz = this.pos[b + 2];
       const ca = Math.cos(this.angle[i]), sa = Math.sin(this.angle[i]);
       const alpha = this.fade[i] ? Math.min(1, this.life[i] / (this.maxLife[i] * 0.6)) : 1;
-      const r = this.shade[i] * this.tint[b], g = this.shade[i] * this.tint[b + 1], bl = this.shade[i] * this.tint[b + 2];
+      const lf = this.lightAt ? this.lightAt(cx, cy, cz) : 1;
+      const r = this.shade[i] * this.tint[b] * lf, g = this.shade[i] * this.tint[b + 1] * lf, bl = this.shade[i] * this.tint[b + 2] * lf;
       for (let c = 0; c < 4; c++) {
         const sx0 = CORNERS[c][0], sy0 = CORNERS[c][1];
         const sx = sx0 * ca - sy0 * sa, sy = sx0 * sa + sy0 * ca; // spin around the view axis

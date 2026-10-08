@@ -53,6 +53,7 @@ export class Sky {
       }),
     );
     this.dome.renderOrder = -1000;
+    this.dome.userData.noShadow = true;
     this.dome.frustumCulled = false;
     scene.add(this.dome);
 
@@ -62,6 +63,7 @@ export class Sky {
     const sunMat = new THREE.MeshBasicMaterial({ color: this.baseColors.sun.clone(), fog: false, depthWrite: false, depthTest: true, transparent: false });
     this.sun = new THREE.Mesh(sunGeom, sunMat);
     this.sun.renderOrder = -999;
+    this.sun.userData.noShadow = true;
     this.sun.frustumCulled = false;
     this.sunDir = new THREE.Vector3(0.45, 0.75, 0.3).normalize();
     scene.add(this.sun);
@@ -69,6 +71,7 @@ export class Sky {
     const glowMat = new THREE.MeshBasicMaterial({ color: this.baseColors.sun.clone(), fog: false, depthWrite: false, depthTest: true, transparent: true, opacity: 0.22 });
     this.sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(72, 72), glowMat);
     this.sunGlow.renderOrder = -999;
+    this.sunGlow.userData.noShadow = true;
     this.sunGlow.frustumCulled = false;
     scene.add(this.sunGlow);
     this.setRenderDistance(8);

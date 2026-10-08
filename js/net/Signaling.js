@@ -33,10 +33,11 @@ export class Signaling {
    * Poll for a row of the given kinds until one arrives or the deadline passes (resolves null on timeout).
    * `isCancelled()` stops the loop early.
    */
-  async waitFor(lobbyId, kinds, timeoutMs, isCancelled = () => false) {
+  async waitFor(lobbyId, kinds, timeoutMs, isCancelled = () => false, accept = () => true) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline && !isCancelled()) {
-      const rows = await this.take(lobbyId, kinds);
+      // Rows that fail `accept` (an answer to an earlier attempt) are consumed and dropped (take() deleted them).
+      const rows = (await this.take(lobbyId, kinds)).filter(accept);
       if (rows.length) return rows[0];
       await new Promise((r) => setTimeout(r, POLL_MS));
     }

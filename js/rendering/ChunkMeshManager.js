@@ -23,6 +23,9 @@ export class ChunkMeshManager {
     this.world = world;
     this.settings = settings;
     this.materials = createChunkMaterials(atlasTexture);
+    /** The plain MeshBasic set; `materials` points at the shader pipeline's lit set while shaders are on (Update #9 §4). */
+    this.baseMaterials = this.materials;
+    this.lit = false;
     /** packed key → Array(16) of { opaque, cutout, translucent } meshes or null */
     this.chunkMeshes = new Map();
     this.scratchPadded = allocPadded();
@@ -32,6 +35,8 @@ export class ChunkMeshManager {
   }
 
   get useAO() { return this.settings.get('smoothLighting'); }
+  /** Fast leaves (Update #9 §7): opaque leaf blocks with the faces between them culled. */
+  get fastLeaves() { return !this.settings.get('fancyLeaves'); }
 
   _entry(cx, cz, create) {
     const key = chunkKey(cx, cz);
@@ -61,6 +66,8 @@ export class ChunkMeshManager {
     geom.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
     geom.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
     geom.setAttribute('color', new THREE.BufferAttribute(data.colors, 3, true));
+    if (data.extra) geom.setAttribute('extra', new THREE.BufferAttribute(data.extra, 1)); // packed face / flags / AO byte (shader pipeline)
+    if (data.light) geom.setAttribute('light', new THREE.BufferAttribute(data.light, 1)); // smoothed sky light ×16 (Update #10)
     geom.setIndex(new THREE.BufferAttribute(data.indices, 1));
     geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(8, 8, 8), SECTION_RADIUS);
     geom.boundingBox = new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(16, 16, 16));
@@ -69,10 +76,23 @@ export class ChunkMeshManager {
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
     mesh.frustumCulled = true;
+    mesh.castShadow = this.lit; mesh.receiveShadow = this.lit;
     mesh.name = 'section';
     this.scene.add(mesh);
     this.meshCount++;
     return mesh;
+  }
+
+  /** Shaders on: every section mesh switches to the lit materials and takes part in shadows; null restores the plain set. */
+  setLitMaterials(lit) {
+    this.lit = !!lit;
+    this.materials = lit || this.baseMaterials;
+    for (const entry of this.chunkMeshes.values()) {
+      for (const sec of entry) {
+        if (!sec) continue;
+        for (const name of PASS_NAMES) { const m = sec[name]; if (m) { m.material = this.materials[name]; m.castShadow = this.lit; m.receiveShadow = this.lit; } }
+      }
+    }
   }
 
   /** Replace the meshes of one section with new pass buffers (any pass may be null). */
@@ -121,9 +141,10 @@ export class ChunkMeshManager {
     if (!chunk || !chunk.meshed) return;
     buildPaddedChunk(this.world, cx, cz, this.scratchPadded);
     this.builders.reset();
-    if (chunk.sectionCounts[sy] > 0) meshSection(this.scratchPadded, sy, this.useAO, this.builders);
+    if (chunk.sectionCounts[sy] > 0) meshSection(this.scratchPadded, sy, this.useAO, this.builders, this.fastLeaves, chunk.lit ? chunk.light : null);
     this.applySection(cx, cz, sy, this.builders.results());
     chunk.dirtySections &= ~(1 << sy);
+    chunk.lightDirty &= ~(1 << sy); // the mesh just built has the current light of this section
   }
 
   /**

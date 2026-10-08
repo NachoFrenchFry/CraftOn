@@ -1,5 +1,6 @@
 // PauseMenu.js — Esc menu: resume, options, game mode toggle, save & quit (or Leave Server for guests), and while
-// hosting a LAN server the "Hosting: <world> · Code ABC123 · N/8 players" line with Stop Hosting (Update #8).
+// hosting a LAN server the "Hosting: <world> · Code ABC123 · N/8 players" line with Server Settings (Update #9)
+// and Stop Hosting (Update #8). A guest without permission sees its game mode button disabled.
 
 export class PauseMenu {
   /** @param {import('../core/Game.js').Game} game */
@@ -10,7 +11,9 @@ export class PauseMenu {
     this.quitButton = document.getElementById('btn-save-quit');
     this.hostingLine = document.getElementById('pause-hosting');
     this.stopHostingButton = document.getElementById('btn-stop-hosting');
-    this.buttons = ['btn-resume', 'btn-pause-options', 'btn-gamemode', 'btn-save-quit', 'btn-stop-hosting'].map((id) => document.getElementById(id));
+    this.serverSettingsButton = document.getElementById('btn-server-settings');
+    this.buttons = ['btn-resume', 'btn-pause-options', 'btn-gamemode', 'btn-save-quit', 'btn-stop-hosting', 'btn-server-settings'].map((id) => document.getElementById(id));
+    this.serverSettingsButton.addEventListener('click', () => { game.audio.playUI('click'); this.hide(); game.ui.serverSettings.open(() => this.show()); });
     this.stopHostingButton.addEventListener('click', () => { game.audio.playUI('click'); game.stopHosting(); this.refresh(); });
     game.events.on('net:changed', () => { if (!this.root.classList.contains('hidden')) this.refresh(); });
     document.getElementById('btn-resume').addEventListener('click', () => { game.audio.playUI('click'); game.resume(); });
@@ -40,9 +43,13 @@ export class PauseMenu {
     this.hostingLine.classList.toggle('hidden', !hosting);
     if (hosting) this.hostingLine.textContent = `Hosting: ${net.worldName} · Code ${net.joinCode} · ${net.playerCount}/${net.maxPlayers} players` + (net.networkDetected ? '' : " · Couldn't detect your network (Join by code only)") + ' · keep this tab visible';
     this.stopHostingButton.classList.toggle('hidden', !hosting);
+    this.serverSettingsButton.classList.toggle('hidden', g.isGuest); // host: Server Settings; single player: World Settings
+    this.serverSettingsButton.textContent = hosting ? 'Server Settings…' : 'World Settings…';
+    this.modeButton.disabled = !!(g.isGuest && !g.net.canChangeMode);
+    this.modeButton.title = this.modeButton.disabled ? 'The host controls your game mode.' : '';
     this.quitButton.textContent = g.isGuest ? 'Leave Server' : 'Save & Quit to Title';
   }
 
   show() { this.refresh(); this.root.classList.remove('hidden'); }
-  hide() { this.root.classList.add('hidden'); }
+  hide() { this.root.classList.add('hidden'); if (this.game.ui && this.game.ui.serverSettings) this.game.ui.serverSettings.hide(); }
 }

@@ -37,6 +37,8 @@ export function itemStatLines(itemId) {
   const lines = [];
   const armor = itemId != null ? ItemRegistry.armor(itemId) : null;
   if (armor) lines.push({ text: `+${armor.points} Armor`, color: 'green' });
+  const food = itemId != null ? ItemRegistry.food(itemId) : null;
+  if (food) lines.push({ text: `Restores +${food.heal} Health (hold right click)`, color: 'green' });
   const tool = itemId != null ? ItemRegistry.tool(itemId) : null;
   if (!tool) return lines;
   const bonus = (tool.damage || HAND_ATTACK_DAMAGE) - HAND_ATTACK_DAMAGE;

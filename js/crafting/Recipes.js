@@ -40,4 +40,8 @@ export const RECIPES = Object.freeze([
   { id: 'iron_ingot', result: { item: 'iron_ingot', count: 1 }, inputs: [{ item: 'iron_ore', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
   { id: 'gold_ingot', result: { item: 'gold_ingot', count: 1 }, inputs: [{ item: 'gold_ore', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
   { id: 'diamond', result: { item: 'diamond', count: 1 }, inputs: [{ item: 'diamond_ore', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
+  // Cooking (Update #9 §8): 1 raw meat + 1 coal.
+  { id: 'cooked_beef', result: { item: 'cooked_beef', count: 1 }, inputs: [{ item: 'raw_beef', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
+  { id: 'cooked_porkchop', result: { item: 'cooked_porkchop', count: 1 }, inputs: [{ item: 'raw_porkchop', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
+  { id: 'cooked_mutton', result: { item: 'cooked_mutton', count: 1 }, inputs: [{ item: 'raw_mutton', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
 ]);

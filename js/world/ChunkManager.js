@@ -6,6 +6,8 @@ import { Chunk, ChunkState } from './Chunk.js';
 import { chunkKey, keyToChunkX, keyToChunkZ } from './ChunkCoords.js';
 import { buildPaddedChunk, allocPadded } from './ChunkPadding.js';
 import { INTEGRATION_BUDGET_MS, MAX_MESH_UPLOADS_PER_FRAME, UNLOAD_MARGIN, GENERATION_MARGIN } from '../config/Constants.js';
+import { LightUpdater, LIGHT_BUDGET_MS } from './lighting/LightUpdater.js';
+import { chunkTop } from './lighting/SkyLight.js';
 
 const NEIGHBOR_OFFSETS = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
 
@@ -28,6 +30,14 @@ export class ChunkManager {
     this.meshCheck = new Set();
     this.meshInFlight = new Set();
     this.meshResults = [];
+    /** Voxel lighting (Update #10): chunks waiting for their worker light pass, jobs in flight, results to apply. */
+    this.lightCheck = new Set();
+    this.lightInFlight = new Set();
+    this.lightResults = [];
+    this.lightTiming = { total: 0, count: 0 };
+    this.lightPhases = { columns: 0, seeds: 0, bfs: 0, copy: 0, seeded: 0 };
+    this.lightUpdater = new LightUpdater(world);
+    world.lightUpdater = this.lightUpdater;
     this.centerCX = null;
     this.centerCZ = null;
     this.generation = 0; // bumped on clear() so stale worker replies are ignored
@@ -38,6 +48,8 @@ export class ChunkManager {
   }
 
   get renderDistance() { return this.settings.get('renderDistance'); }
+  /** [mesh uploads per frame, integration budget ms] for the Chunk Updates setting (Update #9 §7). */
+  get uploadBudget() { const v = this.settings.get('chunkUpdates'); return v === 'low' ? [2, 2] : v === 'high' ? [MAX_MESH_UPLOADS_PER_FRAME * 2 + 2, INTEGRATION_BUDGET_MS * 2] : [MAX_MESH_UPLOADS_PER_FRAME, INTEGRATION_BUDGET_MS]; }
   /** Generation radius: covers every neighbour (diagonals included) of every chunk in the render circle. */
   get genRadius() { return this.renderDistance + GENERATION_MARGIN; }
   /** Chunks farther than this from the player are unloaded. Always larger than genRadius. */
@@ -61,6 +73,10 @@ export class ChunkManager {
     this.meshCheck.clear();
     this.meshInFlight.clear();
     this.meshResults.length = 0;
+    this.lightCheck.clear();
+    this.lightInFlight.clear();
+    this.lightResults.length = 0;
+    this.lightUpdater.clear();
     this.meshManager.removeAll();
     this.world.chunks.clear();
     this.centerCX = null;
@@ -71,8 +87,24 @@ export class ChunkManager {
   /** Force queue recomputation (e.g. render distance changed). */
   invalidate() { this.queuesDirty = true; }
 
+  /**
+   * After bulk block writes straight into chunk arrays (tests, tools): recompute the light of every chunk touching
+   * the world-space rectangle plus a one-chunk margin (their padded borders copy these chunks) and remesh them.
+   */
+  relightRegion(x0, z0, x1, z1) {
+    for (let cz = (Math.min(z0, z1) >> 4) - 1; cz <= (Math.max(z0, z1) >> 4) + 1; cz++) for (let cx = (Math.min(x0, x1) >> 4) - 1; cx <= (Math.max(x0, x1) >> 4) + 1; cx++) {
+      const chunk = this.world.getChunk(cx, cz);
+      if (!chunk) continue;
+      chunk.recountSections();
+      chunk.lit = false; chunk.light = null; chunk.lighting = false; chunk.lightDirty = 0; chunk.remeshMask = 0;
+      chunk.meshed = false; chunk.version++;
+      this.lightCheck.add(chunkKey(cx, cz)); this.meshCheck.add(chunkKey(cx, cz));
+    }
+  }
+
   /** Re-mesh everything (AO toggle). */
   remeshAll() {
+    for (const chunk of this.world.chunks.values()) chunk.remeshMask = 0;
     this.meshManager.invalidateAll();
     for (const key of this.world.chunks.keys()) this.meshCheck.add(key);
   }
@@ -87,7 +119,55 @@ export class ChunkManager {
     }
     this._dispatchGeneration();
     this._integrate();
+    this.lightUpdater.update(LIGHT_BUDGET_MS);
+    this._queueLightRemeshes();
+    this._dispatchLighting();
     this._dispatchMeshing();
+  }
+
+  /** Sections whose light changed get a partial remesh (worker job limited to those sections). */
+  _queueLightRemeshes() {
+    const dirty = this.lightUpdater.dirtyChunks;
+    if (!dirty.size) return;
+    for (const key of dirty) {
+      const chunk = this.world.chunks.get(key);
+      if (!chunk) continue;
+      // Only sections whose light changed: a partial job; the chunk stays "meshed" (no version bump, so a full job in
+      // flight is kept) and bits that arrive while the job runs simply queue the next one.
+      if (chunk.meshed && chunk.lightDirty) { chunk.remeshMask |= chunk.lightDirty; this.meshCheck.add(key); }
+      chunk.lightDirty = 0;
+    }
+    dirty.clear();
+  }
+
+  /** Initial lighting in the worker once a chunk and its eight neighbours have block data (a 3×3 grid is exact). */
+  _dispatchLighting() {
+    const maxInFlight = this.meshPool.size + this.genPool.size;
+    if (this.lightInFlight.size >= maxInFlight || this.lightCheck.size === 0) return;
+    const reach = this.renderDistance + 1;
+    for (const key of this.lightCheck) {
+      if (this.lightInFlight.size >= maxInFlight) break;
+      const chunk = this.world.chunks.get(key);
+      if (!chunk || chunk.lit || chunk.lighting) { this.lightCheck.delete(key); continue; }
+      if (!this._withinRadius(chunk.cx, chunk.cz, reach)) continue;
+      if (!this._hasAllNeighbors(chunk.cx, chunk.cz)) continue;
+      this.lightCheck.delete(key);
+      chunk.lighting = true;
+      this.lightInFlight.add(key);
+      const grid = [], tops = [], transfer = [];
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const n = this.world.getChunk(chunk.cx + dx, chunk.cz + dz);
+        if (n) { const copy = n.blocks.slice(); grid.push(copy); tops.push(chunkTop(n)); transfer.push(copy.buffer); } else { grid.push(null); tops.push(0); }
+      }
+      const gen = this.generation;
+      const pool = this.genPool.inFlight <= this.meshPool.inFlight ? this.genPool : this.meshPool; // both pools run light jobs
+      pool.post({ type: 'light', cx: chunk.cx, cz: chunk.cz, grid, tops, version: chunk.version }, transfer).then((r) => {
+        if (gen !== this.generation) return;
+        this.lightTiming.total += r.ms || 0; this.lightTiming.count++;
+        if (r.phases) for (const k of Object.keys(this.lightPhases)) this.lightPhases[k] += r.phases[k] || 0;
+        this.lightResults.push(r);
+      });
+    }
   }
 
   _recompute(cx, cz, dirX, dirZ) {
@@ -151,7 +231,21 @@ export class ChunkManager {
   _integrate() {
     const start = performance.now();
     let uploads = 0;
-    while (this.meshResults.length && uploads < MAX_MESH_UPLOADS_PER_FRAME && performance.now() - start < INTEGRATION_BUDGET_MS) {
+    const [maxUploads, budgetMs] = this.uploadBudget;
+    while (this.lightResults.length && performance.now() - start < budgetMs) {
+      const r = this.lightResults.shift();
+      const key = chunkKey(r.cx, r.cz);
+      this.lightInFlight.delete(key);
+      const chunk = this.world.chunks.get(key);
+      if (!chunk) continue;
+      chunk.lighting = false;
+      if (chunk.version !== r.version) { this.lightCheck.add(key); continue; } // edited meanwhile: light it again
+      chunk.light = r.light;
+      chunk.lit = true;
+      this.lightUpdater.onChunkLit(chunk);
+      this.meshCheck.add(key);
+    }
+    while (this.meshResults.length && uploads < maxUploads && performance.now() - start < budgetMs) {
       const r = this.meshResults.shift();
       const key = chunkKey(r.cx, r.cz);
       this.meshInFlight.delete(key);
@@ -164,7 +258,7 @@ export class ChunkManager {
       chunk.dirtySections = 0;
       uploads++;
     }
-    while (this.genResults.length && performance.now() - start < INTEGRATION_BUDGET_MS) {
+    while (this.genResults.length && performance.now() - start < budgetMs) {
       const r = this.genResults.shift();
       const key = chunkKey(r.cx, r.cz);
       this.genInFlight.delete(key);
@@ -179,11 +273,13 @@ export class ChunkManager {
       chunk.recountSections();
       chunk.version = 0;
       this.world.chunks.set(key, chunk);
+      this.lightCheck.add(key);
       this.meshCheck.add(key);
       if (this.world.events) this.world.events.emit('chunk:loaded', r.cx, r.cz);
       for (const [dx, dz] of NEIGHBOR_OFFSETS) {
         const nk = chunkKey(r.cx + dx, r.cz + dz);
-        if (this.world.chunks.has(nk)) this.meshCheck.add(nk);
+        const n = this.world.chunks.get(nk);
+        if (n) { this.meshCheck.add(nk); if (!n.lit && !n.lighting) this.lightCheck.add(nk); }
       }
     }
   }
@@ -198,21 +294,28 @@ export class ChunkManager {
     if (this.meshInFlight.size >= maxInFlight || this.meshCheck.size === 0) return;
     const rd = this.renderDistance;
     const ao = this.settings.get('smoothLighting');
+    const fastLeaves = !this.settings.get('fancyLeaves');
     for (const key of this.meshCheck) {
       if (this.meshInFlight.size >= maxInFlight) break;
       const chunk = this.world.chunks.get(key);
       if (!chunk) { this.meshCheck.delete(key); continue; }
-      if (chunk.meshed || chunk.meshing) { this.meshCheck.delete(key); continue; }
+      if ((chunk.meshed && !chunk.remeshMask) || chunk.meshing) { this.meshCheck.delete(key); continue; }
       if (!this._withinRadius(chunk.cx, chunk.cz, rd)) continue;
       if (!this._hasAllNeighbors(chunk.cx, chunk.cz)) continue;
+      if (!chunk.lit) continue; // lighting runs first (the light pass is queued by _dispatchLighting)
       this.meshCheck.delete(key);
       chunk.meshing = true;
       this.meshInFlight.add(key);
       const padded = allocPadded();
       buildPaddedChunk(this.world, chunk.cx, chunk.cz, padded);
-      const msg = { type: 'mesh', cx: chunk.cx, cz: chunk.cz, padded, sectionMask: chunk.nonEmptyMask(), ao, version: chunk.version };
+      const light = chunk.light.slice();
+      const partial = chunk.meshed && chunk.remeshMask; // a lit-section refresh of an existing mesh
+      const sectionMask = partial ? (chunk.remeshMask & chunk.nonEmptyMask()) : chunk.nonEmptyMask();
+      chunk.remeshMask = 0;
+      if (partial && !sectionMask) { chunk.meshing = false; this.meshInFlight.delete(key); continue; }
+      const msg = { type: 'mesh', cx: chunk.cx, cz: chunk.cz, padded, light, sectionMask, ao, fastLeaves, version: chunk.version };
       const gen = this.generation;
-      this.meshPool.post(msg, [padded.buffer]).then((r) => {
+      this.meshPool.post(msg, [padded.buffer, light.buffer]).then((r) => {
         if (gen !== this.generation) return;
         this.meshTiming.total += r.ms || 0; this.meshTiming.count++;
         this.meshResults.push(r);
@@ -251,6 +354,9 @@ export class ChunkManager {
       meshes: this.meshManager.meshCount,
       meshPending: ready + this.meshInFlight.size + this.meshResults.length,
       genQueue: this.genQueue.length + this.genInFlight.size,
+      lightPending: [...this.lightCheck].filter((k) => { const c = this.world.chunks.get(k); return c && this.centerCX !== null && this._withinRadius(c.cx, c.cz, rd + 1) && this._hasAllNeighbors(c.cx, c.cz); }).length + this.lightInFlight.size + this.lightResults.length,
+      lightInFlight: this.lightInFlight.size,
+      lightQueue: this.lightUpdater.pending,
     };
   }
 

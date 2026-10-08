@@ -5,7 +5,7 @@
 // the crosshair (Update #6).
 
 import * as THREE from 'three';
-import { createPart, COLORS, createModelLights, setToolHandleRotation } from './ModelParts.js';
+import { createPart, COLORS, createModelLights, setToolHandleRotation, tintModelLight } from './ModelParts.js';
 import { buildFirstPersonArmor, applyWornArmor } from './ArmorModel.js';
 import { createBlockGeometry } from '../../rendering/BlockGeometry.js';
 import { createItemSpriteGeometry } from '../../rendering/ItemSpriteGeometry.js';
@@ -31,7 +31,8 @@ export class FirstPersonHand {
     this.heldIsTool = false;
     this.root = new THREE.Group();
     handScene.add(this.root);
-    for (const l of createModelLights()) handScene.add(l);
+    this.lights = createModelLights(); // [hemi, dir]; the shader pipeline turns the dir light toward the sun
+    for (const l of this.lights) handScene.add(l);
 
     // Arm: 4×12×4 px box (sleeve + fist) whose local +Y runs from the shoulder (below the screen) to
     // the fist. It gets a fixed Minecraft-like base transform: bottom right, pointing forward into the
@@ -65,6 +66,8 @@ export class FirstPersonHand {
     this.heldBlockId = -1;
 
     this.swingProgress = 1;
+    /** Eating progress 0..1 (Update #9 §8): the food bobs toward the mouth. */
+    this.eating = 0;
     this.equipProgress = 1;
     this.pendingBlockId = 0;
     this.swayX = 0;
@@ -116,6 +119,13 @@ export class FirstPersonHand {
   }
 
   swing() { this.swingProgress = 0; }
+
+  /** Brightness factor of the sky light at the player's eyes (Update #10). */
+  setLight(factor) {
+    if (this._lightFactor !== undefined && Math.abs(factor - this._lightFactor) < 0.003 && this._litBlock === this.blockMesh) return;
+    this._lightFactor = factor; this._litBlock = this.blockMesh;
+    tintModelLight(this, this.root, factor);
+  }
 
   /** Worn chestplate → textured sleeve box over the arm; worn gauntlets → textured gauntlet box over the fist. */
   setArmor(worn) {
@@ -193,6 +203,11 @@ export class FirstPersonHand {
         g.position.set(0.58 + bobX + this.swayX - s1 * 0.06, -0.62 + bobY + this.swayY - equipDip + breathe, -0.7);
         g.rotation.set(0, 0, 0);
         this.toolPivot.rotation.set(-0.55 - s1 * 1.45, -0.35 + s1 * 0.35, 0, 'YXZ'); // the 45° roll + edge turn live in toolHandle
+      } else if (this.eating > 0) {
+        // Eating: the food rises toward the mouth and shakes with each bite.
+        const e = Math.min(1, this.eating * 3), bite = Math.sin(this.time * 24) * 0.025 * e;
+        g.position.set(0.5 + bobX + this.swayX - 0.28 * e, -0.42 + bobY + this.swayY - equipDip + breathe + 0.2 * e + bite, -0.78 + 0.3 * e);
+        g.rotation.set(0.1 + 0.5 * e, -0.5 - 0.4 * e, -0.15 + bite * 2);
       } else {
         // Other items: a sprite held from the bottom right, punched toward the crosshair.
         g.position.set(0.5 + bobX + this.swayX - s1 * 0.3, -0.42 + bobY + this.swayY - equipDip + s1 * 0.14 + breathe, -0.78 - s1 * 0.22);

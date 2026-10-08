@@ -45,6 +45,10 @@ export class Player {
     this.horizontalSpeed = 0;
     this.fallStartY = null;
     this.lastLandingFall = 0;
+    /** Health (Update #9 §8): 100 max, saved with the player; `dead` while the death screen shows. */
+    this.maxHealth = 100;
+    this.health = 100;
+    this.dead = false;
     /** Movement intent set by PlayerController each fixed step. */
     this.intent = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false, up: false, down: false, holdPose: false };
   }
@@ -95,6 +99,7 @@ export class Player {
       x: this.position.x, y: this.position.y, z: this.position.z,
       yaw: this.yaw, pitch: this.pitch, flying: this.flying, gameMode: this.gameMode,
       spawnX: this.spawn.x, spawnY: this.spawn.y, spawnZ: this.spawn.z,
+      health: this.health,
     };
   }
 
@@ -106,5 +111,9 @@ export class Player {
     this.flying = !!d.flying;
     if (d.gameMode) this.gameMode = d.gameMode;
     if (d.spawnX !== undefined) this.spawn.set(d.spawnX, d.spawnY, d.spawnZ);
+    this.dead = false;
+    // Saved while dead (Leave World on the death screen) or before health existed: respawn with full health.
+    if (typeof d.health === 'number' && d.health > 0) this.health = Math.min(this.maxHealth, d.health);
+    else { this.health = this.maxHealth; if (typeof d.health === 'number') this.teleport(this.spawn.x, this.spawn.y, this.spawn.z); }
   }
 }

@@ -21,6 +21,9 @@ export class WaterSimulation {
     this.onDestroy = onDestroy;
     /** "x,y,z" keys scheduled for the next tick. */
     this.pending = new Set();
+    /** Update #9 §7: scheduled cells farther than simRadius from the player wait (simulation distance). */
+    this.simCenter = null;
+    this.simRadius = Infinity;
     /** chunk "cx,cz" → Set of keys waiting for that chunk to load. */
     this.deferred = new Map();
     /** Keys whose flow comes from a generated cave spring: written without recording an edit. */
@@ -69,15 +72,19 @@ export class WaterSimulation {
     for (const k of waiting) this.pending.add(k);
   }
 
+  setSimulationCenter(x, z) { if (!this.simCenter) this.simCenter = { x, z }; else { this.simCenter.x = x; this.simCenter.z = z; } }
+
   /** Process one scheduled tick (call every WATER_TICK_SECONDS). */
   tick() {
     if (this.pending.size === 0) { this.updatesLastTick = 0; return; }
     const batch = this.pending;
     this.pending = new Set();
     let n = 0;
+    const c = this.simCenter, r = this.simRadius;
     for (const key of batch) {
       if (n >= MAX_WATER_UPDATES_PER_TICK) { this.pending.add(key); continue; }
       const [x, y, z] = key.split(',').map(Number);
+      if (c && r !== Infinity && Math.hypot(x - c.x, z - c.z) > r) { this.pending.add(key); continue; } // outside the simulation distance: wait
       if (!this.world.isLoadedAt(x, z)) { this._defer(x, z, key); continue; }
       this.currentNatural = this.natural.delete(key);
       this.update(x, y, z);
