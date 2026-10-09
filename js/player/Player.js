@@ -21,6 +21,11 @@ export class Player {
     this.flying = false;
     this.inWater = false;
     this.headInWater = false;
+    /** Lava (Update #11): feet or body in lava, eyes in lava, seconds left on fire. */
+    this.inLava = false;
+    this.headInLava = false;
+    this.fireTimer = 0;
+    this.onFire = false;
     /** Sprint-swimming (small hitbox, 3D movement). */
     this.swimming = false;
     /** Low pose kept after swimming because there is no headroom to stand. */

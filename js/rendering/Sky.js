@@ -2,7 +2,7 @@
 // Switches to dense blue fog while the camera is underwater.
 
 import * as THREE from 'three';
-import { SKY_COLOR, WATER_FOG_COLOR, CHUNK_SIZE, UNDERWATER_FOG_NEAR, UNDERWATER_FOG_FAR, UNDERWATER_SKY_TINT } from '../config/Constants.js';
+import { SKY_COLOR, WATER_FOG_COLOR, CHUNK_SIZE, UNDERWATER_FOG_NEAR, UNDERWATER_FOG_FAR, UNDERWATER_SKY_TINT, LAVA_FOG_COLOR, LAVA_FOG_NEAR, LAVA_FOG_FAR } from '../config/Constants.js';
 
 const SKY_VERT = `
 varying vec3 vWorldDir;
@@ -29,7 +29,10 @@ export class Sky {
     this.scene = scene;
     this.skyColor = new THREE.Color(SKY_COLOR);
     this.waterColor = new THREE.Color(WATER_FOG_COLOR);
+    this.lavaColor = new THREE.Color(LAVA_FOG_COLOR);
     this.underwater = false;
+    /** null | 'water' | 'lava': the liquid the camera is inside (Update #11). */
+    this.liquid = null;
     this.renderDistance = 8;
     scene.background = this.skyColor.clone();
     scene.fog = new THREE.Fog(this.skyColor.clone(), 40, 120);
@@ -82,25 +85,36 @@ export class Sky {
     this._applyFog();
   }
 
-  setUnderwater(flag) {
-    if (this.underwater === flag) return;
-    this.underwater = flag;
+  setUnderwater(flag) { this.setLiquid(flag ? 'water' : null); }
+
+  /** The camera entered / left a liquid: dense blue fog in water, dense orange fog in lava (Update #11). */
+  setLiquid(kind) {
+    if (this.liquid === kind) return;
+    this.liquid = kind;
+    this.underwater = kind === 'water';
     this._applyFog();
   }
 
   /** Blend the dome and sun colors toward the water color by `t` (0 = normal sky). */
-  _tintSky(t) {
+  _tintSky(t, color = this.waterColor) {
     const u = this.dome.material.uniforms;
-    u.topColor.value.copy(this.baseColors.top).lerp(this.waterColor, t);
-    u.horizonColor.value.copy(this.baseColors.horizon).lerp(this.waterColor, t);
-    u.bottomColor.value.copy(this.baseColors.bottom).lerp(this.waterColor, t);
-    this.sun.material.color.copy(this.baseColors.sun).lerp(this.waterColor, t);
-    this.sunGlow.material.color.copy(this.baseColors.sun).lerp(this.waterColor, t);
+    u.topColor.value.copy(this.baseColors.top).lerp(color, t);
+    u.horizonColor.value.copy(this.baseColors.horizon).lerp(color, t);
+    u.bottomColor.value.copy(this.baseColors.bottom).lerp(color, t);
+    this.sun.material.color.copy(this.baseColors.sun).lerp(color, t);
+    this.sunGlow.material.color.copy(this.baseColors.sun).lerp(color, t);
   }
 
   _applyFog() {
     const fog = this.scene.fog;
-    if (this.underwater) {
+    if (this.liquid === 'lava') {
+      // Inside lava: nothing but orange a few blocks out.
+      fog.color.copy(this.lavaColor);
+      fog.near = LAVA_FOG_NEAR;
+      fog.far = LAVA_FOG_FAR;
+      this.scene.background.copy(this.lavaColor);
+      this._tintSky(1, this.lavaColor);
+    } else if (this.underwater) {
       // Blue-tinted but still see-through: the sky and sun stay visible through the surface.
       fog.color.copy(this.waterColor);
       fog.near = UNDERWATER_FOG_NEAR;

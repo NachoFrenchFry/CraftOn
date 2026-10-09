@@ -5,6 +5,9 @@
 import * as THREE from 'three';
 import { createPart, partMaterial, COLORS, PX, setToolHandleRotation, tintModelLight } from './ModelParts.js';
 import { createBlockGeometry } from '../../rendering/BlockGeometry.js';
+import { BlockRegistry } from '../../blocks/BlockRegistry.js';
+import { Direction } from '../../utils/Direction.js';
+import { sameLight, copyLight } from '../../rendering/LightUniforms.js';
 import { createItemSpriteGeometry } from '../../rendering/ItemSpriteGeometry.js';
 import { ItemRegistry } from '../../items/ItemRegistry.js';
 import { angleDelta, damp, clamp } from '../../utils/MathUtils.js';
@@ -57,8 +60,8 @@ export class PlayerModel {
 
   /** Brightness factor of the sky light at the model (Update #10); cheap when unchanged. */
   setLight(factor) {
-    if (this._lightFactor !== undefined && Math.abs(factor - this._lightFactor) < 0.003) return;
-    this._lightFactor = factor;
+    if (sameLight(factor, this._lightFactor)) return;
+    this._lightFactor = copyLight(factor, this._lightFactor);
     tintModelLight(this, this.root, factor);
   }
 
@@ -152,13 +155,13 @@ export class PlayerModel {
     if (this.heldMesh) { this.heldMesh.removeFromParent(); this.heldMesh = null; } // a tool's heldMesh is its pivot group; either way leave the actual parent
     const item = itemId ? ItemRegistry.get(itemId) : null;
     if (!item) return;
-    if (item.isBlock || !this.atlas) {
+    if ((item.isBlock && !BlockRegistry.isTorch(item.blockId)) || !this.atlas) {
       this.heldMesh = new THREE.Mesh(createBlockGeometry(item.blockId ?? itemId, 0.38), this.blockMaterial);
       this.heldMesh.position.set(0, 0, 0);
       this.heldMesh.rotation.set(0, 0, 0);
     } else {
       const size = 0.6;
-      this.heldMesh = new THREE.Mesh(createItemSpriteGeometry(this.atlas, item.texture, size), this.blockMaterial);
+      this.heldMesh = new THREE.Mesh(createItemSpriteGeometry(this.atlas, item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture, size), this.blockMaterial); // torches: their sprite (Update #11)
       if (item.tool) {
         // Tools pivot at the grip (the sprite's bottom-left corner sits on the hand): the mesh is offset by
         // half its size inside a handle group (45° roll stands the diagonal up, then the edge turn about the

@@ -7,7 +7,7 @@
 // 18×18×256 light array (LightStorage.js). Pure and worker-safe.
 import { LIGHT_MAX, OPACITY_BARRIER, allocLight, lightIndex } from './LightStorage.js';
 import { LightQueue } from './LightEngine.js';
-import { LIGHT_OPACITY } from '../../blocks/BlockRegistry.js';
+import { LIGHT_OPACITY, LIGHT_EMISSION } from '../../blocks/BlockRegistry.js';
 import { CHUNK_SIZE, WORLD_HEIGHT } from '../../config/Constants.js';
 
 const G = CHUNK_SIZE * 3;          // 48
@@ -15,11 +15,13 @@ const G_STRIDE_Y = G * G;
 const G_LENGTH = G_STRIDE_Y * WORLD_HEIGHT;
 let gridLight = null;
 let gridOpacity = null;
+/** Block light channel of the grid (Update #11): seeded by every emitter (torches, lava) in the 3×3 neighbourhood. */
+let gridBlock = null;
 /** Per column: y of the first opaque block from the top (-1 = none); the column is sky-lit above it. */
 const columnBlock = new Int16Array(G * G);
 const queue = new LightQueue(65536);
 /** Milliseconds of the last computeChunkLight call per phase (diagnostics): columns, seeds, bfs, copy; plus the seed and BFS cell counts. */
-export const lastPhases = { columns: 0, seeds: 0, bfs: 0, copy: 0, seeded: 0 };
+export const lastPhases = { columns: 0, seeds: 0, bfs: 0, copy: 0, seeded: 0, block: 0 };
 const tnow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /** Access object over the 3×3 grid (grid coordinates 0..47; outside = barrier), for tests of the generic engine against the grid pass. */
@@ -46,10 +48,10 @@ export function chunkTop(chunk) {
 /**
  * @param {Array<Uint8Array|null>} grid nine block arrays in (dz, dx) order: [nw, n, ne, w, centre, e, sw, s, se]; null = not loaded (barrier)
  * @param {number[]|null} tops per grid entry the highest non-air y + 1 (chunkTop); rows above the highest are open sky and skipped
- * @returns {Uint8Array} the centre chunk's padded light array (sky nibble filled, block nibble 0)
+ * @returns {Uint8Array} the centre chunk's padded light array (sky nibble and, from the emitters in the grid, the block nibble)
  */
 export function computeChunkLight(grid, tops = null) {
-  if (!gridLight) { gridLight = new Uint8Array(G_LENGTH); gridOpacity = new Uint8Array(G_LENGTH); }
+  if (!gridLight) { gridLight = new Uint8Array(G_LENGTH); gridOpacity = new Uint8Array(G_LENGTH); gridBlock = new Uint8Array(G_LENGTH); }
   let maxTop = WORLD_HEIGHT;
   if (tops) { maxTop = 0; for (let i = 0; i < 9; i++) if (grid[i]) maxTop = Math.max(maxTop, Math.min(WORLD_HEIGHT, tops[i] | 0)); }
   const t0 = tnow();
@@ -99,19 +101,41 @@ export function computeChunkLight(grid, tops = null) {
     if (z < G - 1) seedBand(col + G);
   }
   const t2 = tnow(); lastPhases.seeded = queue.length;
-  propagateGrid();
+  propagateGrid(gridLight, true);
   const t3 = tnow();
-  // 3. Copy the centre chunk plus its one-block border into the padded light array.
+  // 3. Block light (Update #11): every emitter in the grid (torches 14, lava 15) seeds the BLOCK channel; the same BFS
+  //    without the sky-column rule. Emitters sit below the tops, so only those rows are scanned.
+  gridBlock.fill(0);
+  queue.clear();
+  let emitters = 0;
+  for (let gz = 0; gz < 3; gz++) for (let gx = 0; gx < 3; gx++) {
+    const blocks = grid[gz * 3 + gx];
+    if (!blocks) continue;
+    const top = tops ? Math.min(WORLD_HEIGHT, tops[gz * 3 + gx] | 0) : maxTop;
+    for (let y = 0; y < top; y++) {
+      const yb = y << 8, gy = y * G_STRIDE_Y;
+      for (let b = 0; b < 256; b++) {
+        const e = LIGHT_EMISSION[blocks[yb + b]];
+        if (e === 0) continue;
+        const X = gx * CHUNK_SIZE + (b & 15), Z = gz * CHUNK_SIZE + (b >> 4);
+        gridBlock[X + Z * G + gy] = e; queue.push(X, y, Z, e); emitters++;
+      }
+    }
+  }
+  if (emitters > 0) propagateGrid(gridBlock, false);
+  const t4 = tnow();
+  // 4. Copy the centre chunk plus its one-block border into the padded light array (sky low nibble, block high nibble).
   const out = allocLight();
   for (let y = 0; y < WORLD_HEIGHT; y++) {
     const yBase = y * G_STRIDE_Y;
     for (let lz = -1; lz <= CHUNK_SIZE; lz++) {
       const src = yBase + (CHUNK_SIZE + lz) * G + CHUNK_SIZE - 1;
       const dst = lightIndex(-1, y, lz);
-      for (let lx = -1; lx <= CHUNK_SIZE; lx++) out[dst + lx + 1] = gridLight[src + lx + 1];
+      if (emitters > 0) for (let lx = -1; lx <= CHUNK_SIZE; lx++) out[dst + lx + 1] = gridLight[src + lx + 1] | (gridBlock[src + lx + 1] << 4);
+      else for (let lx = -1; lx <= CHUNK_SIZE; lx++) out[dst + lx + 1] = gridLight[src + lx + 1];
     }
   }
-  lastPhases.columns = t1 - t0; lastPhases.seeds = t2 - t1; lastPhases.bfs = t3 - t2; lastPhases.copy = tnow() - t3;
+  lastPhases.columns = t1 - t0; lastPhases.seeds = t2 - t1; lastPhases.bfs = t3 - t2; lastPhases.block = t4 - t3; lastPhases.copy = tnow() - t4;
   return out;
 }
 
@@ -121,15 +145,14 @@ const cell = [0, 0, 0, 0];
  * access object costs about twice as much here). Same rule: cost 1 + opacity per step, opaque / barrier cells stop it,
  * a downward step from a cell whose upward neighbour is at least as bright costs only the opacity (sky column).
  */
-function propagateGrid() {
-  const L = gridLight, O = gridOpacity;
+function propagateGrid(L, sky) {
+  const O = gridOpacity;
   while (queue.shift(cell)) {
     const x = cell[0], y = cell[1], z = cell[2];
     const i = x + z * G + y * G_STRIDE_Y;
     const cur = L[i];
     if (cur <= 0) continue;
-    const above = y + 1 < WORLD_HEIGHT ? L[i + G_STRIDE_Y] : LIGHT_MAX;
-    const columnLit = above >= cur;
+    const columnLit = sky && (y + 1 < WORLD_HEIGHT ? L[i + G_STRIDE_Y] : LIGHT_MAX) >= cur;
     let ni, op, nl;
     if (x > 0) { ni = i - 1; op = O[ni]; if (op < LIGHT_MAX) { nl = cur - 1 - op; if (nl > L[ni]) { L[ni] = nl; queue.push(x - 1, y, z, nl); } } }
     if (x < G - 1) { ni = i + 1; op = O[ni]; if (op < LIGHT_MAX) { nl = cur - 1 - op; if (nl > L[ni]) { L[ni] = nl; queue.push(x + 1, y, z, nl); } } }

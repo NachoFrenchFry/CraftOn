@@ -9,7 +9,7 @@ import { meshSection, MeshBuilders } from './ChunkMesher.js';
 import { createChunkMaterials } from './Materials.js';
 
 const SECTION_RADIUS = Math.sqrt(3) * SECTION_SIZE * 0.5 + 0.5;
-const PASS_NAMES = ['opaque', 'cutout', 'translucent'];
+const PASS_NAMES = ['opaque', 'cutout', 'translucent', 'lava'];
 
 export class ChunkMeshManager {
   /**
@@ -67,7 +67,7 @@ export class ChunkMeshManager {
     geom.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
     geom.setAttribute('color', new THREE.BufferAttribute(data.colors, 3, true));
     if (data.extra) geom.setAttribute('extra', new THREE.BufferAttribute(data.extra, 1)); // packed face / flags / AO byte (shader pipeline)
-    if (data.light) geom.setAttribute('light', new THREE.BufferAttribute(data.light, 1)); // smoothed sky light ×16 (Update #10)
+    if (data.light) geom.setAttribute('light', new THREE.BufferAttribute(data.light, 2)); // smoothed (sky, block) light ×16 (Updates #10 / #11)
     geom.setIndex(new THREE.BufferAttribute(data.indices, 1));
     geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(8, 8, 8), SECTION_RADIUS);
     geom.boundingBox = new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(16, 16, 16));
@@ -99,7 +99,7 @@ export class ChunkMeshManager {
   applySection(cx, cz, sy, passes) {
     const entry = this._entry(cx, cz, true);
     this._disposeSection(entry, sy);
-    const sec = { opaque: null, cutout: null, translucent: null };
+    const sec = { opaque: null, cutout: null, translucent: null, lava: null };
     let any = false;
     for (const name of PASS_NAMES) {
       const data = passes[name];

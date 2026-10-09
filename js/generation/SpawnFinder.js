@@ -39,10 +39,23 @@ export function scoreSpawnColumn(gen, x, z, sample = createColumnSample()) {
  * Best spawn column within the search radius, or null when nothing qualifies.
  * @returns {{x:number, z:number, height:number, biome:number, continent:number, score:number}|null}
  */
-export function findSpawnColumn(gen, radius = SPAWN_SEARCH_RADIUS, step = SPAWN_STEP) {
+export function findSpawnColumn(gen, radius = SPAWN_SEARCH_RADIUS, step = SPAWN_STEP, avoidLava = true) {
   const sample = createColumnSample();
+  const rejected = new Set();
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const best = searchSpawnColumn(gen, radius, step, sample, rejected);
+    if (!best) return null;
+    // Update #11: never spawn within about 16 blocks of lava (a desert lava lake); try the next best column instead.
+    if (!avoidLava || !gen.lavaNear || !gen.lavaNear(best.x, best.z, 16, best.height - 24)) return best;
+    rejected.add(best.x + ',' + best.z);
+  }
+  return searchSpawnColumn(gen, radius, step, sample, rejected);
+}
+
+function searchSpawnColumn(gen, radius, step, sample, rejected) {
   let best = null;
   const consider = (x, z) => {
+    if (rejected.size && rejected.has(x + ',' + z)) return;
     const score = scoreSpawnColumn(gen, x, z, sample);
     if (score <= 0) return;
     const d = Math.hypot(x, z);

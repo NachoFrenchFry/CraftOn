@@ -11,11 +11,13 @@ import { SoundGroup as S } from './BlockSoundGroups.js';
  *  opaque: blocks vision (hidden-face culling); solid: collides with the player
  *  renderType: 'cube' | 'cross' | 'liquid'; pass: 'opaque' | 'cutout' | 'translucent'
  *  lightOpacity: 0–15 for the sky light (Update #10; default: opaque 15, plants 0, other see-through blocks 1)
+ *  lightEmission: 0–15 block light the block gives off (Update #11: torch 14, lava 15)
+ *  attach: 'north' | 'south' | 'east' | 'west' — a wall torch hanging on the block in that direction (base 'torch')
  *  breakTime: seconds by hand (Update #9: stone-type 6 s, wood-type 3 s, soils 0.75 s, leaves 0.35 s, wool / glass / ice 1 s, obsidian 30 s); Infinity = unbreakable
  *  drops: block name or null; dropChance: optional probability (default 1)
  *  placeable: appears as an item; creativeOnly: only in the creative catalog
  *  needsSupport: breaks when the block below is removed (plants, cactus)
- *  stoneType: pickaxes mine it faster; woodType: axes mine it faster (log, planks, crafting table, hay bale)
+ *  stoneType: pickaxes mine it faster; woodType: axes mine it faster (log, planks, crafting table)
  *  station: 'crafting_table' | 'furnace' opens a screen on right click
  *  cullSameType: false keeps faces between two blocks of this type ("fancy" leaves)
  *  base / facing: rotated variants of a station block (only the base is an item)
@@ -42,6 +44,17 @@ function facingVariants(baseId, name, displayName, tex, props) {
 function waterVariant(id, name) {
   return { id, name, displayName: 'Water', textures: { all: 'water' }, opaque: false, solid: false, renderType: 'liquid', pass: 'translucent', breakTime: Infinity, soundGroup: S.WATER, drops: null, placeable: false, hidden: true };
 }
+/** Flowing / falling lava variants (Update #11): opaque-looking, self-lit (block light 15), drawn in their own pass. */
+function lavaVariant(id, name) {
+  return { id, name, displayName: 'Lava', textures: { all: 'lava' }, opaque: false, solid: false, renderType: 'liquid', pass: 'lava', lightOpacity: 15, lightEmission: 15, breakTime: Infinity, soundGroup: S.STONE, drops: null, placeable: false, hidden: true };
+}
+const TORCH_PROPS = { textures: { all: 'torch' }, opaque: false, solid: false, renderType: 'torch', pass: 'cutout', lightOpacity: 0, lightEmission: 14, breakTime: 0, soundGroup: S.WOOD, drops: 'torch' };
+/** A wall torch hanging on the block to its `attach` side (never an item: the standing torch is). */
+function wallTorch(id, suffix, attach) { return { id, name: 'torch' + suffix, displayName: 'Torch', base: 'torch', attach, ...TORCH_PROPS, placeable: false, hidden: true }; }
+function storageBlock(id, name, displayName) {
+  return { id, name, displayName, textures: { all: name }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: name, placeable: true, stoneType: true };
+}
+
 export const BLOCK_DEFINITIONS = [
   { id: B.AIR, name: 'air', displayName: 'Air', textures: null, opaque: false, solid: false, renderType: 'none', pass: 'opaque', breakTime: 0, soundGroup: S.STONE, drops: null, placeable: false },
   { id: B.STONE, name: 'stone', displayName: 'Stone', textures: { all: 'stone' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'cobblestone', placeable: true, stoneType: true },
@@ -55,16 +68,16 @@ export const BLOCK_DEFINITIONS = [
   { id: B.GRAVEL, name: 'gravel', displayName: 'Gravel', textures: { all: 'gravel' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 0.75, soundGroup: S.DIRT, drops: 'gravel', placeable: true },
   { id: B.GOLD_ORE, name: 'gold_ore', displayName: 'Gold Ore', textures: { all: 'gold_ore' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'gold_ore', placeable: true, stoneType: true },
   { id: B.IRON_ORE, name: 'iron_ore', displayName: 'Iron Ore', textures: { all: 'iron_ore' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'iron_ore', placeable: true, stoneType: true },
-  { id: B.COAL_ORE, name: 'coal_ore', displayName: 'Coal Ore', textures: { all: 'coal_ore' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'coal', placeable: true, stoneType: true },
+  { id: B.COAL_ORE, name: 'coal_ore', displayName: 'Coal Ore', textures: { all: 'coal_ore' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'coal', placeable: true, stoneType: true, creativeOnly: true }, // drops coal, so the ore block itself is only in Creative (Update #11 obtainability check)
   { id: B.LOG, name: 'log', displayName: 'Log', textures: { top: 'log_top', bottom: 'log_top', side: 'log_side' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 3.0, soundGroup: S.WOOD, drops: 'log', placeable: true, woodType: true, axis: 'y' },
   // Horizontal logs (placed against east/west or north/south faces): end grain on the axis faces, bark elsewhere
   // with the side texture rotated where the face's texture V axis is not the log axis.
   { id: B.LOG_X, name: 'log_x', displayName: 'Log', base: 'log', axis: 'x', textures: { east: 'log_top', west: 'log_top', top: 'log_side', bottom: 'log_side', north: 'log_side', south: 'log_side' }, rotateFaces: ['up', 'down', 'north', 'south'], opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 3.0, soundGroup: S.WOOD, drops: 'log', placeable: false, woodType: true },
   { id: B.LOG_Z, name: 'log_z', displayName: 'Log', base: 'log', axis: 'z', textures: { north: 'log_top', south: 'log_top', top: 'log_side', bottom: 'log_side', east: 'log_side', west: 'log_side' }, rotateFaces: ['east', 'west'], opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 3.0, soundGroup: S.WOOD, drops: 'log', placeable: false, woodType: true },
-  { id: B.LEAVES, name: 'leaves', displayName: 'Leaves', textures: { all: 'leaves' }, opaque: false, solid: true, renderType: 'cube', pass: 'cutout', cullSameType: false, breakTime: 0.35, soundGroup: S.PLANT, drops: 'leaves', dropChance: 0.05, placeable: true },
+  { id: B.LEAVES, name: 'leaves', displayName: 'Leaves', textures: { all: 'leaves' }, opaque: false, solid: true, renderType: 'cube', pass: 'cutout', cullSameType: false, breakTime: 0.35, soundGroup: S.PLANT, drops: 'leaves', placeable: true },
   { id: B.GLASS, name: 'glass', displayName: 'Glass', textures: { all: 'glass' }, opaque: false, solid: true, renderType: 'cube', pass: 'cutout', lightOpacity: 0, breakTime: 1.0, soundGroup: S.GLASS, drops: null, placeable: true },
   { id: B.SANDSTONE, name: 'sandstone', displayName: 'Sandstone', textures: { top: 'sandstone_top', bottom: 'sandstone_top', side: 'sandstone_side' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'sandstone', placeable: true, stoneType: true },
-  { id: B.GRASS, name: 'grass', displayName: 'Grass', textures: { all: 'grass' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: null, placeable: true, needsSupport: true },
+  { id: B.GRASS, name: 'grass', displayName: 'Grass', textures: { all: 'grass' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: 'grass', placeable: true, needsSupport: true },
   { id: B.FLOWER_YELLOW, name: 'flower_yellow', displayName: 'Dandelion', textures: { all: 'flower_yellow' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: 'flower_yellow', placeable: true, needsSupport: true },
   { id: B.FLOWER_RED, name: 'flower_red', displayName: 'Poppy', textures: { all: 'flower_red' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: 'flower_red', placeable: true, needsSupport: true },
   { id: B.BRICKS, name: 'bricks', displayName: 'Bricks', textures: { all: 'bricks' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'bricks', placeable: true, stoneType: true },
@@ -74,13 +87,12 @@ export const BLOCK_DEFINITIONS = [
   { id: B.CACTUS, name: 'cactus', displayName: 'Cactus', textures: { top: 'cactus_top', bottom: 'cactus_top', side: 'cactus_side' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 0.4, soundGroup: S.PLANT, drops: 'cactus', placeable: true, needsSupport: true },
   { id: B.STONE_BRICKS, name: 'stone_bricks', displayName: 'Stone Bricks', textures: { all: 'stone_bricks' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'stone_bricks', placeable: true, stoneType: true },
   { id: B.DIAMOND_ORE, name: 'diamond_ore', displayName: 'Diamond Ore', textures: { all: 'diamond_ore' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'diamond_ore', placeable: true, stoneType: true },
-  { id: B.ICE, name: 'ice', displayName: 'Ice', textures: { all: 'ice' }, opaque: false, solid: true, renderType: 'cube', pass: 'translucent', breakTime: 1.0, soundGroup: S.GLASS, drops: null, placeable: true },
-  { id: B.DEAD_BUSH, name: 'dead_bush', displayName: 'Dead Bush', textures: { all: 'dead_bush' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: null, placeable: true, needsSupport: true },
+  { id: B.ICE, name: 'ice', displayName: 'Ice', textures: { all: 'ice' }, opaque: false, solid: true, renderType: 'cube', pass: 'translucent', breakTime: 1.0, soundGroup: S.GLASS, drops: 'ice', placeable: true },
+  { id: B.DEAD_BUSH, name: 'dead_bush', displayName: 'Dead Bush', textures: { all: 'dead_bush' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: 'stick', placeable: true, needsSupport: true },
   // Decorative full cubes (Update #1). Only mossy cobblestone appears in world generation (cave walls).
   { id: B.MOSSY_COBBLESTONE, name: 'mossy_cobblestone', displayName: 'Mossy Cobblestone', textures: { all: 'mossy_cobblestone' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'mossy_cobblestone', placeable: true, stoneType: true },
   { id: B.CRACKED_STONE_BRICKS, name: 'cracked_stone_bricks', displayName: 'Cracked Stone Bricks', textures: { all: 'cracked_stone_bricks' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'cracked_stone_bricks', placeable: true, stoneType: true },
   { id: B.OBSIDIAN, name: 'obsidian', displayName: 'Obsidian', textures: { all: 'obsidian' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 30.0, soundGroup: S.STONE, drops: 'obsidian', placeable: true, stoneType: true },
-  { id: B.HAY_BALE, name: 'hay_bale', displayName: 'Hay Bale', textures: { top: 'hay_bale_top', bottom: 'hay_bale_top', side: 'hay_bale_side' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 1.0, soundGroup: S.GRASS, drops: 'hay_bale', placeable: true, woodType: true },
   { id: B.CONCRETE, name: 'concrete', displayName: 'Concrete', textures: { all: 'concrete' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'concrete', placeable: true, stoneType: true },
   { id: B.WOOL_WHITE, name: 'wool_white', displayName: 'White Wool', textures: { all: 'wool_white' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 1.0, soundGroup: S.SNOW, drops: 'wool_white', placeable: true },
   { id: B.WOOL_RED, name: 'wool_red', displayName: 'Red Wool', textures: { all: 'wool_red' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 1.0, soundGroup: S.SNOW, drops: 'wool_red', placeable: true },
@@ -97,4 +109,16 @@ export const BLOCK_DEFINITIONS = [
   ...facingVariants(B.FURNACE, 'furnace', 'Furnace',
     { top: 'furnace_top', bottom: 'furnace_top', front: 'furnace_front', side: 'furnace_side' },
     { breakTime: 6.0, soundGroup: S.STONE, station: 'furnace', stoneType: true }),
+  // Lava (Update #11): the source is a Creative-only item (buckets carry it in Survival); it emits block light 15.
+  { id: B.LAVA, name: 'lava', displayName: 'Lava', textures: { all: 'lava' }, opaque: false, solid: false, renderType: 'liquid', pass: 'lava', lightOpacity: 15, lightEmission: 15, breakTime: Infinity, soundGroup: S.STONE, drops: null, placeable: true, creativeOnly: true },
+  lavaVariant(B.FLOWING_LAVA_1, 'flowing_lava_1'), lavaVariant(B.FLOWING_LAVA_2, 'flowing_lava_2'), lavaVariant(B.FLOWING_LAVA_3, 'flowing_lava_3'), lavaVariant(B.FALLING_LAVA, 'falling_lava'),
+  { id: B.FLOWER_BLUE, name: 'flower_blue', displayName: 'Cornflower', textures: { all: 'flower_blue' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: 'flower_blue', placeable: true, needsSupport: true },
+  // Torches (Update #11): the standing torch is the item; a torch placed on a wall becomes the variant hanging on that side.
+  { id: B.TORCH, name: 'torch', displayName: 'Torch', ...TORCH_PROPS, placeable: true, needsSupport: true },
+  wallTorch(B.TORCH_N, '_n', 'north'), wallTorch(B.TORCH_S, '_s', 'south'), wallTorch(B.TORCH_E, '_e', 'east'), wallTorch(B.TORCH_W, '_w', 'west'),
+  // Storage blocks (Update #11): 9 of the material each way at the crafting table.
+  storageBlock(B.COAL_BLOCK, 'coal_block', 'Block of Coal'),
+  storageBlock(B.IRON_BLOCK, 'iron_block', 'Block of Iron'),
+  storageBlock(B.GOLD_BLOCK, 'gold_block', 'Block of Gold'),
+  storageBlock(B.DIAMOND_BLOCK, 'diamond_block', 'Block of Diamond'),
 ];

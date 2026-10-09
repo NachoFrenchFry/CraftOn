@@ -82,6 +82,27 @@ export class World {
 
   getSkyLightAt(x, y, z) { return this.getSkyLight(Math.floor(x), Math.floor(y), Math.floor(z)); }
 
+  /** Block light 0–15 (torches, lava; Update #11) at integer world coordinates; 0 where nothing is lit yet. */
+  getBlockLight(x, y, z) {
+    if (y < 0 || y >= WORLD_HEIGHT) return 0;
+    const chunk = this.chunks.get(chunkKey(x >> 4, z >> 4));
+    if (!chunk || !chunk.lit) return 0;
+    return chunk.light[lightIndex(x & 15, y, z & 15)] >> 4;
+  }
+
+  getBlockLightAt(x, y, z) { return this.getBlockLight(Math.floor(x), Math.floor(y), Math.floor(z)); }
+
+  /** Both channels as the stored byte (sky low nibble, block high nibble); 15 (full sky, no block light) where not lit yet. */
+  getLightByte(x, y, z) {
+    if (y >= WORLD_HEIGHT) return 15;
+    if (y < 0) return 0;
+    const chunk = this.chunks.get(chunkKey(x >> 4, z >> 4));
+    if (!chunk || !chunk.lit) return 15;
+    return chunk.light[lightIndex(x & 15, y, z & 15)];
+  }
+
+  getLightByteAt(x, y, z) { return this.getLightByte(Math.floor(x), Math.floor(y), Math.floor(z)); }
+
   /** Highest non-air block y in a column, or -1 when unloaded/empty. */
   getTopY(x, z) {
     const chunk = this.chunks.get(chunkKey(x >> 4, z >> 4));

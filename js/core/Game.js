@@ -39,7 +39,8 @@ import { remotePlayersBlockAt, mobBlocksAt } from '../player/PlacementRules.js';
 import { PerformanceMonitor } from './PerformanceMonitor.js';
 import { HealthSystem } from '../player/HealthSystem.js';
 import { ShaderPipeline } from '../rendering/shaders/ShaderPipeline.js';
-import { applyBrightness, lightFactor } from '../rendering/LightUniforms.js';
+import { applyBrightness, lightColor } from '../rendering/LightUniforms.js';
+import { TorchEffects } from '../rendering/TorchEffects.js';
 import { getTileIndex } from '../rendering/AtlasLayout.js';
 import { CHUNK_SIZE } from '../config/Constants.js';
 import { MAX_PLAYERS_DEFAULT } from '../net/Protocol.js';
@@ -59,8 +60,8 @@ import { AudioManager } from '../audio/AudioManager.js';
 import { UIManager } from '../ui/UIManager.js';
 import { GuiScale } from '../ui/GuiScale.js';
 import { BlockIds } from '../blocks/BlockIds.js';
-import { SWIM_STROKE_INTERVAL, WATER_TICK_SECONDS, ITEM_PICKUP_DELAY } from '../config/Constants.js';
-import { WaterSimulation } from '../world/WaterSimulation.js';
+import { SWIM_STROKE_INTERVAL, WATER_TICK_SECONDS, LAVA_TICK_SECONDS, ITEM_PICKUP_DELAY } from '../config/Constants.js';
+import { WaterSimulation, LIQUID_KINDS } from '../world/WaterSimulation.js';
 import { CraftingSystem } from '../crafting/CraftingSystem.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
@@ -115,6 +116,7 @@ export class Game {
     this._lastStepDistance = 0;
     this._swimTimer = 0;
     this._waterTimer = 0;
+    this._lavaTimer = 0;
     this._hiddenSince = 0;
     /** Optional hook invoked right after each world render (used by the debug/test harness). */
     this.afterRender = null;
@@ -178,6 +180,10 @@ export class Game {
     this.waterSim = new WaterSimulation(this.world, (x, y, z, id) => this._onWaterDestroys(x, y, z, id));
     this.physics.waterSim = this.waterSim;
     this.entities.waterSim = this.waterSim;
+    // Lava (Update #11): the same scheduler at a slower tick; lava meeting water sizzles into cobblestone.
+    this.lavaSim = new WaterSimulation(this.world, (x, y, z, id) => this._onWaterDestroys(x, y, z, id), LIQUID_KINDS.lava);
+    this.waterSim.onConvert = this.lavaSim.onConvert = (x, y, z) => this._sizzle(x + 0.5, y + 0.5, z + 0.5);
+    this.entities.onBurn = (x, y, z) => this._sizzle(x, y, z);
     // Passive mobs (cows, pigs, sheep).
     this.entities.mobs = new MobManager(scene, this.world, this.entityTextures, {
       spawnItem: (x, y, z, id, n) => this.entities.spawnItem(x, y, z, id, n),
@@ -186,6 +192,7 @@ export class Game {
       hitPuff: (x, y, z) => this.particles.spawnHitPuff(x, y, z),
       playAt: (name, x, y, z, volume) => this.audio.playAt(name, x, y, z, 'blocks', volume),
       playStep: (blockId, x, y, z) => this.audio.playAt(`${BlockRegistry.soundGroup(blockId)}.step`, x, y, z, 'blocks', 0.15),
+      flame: (x, y, z, n) => this.particles.spawnFlame(x, y, z, n, 0.3, 0.9),
     });
     this.entities.mobs.waterSim = this.waterSim;
     this.entities.mobs.setRenderDistance(this.settings.get('renderDistance'));
@@ -220,7 +227,11 @@ export class Game {
     this._applyPerformanceSettings();
     // Voxel lighting (Update #10): everything coloured on the CPU reads the sky light at its position.
     applyBrightness(this.settings.get('brightness'));
-    this.lightAt = (x, y, z) => lightFactor(this.world.getSkyLightAt(x, y, z));
+    // (x, y, z) → [r, g, b] factors of the sky light and the warm block light there (Updates #10 / #11); one shared array,
+    // consumers apply it at once.
+    this._lightRGB = [1, 1, 1];
+    this.lightAt = (x, y, z) => { const b = this.world.getLightByteAt(x, y, z); return lightColor(b & 15, b >> 4, this._lightRGB); };
+    this.torchEffects = new TorchEffects(this.world, this.particles);
     this.entities.lightAt = this.lightAt;
     this.entities.mobs.lightAt = this.lightAt;
     this.particles.lightAt = this.lightAt;
@@ -242,7 +253,7 @@ export class Game {
     this.entities.simDistanceBlocks = simBlocks;
     this.entities.entityDistanceBlocks = entityBlocks;
     this.remotePlayers.entityDistanceBlocks = entityBlocks;
-    this.waterSim.simRadius = simBlocks;
+    this.waterSim.simRadius = simBlocks; this.lavaSim.simRadius = simBlocks;
     this.particles.level = s.get('particles');
   }
 
@@ -301,7 +312,7 @@ export class Game {
     ev.on('player:jump', () => this.audio.playStep(this._blockUnderPlayer(), 0.18));
     ev.on('player:splash', () => this.audio.playPlayer('splash', 0.8));
     ev.on('item:pickup', () => this.audio.playUI('pop', 0.9));
-    ev.on('block:changed', (x, y, z) => this.waterSim.onBlockChanged(x, y, z));
+    ev.on('block:changed', (x, y, z) => { this.waterSim.onBlockChanged(x, y, z); this.lavaSim.onBlockChanged(x, y, z); });
     ev.on('chunk:loaded', (cx, cz) => {
       if (this.net && !this.net.isHost) return; // guests: the host owns water flow and mobs
       this.waterSim.onChunkLoaded(cx, cz);
@@ -465,6 +476,12 @@ export class Game {
   }
 
   /** Water flowed into a plant: drop its item and show particles. */
+  /** Lava met water, or an item burned (Update #11): a hiss and a little smoke. */
+  _sizzle(x, y, z) {
+    this.audio.playAt('lava.sizzle', x, y, z, 'blocks', 0.8);
+    this.particles.spawnSmoke(x, y + 0.4, z, 5, 1.3);
+  }
+
   _onWaterDestroys(x, y, z, blockId) {
     this.particles.spawnBlockBreak(x, y, z, blockId, 6);
     const dropName = BlockRegistry.dropName(blockId);
@@ -658,6 +675,11 @@ export class Game {
       this._waterTimer -= WATER_TICK_SECONDS;
       if (!this.isGuest) { this.waterSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.waterSim.tick(); }
     }
+    this._lavaTimer += dt;
+    if (this._lavaTimer >= LAVA_TICK_SECONDS) {
+      this._lavaTimer -= LAVA_TICK_SECONDS;
+      if (!this.isGuest) { this.lavaSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.lavaSim.tick(); }
+    }
   }
 
   frame(alpha, dt) {
@@ -682,6 +704,7 @@ export class Game {
       this.interaction.update(dt, this._eye.x, this._eye.y, this._eye.z, this._dir.x, this._dir.y, this._dir.z);
       this.chunkManager.update(p.position.x, p.position.z, this._dir.x, this._dir.z);
       this.entities.render(alpha, dt);
+      this.torchEffects.update(dt, p.position.x, p.position.y, p.position.z);
       this.particles.update(dt, this.renderer.camera);
       this.hand.visible = first && !spectator && !p.dead;
       this.hand.eating = this.interaction.eatProgress;
@@ -691,7 +714,8 @@ export class Game {
       this.playerModel.root.visible = !first && !spectator;
       if (!first && !spectator) { this.playerModel.setLight(this.lightAt(p.renderPosition.x, p.renderPosition.y + 1, p.renderPosition.z)); this.playerModel.update(dt, p); }
       this.ui.hud.setHotbarVisible(!spectator && !this.state.is(State.INVENTORY));
-      this.sky.setUnderwater(p.headInWater);
+      this.sky.setLiquid(p.headInLava ? 'lava' : p.headInWater ? 'water' : null);
+      if (p.onFire && !p.dead && !spectator) this.particles.spawnFlame(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, first ? 1 : 2, 0.35, 0.9); // burning (Update #11)
       this.sky.update(this.renderer.camera);
       this.audio.update(dt, this.renderer.camera, p, this.world);
       this._footsteps();

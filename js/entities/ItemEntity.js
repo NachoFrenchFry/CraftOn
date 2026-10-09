@@ -3,11 +3,14 @@
 
 import * as THREE from 'three';
 import { createBlockGeometry } from '../rendering/BlockGeometry.js';
+import { BlockRegistry } from '../blocks/BlockRegistry.js';
+import { Direction } from '../utils/Direction.js';
+import { sameLight, copyLight, applyLight } from '../rendering/LightUniforms.js';
 import { createItemSpriteGeometry } from '../rendering/ItemSpriteGeometry.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
 import { GRAVITY, ITEM_DESPAWN_SECONDS, ITEM_WATER_PUSH, ITEM_BUOYANCY } from '../config/Constants.js';
 import { SOLID } from '../blocks/BlockRegistry.js';
-import { isWater } from '../world/WaterLevels.js';
+import { isWater, isLava } from '../world/WaterLevels.js';
 
 const SIZE = 0.25;
 const HALF = SIZE / 2;
@@ -34,10 +37,13 @@ export class ItemEntity {
     this.age = 0;
     this.onGround = false;
     this.dead = false;
+    /** Lava (Update #11): destroyed by lava (EntityManager sizzles). */
+    this.burned = false;
     this.spinOffset = Math.random() * Math.PI * 2;
     this.group = new THREE.Group();
     const item = ItemRegistry.get(itemId);
-    const geom = item && !item.isBlock ? createItemSpriteGeometry(atlas, item.texture, SIZE * 1.6) : createBlockGeometry(itemId, SIZE);
+    const spriteTexture = item && (!item.isBlock ? item.texture : BlockRegistry.isTorch(itemId) ? BlockRegistry.faceTexture(itemId, Direction.SOUTH) : null); // torches drop as their sprite (Update #11)
+    const geom = spriteTexture ? createItemSpriteGeometry(atlas, spriteTexture, SIZE * 1.6) : createBlockGeometry(itemId, SIZE);
     this.mesh = new THREE.Mesh(geom, material);
     this.group.add(this.mesh);
     this.group.position.copy(this.position);
@@ -52,7 +58,9 @@ export class ItemEntity {
     const p = this.position, v = this.velocity;
     this.prevPosition.copy(p);
     if (!this.world.isLoadedAt(p.x, p.z)) return;
-    const inWater = isWater(this.world.getBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)));
+    const here = this.world.getBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z));
+    if (isLava(here) || isLava(this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.15), Math.floor(p.z)))) { this.dead = true; this.burned = true; return; }
+    const inWater = isWater(here);
     if (inWater) {
       // Float up gently and drift with the current.
       v.y += ITEM_BUOYANCY * dt;
@@ -92,7 +100,7 @@ export class ItemEntity {
 
   /** Visual update: interpolate, spin and bob. */
   render(alpha, time, light = 1) {
-    if (this.mesh.material.color.r !== light) this.mesh.material.color.setScalar(light); // own clone (EntityManager), lit by the sky light at the item (Update #10)
+    if (!sameLight(light, this._light)) { this._light = copyLight(light, this._light); applyLight(this.mesh.material.color, light); } // own clone (EntityManager), lit by the sky + block light at the item
     const g = this.group;
     g.position.lerpVectors(this.prevPosition, this.position, alpha);
     g.position.y += Math.sin(time * 2 + this.spinOffset) * 0.05 + 0.05;

@@ -5,11 +5,11 @@ import { BLOCK_COUNT, BlockIds } from './BlockIds.js';
 import { getTileIndex } from '../rendering/AtlasLayout.js';
 import { Direction } from '../utils/Direction.js';
 
-export const RenderType = Object.freeze({ NONE: 0, CUBE: 1, CROSS: 2, LIQUID: 3 });
-export const RenderPass = Object.freeze({ OPAQUE: 0, CUTOUT: 1, TRANSLUCENT: 2 });
+export const RenderType = Object.freeze({ NONE: 0, CUBE: 1, CROSS: 2, LIQUID: 3, TORCH: 4 });
+export const RenderPass = Object.freeze({ OPAQUE: 0, CUTOUT: 1, TRANSLUCENT: 2, LAVA: 3 });
 
-const RENDER_TYPE_MAP = { none: RenderType.NONE, cube: RenderType.CUBE, cross: RenderType.CROSS, liquid: RenderType.LIQUID };
-const PASS_MAP = { opaque: RenderPass.OPAQUE, cutout: RenderPass.CUTOUT, translucent: RenderPass.TRANSLUCENT };
+const RENDER_TYPE_MAP = { none: RenderType.NONE, cube: RenderType.CUBE, cross: RenderType.CROSS, liquid: RenderType.LIQUID, torch: RenderType.TORCH };
+const PASS_MAP = { opaque: RenderPass.OPAQUE, cutout: RenderPass.CUTOUT, translucent: RenderPass.TRANSLUCENT, lava: RenderPass.LAVA };
 
 export const OPAQUE = new Uint8Array(BLOCK_COUNT);
 export const SOLID = new Uint8Array(BLOCK_COUNT);
@@ -25,6 +25,10 @@ export const WOOD_TYPE = new Uint8Array(BLOCK_COUNT);
 export const CULL_SAME = new Uint8Array(BLOCK_COUNT);
 /** Light opacity 0–15 (Update #10): air / glass / plants 0, leaves / water / ice 1, full solid blocks 15 (block light completely). */
 export const LIGHT_OPACITY = new Uint8Array(BLOCK_COUNT);
+/** Block light a block emits, 0–15 (Update #11: torch 14, lava 15). */
+export const LIGHT_EMISSION = new Uint8Array(BLOCK_COUNT);
+/** Offset (dx, dy, dz) of the block that supports this one, or all zeros: plants / standing torch (0, -1, 0), wall torches the wall they hang on. */
+export const SUPPORT_DIR = new Int8Array(BLOCK_COUNT * 3);
 /** Atlas tile index per (block, face): FACE_TILE[id * 6 + direction]. */
 export const FACE_TILE = new Int16Array(BLOCK_COUNT * 6);
 /** Texture name per (block, face). */
@@ -39,6 +43,8 @@ const idByName = new Map();
 const facingVariants = new Map();
 /** base id → { x, y, z } ids for blocks with an axis (logs). */
 const axisVariants = new Map();
+/** base id → { north, south, east, west } wall variants of a block that hangs on a wall (torches). */
+const attachVariants = new Map();
 
 function faceTextureNames(t) {
   if (!t) return [null, null, null, null, null, null];
@@ -60,7 +66,10 @@ for (const def of BLOCK_DEFINITIONS) {
   PASS[id] = PASS_MAP[def.pass] ?? RenderPass.OPAQUE;
   BREAK_TIME[id] = def.breakTime;
   NEEDS_SUPPORT[id] = def.needsSupport ? 1 : 0;
-  LIGHT_OPACITY[id] = def.lightOpacity !== undefined ? def.lightOpacity : def.opaque ? 15 : (RENDER_TYPE[id] === RenderType.CROSS || RENDER_TYPE[id] === RenderType.NONE) ? 0 : 1;
+  LIGHT_OPACITY[id] = def.lightOpacity !== undefined ? def.lightOpacity : def.opaque ? 15 : (RENDER_TYPE[id] === RenderType.CROSS || RENDER_TYPE[id] === RenderType.TORCH || RENDER_TYPE[id] === RenderType.NONE) ? 0 : 1;
+  LIGHT_EMISSION[id] = def.lightEmission || 0;
+  if (def.needsSupport) SUPPORT_DIR[id * 3 + 1] = -1;
+  if (def.attach) { const d = { north: [0, 0, -1], south: [0, 0, 1], east: [1, 0, 0], west: [-1, 0, 0] }[def.attach]; SUPPORT_DIR[id * 3] = d[0]; SUPPORT_DIR[id * 3 + 1] = d[1]; SUPPORT_DIR[id * 3 + 2] = d[2]; }
   STONE_TYPE[id] = def.stoneType ? 1 : 0;
   WOOD_TYPE[id] = def.woodType ? 1 : 0;
   CULL_SAME[id] = def.cullSameType === false ? 0 : 1;
@@ -77,6 +86,11 @@ for (const def of BLOCK_DEFINITIONS) {
     const baseId = def.base ? idByName.get(def.base) : def.id;
     if (!axisVariants.has(baseId)) axisVariants.set(baseId, {});
     axisVariants.get(baseId)[def.axis] = def.id;
+  }
+  if (def.attach) {
+    const baseId = idByName.get(def.base);
+    if (!attachVariants.has(baseId)) attachVariants.set(baseId, {});
+    attachVariants.get(baseId)[def.attach] = def.id;
   }
   if (!def.facing) continue;
   const baseId = idByName.get(def.base);
@@ -128,6 +142,14 @@ export const BlockRegistry = {
   hasAxis(id) { return axisVariants.has(this.baseOf(id)); },
   /** 'x' | 'y' | 'z' for oriented blocks, null otherwise. */
   axisOf(id) { const d = defsById[id]; return d && d.axis ? d.axis : null; },
+  /** Wall variant of a torch-like block hanging on the wall to `side` ('north' | 'south' | 'east' | 'west'), or the base when it has none. */
+  attachVariant(baseId, side) { const v = attachVariants.get(baseId); return v && v[side] !== undefined ? v[side] : baseId; },
+  hasAttach(id) { return attachVariants.has(this.baseOf(id)); },
+  attachOf(id) { const d = defsById[id]; return d && d.attach ? d.attach : null; },
+  isTorch(id) { return RENDER_TYPE[id] === RenderType.TORCH; },
+  lightEmission(id) { return LIGHT_EMISSION[id]; },
+  /** [dx, dy, dz] of the block that must stay for this one to stay, or null. */
+  supportDir(id) { const i = id * 3; return SUPPORT_DIR[i] || SUPPORT_DIR[i + 1] || SUPPORT_DIR[i + 2] ? [SUPPORT_DIR[i], SUPPORT_DIR[i + 1], SUPPORT_DIR[i + 2]] : null; },
   dropChance(id) { const d = defsById[id]; return d && d.dropChance !== undefined ? d.dropChance : 1; },
   faceTexture(id, dir) { return FACE_TEXTURE[id * 6 + dir]; },
   faceTile(id, dir) { return FACE_TILE[id * 6 + dir]; },

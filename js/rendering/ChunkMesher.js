@@ -12,6 +12,8 @@ import { Direction } from '../utils/Direction.js';
 import { TypedArrayBuilder } from '../utils/Pool.js';
 import { CORNER_POS, CORNER_UV, NB_OFF, AO_OFF } from './FaceTables.js';
 import { meshLiquid } from './LiquidMesher.js';
+import { torchQuads } from '../blocks/TorchModel.js';
+import { BlockRegistry } from '../blocks/BlockRegistry.js';
 
 /** Accumulates one render pass of a section. */
 export class PassBuilder {
@@ -21,8 +23,8 @@ export class PassBuilder {
     this.colors = new TypedArrayBuilder(Uint8Array, 3 * 1024);
     /** Packed byte per vertex for the shader pipeline (Update #9 §4): face id (bits 0-2, 6 = plant), waving top (8), leaves (16), water (32), AO level (bits 6-7). */
     this.extra = new TypedArrayBuilder(Uint8Array, 1024);
-    /** Smoothed sky light per vertex ×16 (0–240), Update #10: the 4-corner average on the face's outward side. */
-    this.lights = new TypedArrayBuilder(Uint8Array, 1024);
+    /** Smoothed light per vertex ×16 (0–240), two bytes: sky (Update #10) and block light (Update #11), the 4-corner averages on the face's outward side. */
+    this.lights = new TypedArrayBuilder(Uint8Array, 2 * 1024);
     this.indices = new TypedArrayBuilder(Uint32Array, 6 * 256);
     this.vertexCount = 0;
   }
@@ -32,13 +34,13 @@ export class PassBuilder {
     this.vertexCount = 0;
   }
 
-  vertex(x, y, z, u, v, shade, extra = 0, light = 240) {
+  vertex(x, y, z, u, v, shade, extra = 0, light = 240, blockLight = 0) {
     this.positions.push3(x, y, z);
     this.uvs.push2(u, v);
     const c = Math.round(shade * 255);
     this.colors.push3(c, c, c);
     this.extra.push1(extra);
-    this.lights.push1(light);
+    this.lights.push2(light, blockLight);
     this.vertexCount++;
   }
 
@@ -61,15 +63,16 @@ export class PassBuilder {
 /** Reusable set of three pass builders. */
 export class MeshBuilders {
   constructor() {
-    this.passes = [new PassBuilder(), new PassBuilder(), new PassBuilder()];
+    this.passes = [new PassBuilder(), new PassBuilder(), new PassBuilder(), new PassBuilder()]; // opaque, cutout, translucent, lava
   }
   reset() { for (const p of this.passes) p.reset(); }
   results() {
-    return { opaque: this.passes[RenderPass.OPAQUE].toResult(), cutout: this.passes[RenderPass.CUTOUT].toResult(), translucent: this.passes[RenderPass.TRANSLUCENT].toResult() };
+    return { opaque: this.passes[RenderPass.OPAQUE].toResult(), cutout: this.passes[RenderPass.CUTOUT].toResult(), translucent: this.passes[RenderPass.TRANSLUCENT].toResult(), lava: this.passes[RenderPass.LAVA].toResult() };
   }
 }
 
 const cornerLight = [240, 240, 240, 240];
+const cornerBlock = [0, 0, 0, 0];
 /** LIGHT_AVG[count * 64 + sum] = round(sum / count × 16): the smoothed corner light ×16 without a division per corner. */
 const LIGHT_AVG = new Uint8Array(5 * 64);
 for (let count = 1; count <= 4; count++) for (let sum = 0; sum <= 60; sum++) LIGHT_AVG[count * 64 + sum] = Math.round((sum / count) * 16);
@@ -79,21 +82,22 @@ for (let count = 1; count <= 4; count++) for (let sum = 0; sum <= 60; sum++) LIG
  * outward side (face neighbour, two sides, diagonal), skipping opaque cells; when both sides are opaque the
  * diagonal is ignored (the AO corner rule, which also stops light leaks). Fast mode: the face neighbour's light.
  */
-function faceLights(light, padded, idx, f, useAO, out) {
-  if (!light) { out[0] = out[1] = out[2] = out[3] = 240; return; }
+function faceLights(light, padded, idx, f, useAO, out, outBlock) {
+  if (!light) { out[0] = out[1] = out[2] = out[3] = 240; outBlock[0] = outBlock[1] = outBlock[2] = outBlock[3] = 0; return; }
   const nIdx = idx + NB_OFF[f];
   const nOpaque = OPAQUE[padded[nIdx]] === 1;
-  const n = nOpaque ? (light[idx] & 15) : (light[nIdx] & 15);
-  if (!useAO) { const v = n * 16; out[0] = out[1] = out[2] = out[3] = v; return; }
+  const cell = nOpaque ? light[idx] : light[nIdx];
+  const n = cell & 15, nb = cell >> 4;
+  if (!useAO) { const v = n * 16, vb = nb * 16; out[0] = out[1] = out[2] = out[3] = v; outBlock[0] = outBlock[1] = outBlock[2] = outBlock[3] = vb; return; }
   const aoOff = AO_OFF[f];
   for (let c = 0; c < 4; c++) {
     const o = aoOff[c];
     const s1Op = OPAQUE[padded[idx + o[0]]] === 1, s2Op = OPAQUE[padded[idx + o[1]]] === 1, crOp = OPAQUE[padded[idx + o[2]]] === 1;
-    let sum = n, count = 1;
-    if (!s1Op) { sum += light[idx + o[0]] & 15; count++; }
-    if (!s2Op) { sum += light[idx + o[1]] & 15; count++; }
-    if (!(s1Op && s2Op) && !crOp) { sum += light[idx + o[2]] & 15; count++; }
-    out[c] = LIGHT_AVG[count * 64 + sum];
+    let sum = n, sumB = nb, count = 1;
+    if (!s1Op) { const l = light[idx + o[0]]; sum += l & 15; sumB += l >> 4; count++; }
+    if (!s2Op) { const l = light[idx + o[1]]; sum += l & 15; sumB += l >> 4; count++; }
+    if (!(s1Op && s2Op) && !crOp) { const l = light[idx + o[2]]; sum += l & 15; sumB += l >> 4; count++; }
+    out[c] = LIGHT_AVG[count * 64 + sum]; outBlock[c] = LIGHT_AVG[count * 64 + sumB];
   }
 }
 
@@ -107,7 +111,8 @@ function addFace(pb, padded, idx, x, ly, z, f, id, h, useAO, tileOverride = -1, 
   if (useAO) {
     // One pass per corner for the AO level and the 4-cell light average (both read the same side / diagonal cells).
     const nIdx = idx + NB_OFF[f];
-    const nLight = light ? ((OPAQUE[padded[nIdx]] === 1 ? light[idx] : light[nIdx]) & 15) : 15;
+    const nCell = light ? (OPAQUE[padded[nIdx]] === 1 ? light[idx] : light[nIdx]) : 15;
+    const nLight = nCell & 15, nBlock = nCell >> 4;
     for (let c = 0; c < 4; c++) {
       const o = aoOff[c];
       const s1 = OPAQUE[padded[idx + o[0]]] === 1 ? 1 : 0;
@@ -116,14 +121,14 @@ function addFace(pb, padded, idx, x, ly, z, f, id, h, useAO, tileOverride = -1, 
       const level = (s1 && s2) ? 0 : 3 - (s1 + s2 + cr);
       if (c === 0) ao0 = level; else if (c === 1) ao1 = level; else if (c === 2) ao2 = level; else ao3 = level;
       if (light) {
-        let sum = nLight, count = 1;
-        if (!s1) { sum += light[idx + o[0]] & 15; count++; }
-        if (!s2) { sum += light[idx + o[1]] & 15; count++; }
-        if (!(s1 && s2) && !cr) { sum += light[idx + o[2]] & 15; count++; }
-        cornerLight[c] = LIGHT_AVG[count * 64 + sum];
-      } else cornerLight[c] = 240;
+        let sum = nLight, sumB = nBlock, count = 1;
+        if (!s1) { const l = light[idx + o[0]]; sum += l & 15; sumB += l >> 4; count++; }
+        if (!s2) { const l = light[idx + o[1]]; sum += l & 15; sumB += l >> 4; count++; }
+        if (!(s1 && s2) && !cr) { const l = light[idx + o[2]]; sum += l & 15; sumB += l >> 4; count++; }
+        cornerLight[c] = LIGHT_AVG[count * 64 + sum]; cornerBlock[c] = LIGHT_AVG[count * 64 + sumB];
+      } else { cornerLight[c] = 240; cornerBlock[c] = 0; }
     }
-  } else faceLights(light, padded, idx, f, false, cornerLight);
+  } else faceLights(light, padded, idx, f, false, cornerLight, cornerBlock);
   const rot = FACE_ROT[id * 6 + f] === 1; // oriented logs: turn the texture 90° so the grain follows the axis
   const flags = f | (id === B.LEAVES ? 16 : 0);
   for (let c = 0; c < 4; c++) {
@@ -131,13 +136,13 @@ function addFace(pb, padded, idx, x, ly, z, f, id, h, useAO, tileOverride = -1, 
     const uv = CORNER_UV[c];
     const ao = c === 0 ? ao0 : c === 1 ? ao1 : c === 2 ? ao2 : ao3;
     const iu = rot ? uv[1] : uv[0], iv = rot ? 1 - uv[0] : uv[1];
-    pb.vertex(x + cp[0], ly + (cp[1] ? h : 0), z + cp[2], iu ? u1 : u0, iv ? v1 : v0, bright * AO_BRIGHTNESS[ao], flags | (ao << 6), cornerLight[c]);
+    pb.vertex(x + cp[0], ly + (cp[1] ? h : 0), z + cp[2], iu ? u1 : u0, iv ? v1 : v0, bright * AO_BRIGHTNESS[ao], flags | (ao << 6), cornerLight[c], cornerBlock[c]);
   }
   // Flip the diagonal so the darkest corners lie on it (avoids anisotropic AO artifacts).
   pb.quadIndices(ao0 + ao2 > ao1 + ao3);
 }
 
-function addCross(pb, x, ly, z, id, ownLight = 240) {
+function addCross(pb, x, ly, z, id, ownLight = 240, ownBlock = 0) {
   const t4 = FACE_TILE[id * 6 + Direction.SOUTH] * 4;
   const u0 = TILE_UVS[t4], v0 = TILE_UVS[t4 + 1], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
   const s = 0.9; // brightness for plants
@@ -150,7 +155,21 @@ function addCross(pb, x, ly, z, id, ownLight = 240) {
   for (const q of quads) {
     for (let c = 0; c < 4; c++) {
       const p = q[c];
-      pb.vertex(x + p[0], ly + p[1], z + p[2], c === 1 || c === 2 ? u1 : u0, c >= 2 ? v1 : v0, s, 6 | (p[1] ? 8 : 0) | (3 << 6), ownLight); // plant: top vertices wave
+      pb.vertex(x + p[0], ly + p[1], z + p[2], c === 1 || c === 2 ? u1 : u0, c >= 2 ? v1 : v0, s, 6 | (p[1] ? 8 : 0) | (3 << 6), ownLight, ownBlock); // plant: top vertices wave
+    }
+    pb.quadIndices(false);
+  }
+}
+
+/** A torch (Update #11): the TorchModel quads, self-lit (full light on both channels), in the cutout pass. */
+function addTorch(pb, x, ly, z, id) {
+  const t4 = FACE_TILE[id * 6 + Direction.SOUTH] * 4;
+  const u0 = TILE_UVS[t4], v0 = TILE_UVS[t4 + 1], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
+  const du = u1 - u0, dv = v1 - v0;
+  for (const quad of torchQuads(BlockRegistry.attachOf(id))) {
+    for (let c = 0; c < 4; c++) {
+      const p = quad[c];
+      pb.vertex(x + p[0], ly + p[1], z + p[2], u0 + p[3] * du, v0 + p[4] * dv, 1, 6 | (3 << 6), 240, 240);
     }
     pb.quadIndices(false);
   }
@@ -179,7 +198,8 @@ export function meshSection(padded, sy, useAO, builders, fastLeaves = false, lig
         if (rt === RenderType.NONE) continue;
         const fastLeaf = fastLeaves && id === B.LEAVES; // fast leaves: opaque pass, inner faces culled, holes filled
         const pb = passes[fastLeaf ? RenderPass.OPAQUE : PASS[id]];
-        if (rt === RenderType.CROSS) { addCross(pb, x, ly, z, id, light ? (light[idx] & 15) * 16 : 240); continue; }
+        if (rt === RenderType.CROSS) { addCross(pb, x, ly, z, id, light ? (light[idx] & 15) * 16 : 240, light ? (light[idx] >> 4) * 16 : 0); continue; }
+        if (rt === RenderType.TORCH) { addTorch(pb, x, ly, z, id); continue; }
         if (rt === RenderType.LIQUID) { meshLiquid(pb, padded, idx, x, ly, z, y, id, light); continue; }
         const h = 1;
         for (let f = 0; f < 6; f++) {
@@ -210,8 +230,8 @@ export function meshChunk(padded, sectionMask, useAO, builders = new MeshBuilder
     builders.reset();
     meshSection(padded, sy, useAO, builders, fastLeaves, light);
     const r = builders.results();
-    sections.push({ sy, opaque: r.opaque, cutout: r.cutout, translucent: r.translucent });
-    for (const pass of [r.opaque, r.cutout, r.translucent]) {
+    sections.push({ sy, opaque: r.opaque, cutout: r.cutout, translucent: r.translucent, lava: r.lava });
+    for (const pass of [r.opaque, r.cutout, r.translucent, r.lava]) {
       if (!pass) continue;
       transfer.push(pass.positions.buffer, pass.uvs.buffer, pass.colors.buffer, pass.extra.buffer, pass.light.buffer, pass.indices.buffer);
     }

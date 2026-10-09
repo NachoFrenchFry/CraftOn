@@ -2,10 +2,10 @@
 // re-applied after procedural generation and persisted by SaveManager.
 
 import { chunkKeyString } from './ChunkCoords.js';
-import { BlockIds, REMOVED_BLOCK_IDS } from '../blocks/BlockIds.js';
+import { BlockIds, REMOVED_BLOCK_IDS, REMOVED_TO_AIR_IDS } from '../blocks/BlockIds.js';
 
 /** Blocks that were removed from the game become stone when an old save is loaded. */
-const MIGRATE = new Map(REMOVED_BLOCK_IDS.map((id) => [id, BlockIds.STONE]));
+const MIGRATE = new Map([...REMOVED_BLOCK_IDS.map((id) => [id, BlockIds.STONE]), ...REMOVED_TO_AIR_IDS.map((id) => [id, BlockIds.AIR])]); // hay bales (Update #11) become air
 
 export class WorldEdits {
   constructor() {

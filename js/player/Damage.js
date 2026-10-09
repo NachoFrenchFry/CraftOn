@@ -12,6 +12,18 @@ export const PVP_DAMAGE_SCALE = 5;
 export const CRIT_MULTIPLIER = 1.5;
 export const EAT_SECONDS = 1.6;
 export const RESPAWN_INVULNERABLE_SECONDS = 2;
+// Lava and fire (Update #11): 20 every 0.5 s while in lava (lethal in about 2.5 s unarmored), then 5 s on fire at 5 per second.
+export const LAVA_DAMAGE = 20;
+export const LAVA_DAMAGE_INTERVAL = 0.5;
+export const FIRE_SECONDS = 5;
+export const FIRE_DAMAGE = 5;
+export const FIRE_INTERVAL = 1;
+
+/** Lava / fire damage after armor (the usual formula, boots count once). */
+export function lavaDamage(armorPoints = 0) { return Math.max(1, Math.round(LAVA_DAMAGE * armorReduction(armorPoints))); }
+export function fireDamage(armorPoints = 0) { return Math.max(1, Math.round(FIRE_DAMAGE * armorReduction(armorPoints))); }
+/** Seconds a full-health player survives standing in lava with that armor. */
+export function lavaSurvivalSeconds(armorPoints = 0) { return Math.ceil(MAX_HEALTH / lavaDamage(armorPoints)) * LAVA_DAMAGE_INTERVAL; }
 
 /** Fraction of damage that gets through `points` of armor: 3 % per point, at most 70 % blocked. */
 export function armorReduction(points) { return 1 - Math.min(0.7, Math.max(0, points) * 0.03); }
@@ -36,12 +48,14 @@ export function pvpDamage(attackDamage, crit, victimArmorPoints = 0) {
   return Math.max(0, Math.round(attackDamage * PVP_DAMAGE_SCALE * (crit ? CRIT_MULTIPLIER : 1) * armorReduction(victimArmorPoints)));
 }
 
-/** Death causes: { kind: 'fall' | 'void' | 'pvp', by }. */
+/** Death causes: { kind: 'fall' | 'void' | 'pvp' | 'lava' | 'fire', by }. */
 export function causeText(cause) {
   if (!cause) return 'Died';
   if (cause.kind === 'fall') return 'Fell from a high place';
   if (cause.kind === 'void') return 'Fell out of the world';
   if (cause.kind === 'pvp') return `Slain by ${cause.by || 'another player'}`;
+  if (cause.kind === 'lava') return 'Tried to swim in lava';
+  if (cause.kind === 'fire') return 'Burned to death';
   return 'Died';
 }
 
@@ -51,5 +65,7 @@ export function deathMessage(name, cause) {
   if (cause.kind === 'fall') return `${name} fell from a high place`;
   if (cause.kind === 'void') return `${name} fell out of the world`;
   if (cause.kind === 'pvp') return `${name} was slain by ${cause.by || 'another player'}`;
+  if (cause.kind === 'lava') return `${name} tried to swim in lava`;
+  if (cause.kind === 'fire') return `${name} burned to death`;
   return `${name} died`;
 }

@@ -48,7 +48,7 @@ export class BlockIconRenderer {
     ctx.imageSmoothingEnabled = false;
     const item = ItemRegistry.get(itemId);
     if (item && !item.isBlock) this._drawFlat(ctx, item.texture);
-    else if (RENDER_TYPE[itemId] === RenderType.CROSS) this._drawFlat(ctx, BlockRegistry.faceTexture(itemId, Direction.SOUTH));
+    else if (RENDER_TYPE[itemId] === RenderType.CROSS || RENDER_TYPE[itemId] === RenderType.TORCH) this._drawFlat(ctx, BlockRegistry.faceTexture(itemId, Direction.SOUTH)); // plants and torches: the flat texture
     else this._drawCube(ctx, itemId);
     url = canvas.toDataURL();
     this.cache.set(itemId, url);

@@ -7,7 +7,8 @@ import { Random } from '../../utils/Random.js';
 import { MobAI, MobState } from './MobAI.js';
 import { createMobModel } from './MobModel.js';
 import { moveBox, hasSupport, isSolidAt } from '../EntityPhysics.js';
-import { isWater } from '../../world/WaterLevels.js';
+import { isWater, isLava } from '../../world/WaterLevels.js';
+import { multiplyLight } from '../../rendering/LightUniforms.js';
 import * as C from '../../config/Constants.js';
 import { angleDelta, damp, clamp } from '../../utils/MathUtils.js';
 import { SEA_LEVEL } from '../../config/Constants.js';
@@ -35,6 +36,11 @@ export class Mob {
     this.aiTimer = this.rng.next() * C.MOB_AI_INTERVAL;
     this.onGround = false;
     this.inWater = false;
+    /** Lava (Update #11): in lava, the lava damage tick, seconds left burning, the fire damage tick. */
+    this.inLava = false;
+    this.lavaTimer = 0;
+    this.fireTimer = 0;
+    this.burnTick = 0;
     this.stuckTimer = 0;
     this.flashTimer = 0;
     this.invulnTimer = 0;
@@ -60,16 +66,18 @@ export class Mob {
   }
 
   /** Take damage from a position (knockback away from it). Returns true if the mob died. */
-  hurt(damage, fromX, fromZ) {
+  hurt(damage, fromX, fromZ, knockback = true) {
     if (this.isDying || this.invulnTimer > 0) return false;
     this.health -= damage;
     this.invulnTimer = C.MOB_INVULNERABLE_SECONDS;
     this.flashTimer = C.MOB_HURT_FLASH_SECONDS;
-    const dx = this.position.x - fromX, dz = this.position.z - fromZ;
-    const len = Math.hypot(dx, dz) || 1;
-    this.velocity.x += (dx / len) * C.MOB_KNOCKBACK;
-    this.velocity.z += (dz / len) * C.MOB_KNOCKBACK;
-    this.velocity.y = Math.max(this.velocity.y, C.MOB_KNOCKBACK_UP);
+    if (knockback) {
+      const dx = this.position.x - fromX, dz = this.position.z - fromZ;
+      const len = Math.hypot(dx, dz) || 1;
+      this.velocity.x += (dx / len) * C.MOB_KNOCKBACK;
+      this.velocity.z += (dz / len) * C.MOB_KNOCKBACK;
+      this.velocity.y = Math.max(this.velocity.y, C.MOB_KNOCKBACK_UP);
+    }
     if (this.health <= 0) { this.deathTimer = 0; this.ai.state = MobState.DEAD; return true; }
     this.ai.panic(fromX, fromZ);
     return false;
@@ -97,16 +105,17 @@ export class Mob {
     const feet = world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z));
     const mid = world.getBlock(Math.floor(p.x), Math.floor(p.y + this.def.hitbox[1] * 0.5), Math.floor(p.z));
     this.inWater = isWater(feet) || isWater(mid);
+    this.inLava = isLava(feet) || isLava(mid);
 
-    // Movement intent → velocity (avoid walking off drops higher than MOB_MAX_DROP).
+    // Movement intent → velocity (avoid walking off drops higher than MOB_MAX_DROP, and never into lava).
     let dirX = this.intent.dirX, dirZ = this.intent.dirZ, speed = this.intent.speed;
-    if (speed > 0 && this.onGround && !this.inWater && this._dropAhead(world, dirX, dirZ)) { speed = 0; this.stuckTimer += 0.5; }
-    if (this.inWater) {
-      // Float, and paddle toward the nearest land.
-      v.y += 18 * dt; if (v.y > 1.5) v.y = 1.5;
+    if (speed > 0 && this.onGround && !this.inWater && !this.inLava && this._dropAhead(world, dirX, dirZ)) { speed = 0; this.stuckTimer += 0.5; }
+    if (this.inWater || this.inLava) {
+      // Float (slowly in lava), and paddle toward the nearest land.
+      v.y += (this.inLava ? 9 : 18) * dt; if (v.y > (this.inLava ? 0.6 : 1.5)) v.y = this.inLava ? 0.6 : 1.5;
       const land = this._landDirection(world);
-      if (land) { dirX = land.x; dirZ = land.z; speed = Math.max(speed, this.def.walkSpeed); }
-      if (waterSim) {
+      if (land) { dirX = land.x; dirZ = land.z; speed = Math.max(speed, this.def.walkSpeed) * (this.inLava ? 0.4 : 1); }
+      if (waterSim && this.inWater) {
         const f = waterSim.flowVector(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z), this._flow);
         v.x += f.x * C.ITEM_WATER_PUSH * dt; v.z += f.z * C.ITEM_WATER_PUSH * dt;
       }
@@ -114,7 +123,7 @@ export class Mob {
       v.y -= C.GRAVITY * dt;
       if (v.y < -C.TERMINAL_VELOCITY) v.y = -C.TERMINAL_VELOCITY;
     }
-    const accel = this.onGround || this.inWater ? 10 : 2;
+    const accel = this.onGround || this.inWater || this.inLava ? 10 : 2;
     const blend = 1 - Math.exp(-accel * dt);
     v.x += (dirX * speed - v.x) * blend;
     v.z += (dirZ * speed - v.z) * blend;
@@ -127,7 +136,7 @@ export class Mob {
     if (m.blockedX) v.x = 0;
     if (m.blockedZ) v.z = 0;
     // Jump up one-block steps when walking into something.
-    if ((m.blockedX || m.blockedZ) && this.onGround && speed > 0 && !this.inWater) {
+    if ((m.blockedX || m.blockedZ) && this.onGround && speed > 0 && !this.inWater && !this.inLava) {
       v.y = C.MOB_JUMP_VELOCITY;
       this.onGround = false;
     }
@@ -143,7 +152,8 @@ export class Mob {
   _dropAhead(world, dirX, dirZ) {
     const ax = Math.floor(this.position.x + dirX * 0.8), az = Math.floor(this.position.z + dirZ * 0.8);
     const y0 = Math.floor(this.position.y);
-    for (let dy = 0; dy <= C.MOB_MAX_DROP; dy++) if (isSolidAt(world, ax, y0 - 1 - dy, az)) return false;
+    // Lava ahead (at foot level or in the drop below) counts as a cliff: mobs avoid it (Update #11).
+    for (let dy = -1; dy <= C.MOB_MAX_DROP; dy++) { const id = world.getBlock(ax, y0 - dy, az); if (isLava(id)) return true; if (dy >= 0 && isSolidAt(world, ax, y0 - 1 - dy, az)) return false; }
     return true;
   }
 
@@ -182,7 +192,7 @@ export class Mob {
     // Hurt flash, then the voxel light at the mob (Update #10): a cow in a cave is darker too.
     if (this.flashTimer > 0) this.flashTimer -= dt;
     const base = this.flashTimer > 0 ? HURT_RED : WHITE;
-    for (const m of this.model.materials) m.color.copy(base).multiplyScalar(light);
+    for (const m of this.model.materials) multiplyLight(m.color.copy(base), light); // a factor or [r, g, b] (sky + warm block light)
     if (this.isDying) {
       const t = clamp(this.deathTimer / C.MOB_DEATH_SECONDS, 0, 1);
       root.rotation.z = (t * t * (3 - 2 * t)) * (Math.PI / 2);

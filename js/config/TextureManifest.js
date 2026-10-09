@@ -18,7 +18,7 @@ export const GENERATED_TEXTURES = Object.freeze([
   'cactus_top', 'cactus_side',
   'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore',
   'grass', 'flower_red', 'flower_yellow', 'dead_bush',
-  'mossy_cobblestone', 'cracked_stone_bricks', 'obsidian', 'hay_bale_top', 'hay_bale_side', 'concrete',
+  'mossy_cobblestone', 'cracked_stone_bricks', 'obsidian', 'concrete',
   'wool_white', 'wool_red', 'wool_blue',
   // Update #2: stations and items
   'crafting_table_top', 'crafting_table_side', 'crafting_table_front', 'furnace_front', 'furnace_side', 'furnace_top',
@@ -37,6 +37,10 @@ export const GENERATED_TEXTURES = Object.freeze([
   'cow_spawn_egg', 'pig_spawn_egg', 'sheep_spawn_egg',
   // Update #6: particle sprite
   'crit_star',
+  // Update #11: lava, sticks, torches, the gold tier, the cornflower, storage blocks
+  'lava', 'lava_bucket', 'stick', 'torch', 'flower_blue',
+  'golden_pickaxe', 'golden_axe', 'golden_sword', 'golden_helmet', 'golden_chestplate', 'golden_gauntlets', 'golden_leggings', 'golden_boots',
+  'coal_block', 'iron_block', 'gold_block', 'diamond_block',
 ]);
 
 /**
@@ -57,7 +61,7 @@ export const ENTITY_TEXTURE_SIZE = Object.freeze([64, 32]);
  * chestplate (+ sleeves), gauntlets and boots nets, `<m>_layer_2.png` the leggings (waist + upper legs).
  * 64×32 box-UV nets like the mobs; see js/player/models/ArmorModel.js for the rectangles.
  */
-export const ARMOR_SHEET_MATERIALS = Object.freeze(['wooden', 'iron', 'diamond']);
+export const ARMOR_SHEET_MATERIALS = Object.freeze(['wooden', 'golden', 'iron', 'diamond']);
 export const ARMOR_TEXTURES = Object.freeze(ARMOR_SHEET_MATERIALS.flatMap((m) => [`${m}_layer_1`, `${m}_layer_2`]));
 export const ARMOR_TEXTURE_SIZE = Object.freeze([64, 32]);
 

@@ -95,7 +95,7 @@ export class WorldSession {
     g.chunkManager.clear();
     g.world.clear();
     g.entities.clear();
-    g.waterSim.clear();
+    g.waterSim.clear(); g.lavaSim.clear(); g.torchEffects.clear();
     g.world.seed = meta.seed >>> 0;
     g.chunkManager.setSeed(g.world.seed);
     for (const [key, data] of edits) g.world.edits.loadChunk(key, data);
@@ -173,7 +173,7 @@ export class WorldSession {
     g.chunkManager.clear();
     g.world.clear();
     g.entities.clear();
-    g.waterSim.clear();
+    g.waterSim.clear(); g.lavaSim.clear(); g.torchEffects.clear();
     g.world.seed = meta.seed;
     g.chunkManager.setSeed(g.world.seed);
     for (const row of rows) {
@@ -409,7 +409,7 @@ export class WorldSession {
     g.entities.remote = false;
     if (g.entities.mobs) g.entities.mobs.remote = false;
     if (g.remotePlayers) g.remotePlayers.clear();
-    g.waterSim.clear();
+    g.waterSim.clear(); g.lavaSim.clear(); g.torchEffects.clear();
     g.audio.stopAmbient();
     if (this.lock) { this.lock.release(); this.lock = null; }
     this.meta = null;

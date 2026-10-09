@@ -115,7 +115,7 @@ export class Decorator {
         if (blocks[above] !== B.AIR) continue;
         const roll = rng.next();
         if (ground === B.GRASS_BLOCK || ground === B.SNOWY_GRASS) {
-          if (roll < biome.flowerDensity) blocks[above] = rng.chance(0.5) ? B.FLOWER_RED : B.FLOWER_YELLOW;
+          if (roll < biome.flowerDensity) { const f = rng.next(); blocks[above] = f < 0.4 ? B.FLOWER_RED : f < 0.75 ? B.FLOWER_YELLOW : B.FLOWER_BLUE; } // red / yellow / blue (Update #11)
           else if (roll < biome.flowerDensity + biome.grassDensity) blocks[above] = B.GRASS;
         } else if (ground === B.SAND) {
           if (roll < biome.cactusDensity && lx > 0 && lx < 15 && lz > 0 && lz < 15 && this._cactusRoom(blocks, lx, h + 1, lz)) {

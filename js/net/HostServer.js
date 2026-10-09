@@ -16,9 +16,10 @@ import { Signaling } from './Signaling.js';
 import { detectNetworkHash, networkHash } from './NetworkId.js';
 import { RemotePlayerManager } from './RemotePlayer.js';
 import { Msg, RejectReason, GAME_VERSION, MAX_PLAYERS_DEFAULT, PLAYER_SNAPSHOT_HZ, MOB_SNAPSHOT_HZ, encodePlayerState, decodePlayerState, encodeChunkBatches, makeJoinCode, Pose } from './Protocol.js';
-import { BlockRegistry, BREAK_TIME, SOLID, NEEDS_SUPPORT } from '../blocks/BlockRegistry.js';
+import { BlockRegistry, BREAK_TIME, SOLID } from '../blocks/BlockRegistry.js';
+import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
-import { isWater } from '../world/WaterLevels.js';
+import { isWater, isLiquid } from '../world/WaterLevels.js';
 import { REACH_CREATIVE, ITEM_PICKUP_EXPAND_XZ, ITEM_PICKUP_EXPAND_Y, PLAYER_WIDTH, PLAYER_HEIGHT } from '../config/Constants.js';
 import { ITEM_HALF } from '../entities/ItemEntity.js';
 
@@ -91,7 +92,7 @@ export class HostServer {
     const on = (name, fn) => this._unsubs.push(ev.on(name, fn));
     on('block:changed', (x, y, z, info) => {
       const by = this.applyingFor ? this.applyingFor.by : this.userId;
-      const kind = isWater(info.id) || isWater(info.old) ? 'flow' : info.id === 0 ? 'break' : 'place';
+      const kind = isLiquid(info.id) || isLiquid(info.old) ? 'flow' : info.id === 0 ? 'break' : 'place';
       this.blockQueue.push([x, y, z, info.id, by, kind]);
     });
     on('player:swing', () => this.broadcast(Msg.SWING, { id: this.userId }));
@@ -258,11 +259,12 @@ export class HostServer {
     const creative = peer.mode === 'creative';
     if (id === 0) {
       if (cur === 0) return reject();
-      if (!creative && !isFinite(BREAK_TIME[cur])) return reject(); // bedrock stays in Survival
+      if (!creative && !isFinite(BREAK_TIME[cur]) && !isLiquid(cur)) return reject(); // bedrock stays in Survival (liquid sources: a bucket)
     } else {
       if (!BlockRegistry.get(id)) return reject();
       if (!BlockRegistry.isReplaceable(cur)) return reject();
-      if (NEEDS_SUPPORT[id] === 1 && !g.world.isSolid(x, y - 1, z)) return reject();
+      if (!isSupported(g.world, x, y, z, id)) return reject(); // plants need ground, torches a full opaque cube below / behind (Update #11)
+      if (BlockRegistry.isTorch(id) && (isLiquid(cur) || y <= 0)) return reject();
       // Never inside anyone: the host, any other player (raw snapshots) or a mob.
       if (SOLID[id] === 1 && (g.player.aabb.intersectsBox(x, y, z, x + 1, y + 1, z + 1) || this._playerBlocksAt(x, y, z, peer) || mobBlocksAt(g.entities.mobs.mobs, x, y, z))) return reject('entity');
     }
@@ -277,8 +279,7 @@ export class HostServer {
           const drop = dropName ? ItemRegistry.idOf(dropName) : -1;
           if (drop >= 0 && Math.random() < BlockRegistry.dropChance(cur)) g.entities.spawnItem(x + 0.5, y + 0.3, z + 0.5, drop, 1);
         }
-        const above = g.world.getBlock(x, y + 1, z);
-        if (above !== 0 && NEEDS_SUPPORT[above] === 1) g.interaction.breakBlock(x, y + 1, z);
+        breakDependents(g.world, x, y, z, (nx, ny, nz) => g.interaction.breakBlock(nx, ny, nz)); // plants above, torches above and beside
       } else {
         g.world.setBlock(x, y, z, id);
         g.audio.playBlock('place', id, x + 0.5, y + 0.5, z + 0.5);

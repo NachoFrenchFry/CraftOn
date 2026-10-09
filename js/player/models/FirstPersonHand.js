@@ -8,6 +8,9 @@ import * as THREE from 'three';
 import { createPart, COLORS, createModelLights, setToolHandleRotation, tintModelLight } from './ModelParts.js';
 import { buildFirstPersonArmor, applyWornArmor } from './ArmorModel.js';
 import { createBlockGeometry } from '../../rendering/BlockGeometry.js';
+import { BlockRegistry } from '../../blocks/BlockRegistry.js';
+import { Direction } from '../../utils/Direction.js';
+import { sameLight, copyLight } from '../../rendering/LightUniforms.js';
 import { createItemSpriteGeometry } from '../../rendering/ItemSpriteGeometry.js';
 import { ItemRegistry } from '../../items/ItemRegistry.js';
 import { HAND_BOB } from '../../config/Constants.js';
@@ -100,10 +103,11 @@ export class FirstPersonHand {
     const item = itemId ? ItemRegistry.get(itemId) : null;
     this.heldIsTool = !!(item && item.tool);
     if (item) {
-      const size = item.isBlock ? 0.3 : 0.5;
-      const geom = item.isBlock ? createBlockGeometry(item.blockId, size) : createItemSpriteGeometry(this.atlas, item.texture, size);
+      const asBlock = item.isBlock && !BlockRegistry.isTorch(item.blockId); // torches are held as their item sprite (Update #11)
+      const size = asBlock ? 0.3 : 0.5;
+      const geom = asBlock ? createBlockGeometry(item.blockId, size) : createItemSpriteGeometry(this.atlas, item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture, size);
       this.blockMesh = new THREE.Mesh(geom, this.blockMaterial);
-      this.blockMesh.userData.isBlock = item.isBlock;
+      this.blockMesh.userData.isBlock = asBlock;
       if (this.heldIsTool) {
         // Grip at the pivot origin; the head (top-right of the sprite) at (size, size), inside the handle group.
         this.blockMesh.position.set(size / 2, size / 2, 0);
@@ -122,8 +126,8 @@ export class FirstPersonHand {
 
   /** Brightness factor of the sky light at the player's eyes (Update #10). */
   setLight(factor) {
-    if (this._lightFactor !== undefined && Math.abs(factor - this._lightFactor) < 0.003 && this._litBlock === this.blockMesh) return;
-    this._lightFactor = factor; this._litBlock = this.blockMesh;
+    if (sameLight(factor, this._lightFactor) && this._litBlock === this.blockMesh) return;
+    this._lightFactor = copyLight(factor, this._lightFactor); this._litBlock = this.blockMesh;
     tintModelLight(this, this.root, factor);
   }
 

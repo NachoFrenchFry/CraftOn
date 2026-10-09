@@ -5,10 +5,10 @@
 // the cell for smooth lighting) in `chunk.lightDirty`, which ChunkManager turns into partial remeshes. The
 // chunk light arrays use the padded layout, so a border cell exists twice (own chunk + neighbour's border): both
 // copies are written. Pure JS, no DOM / Three.js.
-import { SKY, LIGHT_MAX, OPACITY_BARRIER, lightIndex } from './LightStorage.js';
+import { SKY, BLOCK, LIGHT_MAX, OPACITY_BARRIER, lightIndex } from './LightStorage.js';
 import { LightQueue, propagate, removeLight } from './LightEngine.js';
 import { seamPass, SEAM_SIDES } from './LightSeams.js';
-import { LIGHT_OPACITY } from '../../blocks/BlockRegistry.js';
+import { LIGHT_OPACITY, LIGHT_EMISSION } from '../../blocks/BlockRegistry.js';
 import { blockIndex, chunkKey } from '../ChunkCoords.js';
 import { WORLD_HEIGHT } from '../../config/Constants.js';
 
@@ -21,8 +21,9 @@ export class LightUpdater {
   /** @param {import('../World.js').World} world */
   constructor(world) {
     this.world = world;
-    this.removal = new LightQueue(4096);
-    this.propagation = new LightQueue(4096);
+    /** Per channel (SKY 0, BLOCK 1): the darkening queue and the re-light queue. */
+    this.removal = [new LightQueue(4096), new LightQueue(4096)];
+    this.propagation = [new LightQueue(4096), new LightQueue(4096)];
     /** Chunk keys whose `lightDirty` mask is non-zero (consumed by ChunkManager). */
     this.dirtyChunks = new Set();
     this.timing = { total: 0, count: 0 };
@@ -48,9 +49,9 @@ export class LightUpdater {
     };
   }
 
-  get pending() { return this.removal.length + this.propagation.length; }
+  get pending() { return this.removal[0].length + this.removal[1].length + this.propagation[0].length + this.propagation[1].length; }
 
-  clear() { this.removal.clear(); this.propagation.clear(); this.dirtyChunks.clear(); }
+  clear() { for (const q of this.removal) q.clear(); for (const q of this.propagation) q.clear(); this.dirtyChunks.clear(); }
 
   /** Write a cell into its chunk and into the border copies of up to three neighbours; mark the sections that read it. */
   _set(x, y, z, channel, v) {
@@ -93,29 +94,41 @@ export class LightUpdater {
     if (!c || !c.lit) return;
     const t0 = now();
     const old = this.access.get(x, y, z, SKY);
-    if (old > 0) { this._set(x, y, z, SKY, 0); this.removal.push(x, y, z, old); }
-    // Seed from the 6 neighbours (a broken block in a lit area, or the cell above with sky light).
-    this.propagation.push(x + 1, y, z, 0); this.propagation.push(x - 1, y, z, 0);
-    this.propagation.push(x, y + 1, z, 0); this.propagation.push(x, y - 1, z, 0);
-    this.propagation.push(x, y, z + 1, 0); this.propagation.push(x, y, z - 1, 0);
+    if (old > 0) { this._set(x, y, z, SKY, 0); this.removal[SKY].push(x, y, z, old); }
+    // Block light (Update #11): darken what the cell's old light reached, then an emitter placed here (torch 14, lava 15)
+    // starts the BFS at its own value. docs/LIGHTING.md: propagation / two-phase depropagation on the BLOCK channel.
+    const oldBlock = this.access.get(x, y, z, BLOCK);
+    if (oldBlock > 0) { this._set(x, y, z, BLOCK, 0); this.removal[BLOCK].push(x, y, z, oldBlock); }
+    const emission = LIGHT_EMISSION[c.blocks[blockIndex(x & 15, y, z & 15)]];
+    if (emission > 0) { this._set(x, y, z, BLOCK, emission); this.propagation[BLOCK].push(x, y, z, emission); }
+    // Seed from the 6 neighbours on both channels (a broken block in a lit area, or the cell above with sky light).
+    for (const q of this.propagation) {
+      q.push(x + 1, y, z, 0); q.push(x - 1, y, z, 0);
+      q.push(x, y + 1, z, 0); q.push(x, y - 1, z, 0);
+      q.push(x, y, z + 1, 0); q.push(x, y, z - 1, 0);
+    }
     this.update(IMMEDIATE_MS);
     this.timing.total += now() - t0; this.timing.count++;
   }
 
-  /** A chunk's initial light arrived: seams with lit neighbours catch edits made while the job was in flight. */
+  /** A chunk's initial light arrived: seams with lit neighbours catch edits made while the job was in flight (both channels). */
   onChunkLit(chunk) {
     for (const [side, dx, dz] of SEAM_SIDES) {
       const n = this.world.getChunk(chunk.cx + dx, chunk.cz + dz);
-      if (n && n.lit) seamPass(this.access, SKY, chunk.cx, chunk.cz, side, this.propagation);
+      if (!n || !n.lit) continue;
+      seamPass(this.access, SKY, chunk.cx, chunk.cz, side, this.propagation[SKY]);
+      seamPass(this.access, BLOCK, chunk.cx, chunk.cz, side, this.propagation[BLOCK]);
     }
   }
 
-  /** Per frame: removal first, then propagation, within the budget. Returns true when the queues are empty. */
+  /** Per frame: removal first, then propagation, for both channels, within the budget. Returns true when the queues are empty. */
   update(budgetMs = LIGHT_BUDGET_MS) {
-    if (this.removal.empty && this.propagation.empty) return true;
+    if (this.removal[0].empty && this.removal[1].empty && this.propagation[0].empty && this.propagation[1].empty) return true;
     const deadline = now() + budgetMs;
-    if (!removeLight(this.access, SKY, this.removal, this.propagation, deadline)) return false;
-    return propagate(this.access, SKY, this.propagation, deadline);
+    if (!removeLight(this.access, SKY, this.removal[SKY], this.propagation[SKY], deadline)) return false;
+    if (!removeLight(this.access, BLOCK, this.removal[BLOCK], this.propagation[BLOCK], deadline)) return false;
+    if (!propagate(this.access, SKY, this.propagation[SKY], deadline)) return false;
+    return propagate(this.access, BLOCK, this.propagation[BLOCK], deadline);
   }
 
   /** Run everything that is queued (tests / world load). */

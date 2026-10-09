@@ -17,6 +17,7 @@ export const RESOLVED_RECIPES = RECIPES.map((r) => {
     stations: r.stations,
     result: { itemId: resolve(r.result.item), count: r.result.count },
     inputs: r.inputs.map((i) => ({ itemId: resolve(i.item), count: i.count })),
+    byproducts: (r.byproducts || []).map((i) => ({ itemId: resolve(i.item), count: i.count })),
   };
 });
 
@@ -71,6 +72,7 @@ export class CraftingSystem {
     const total = recipe.result.count * n;
     const left = this.inventory.addItem(recipe.result.itemId, total);
     if (left > 0 && this.dropOverflow) this.dropOverflow(recipe.result.itemId, left);
+    for (const b of recipe.byproducts || []) { const extra = this.inventory.addItem(b.itemId, b.count * n); if (extra > 0 && this.dropOverflow) this.dropOverflow(b.itemId, extra); }
     this.inventory.changed();
     if (this.events) this.events.emit('craft:done', recipe, n);
     return n;

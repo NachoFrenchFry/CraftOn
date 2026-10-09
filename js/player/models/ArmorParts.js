@@ -9,7 +9,7 @@
 import { netRects } from '../../entities/mobs/MobNet.js';
 
 /** Item material → sheet file prefix (textures/entity/armor/<prefix>_layer_N.png). */
-export const ARMOR_SHEET_FOR = Object.freeze({ wood: 'wooden', iron: 'iron', diamond: 'diamond' });
+export const ARMOR_SHEET_FOR = Object.freeze({ wood: 'wooden', gold: 'golden', iron: 'iron', diamond: 'diamond' });
 export const ARMOR_LAYER = Object.freeze({ helmet: 1, chestplate: 1, gauntlets: 1, boots: 1, leggings: 2 });
 export const ARMOR_PIECES = Object.freeze(['helmet', 'chestplate', 'gauntlets', 'leggings', 'boots']);
 

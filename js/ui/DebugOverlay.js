@@ -58,7 +58,7 @@ export class DebugOverlay {
     this._set(i++, `Biome: ${biomeName(g.world.getBiome(Math.floor(pos.x), Math.floor(pos.z)))}`);
     this._set(i++, `Chunks: ${stats.loaded} loaded  meshes ${stats.meshes}  pending ${stats.meshPending}  gen queue ${stats.genQueue}  light pending ${stats.lightPending}  light queue ${stats.lightQueue}`);
     const lt = g.chunkManager.lightTiming, lu = g.chunkManager.lightUpdater.timing;
-    this._set(i++, `Light: sky ${g.world.getSkyLightAt(pos.x, pos.y + 0.5, pos.z)} at feet, ${g.world.getSkyLightAt(pos.x, pos.y + 1.6, pos.z)} at eyes   initial pass avg ${lt.count ? (lt.total / lt.count).toFixed(1) : '-'} ms   edit update avg ${lu.count ? (lu.total / lu.count).toFixed(2) : '-'} ms   brightness ${g.settings.get('brightness')}%`);
+    this._set(i++, `Light: sky ${g.world.getSkyLightAt(pos.x, pos.y + 0.5, pos.z)} / block ${g.world.getBlockLightAt(pos.x, pos.y + 0.5, pos.z)} at feet, sky ${g.world.getSkyLightAt(pos.x, pos.y + 1.6, pos.z)} / block ${g.world.getBlockLightAt(pos.x, pos.y + 1.6, pos.z)} at eyes   initial pass avg ${lt.count ? (lt.total / lt.count).toFixed(1) : '-'} ms   edit update avg ${lu.count ? (lu.total / lu.count).toFixed(2) : '-'} ms   brightness ${g.settings.get('brightness')}%`);
     this._set(i++, `Draw calls: ${g.renderer.worldStats.calls}  triangles: ${g.renderer.worldStats.triangles}  geometries: ${info.memory.geometries}`);
     this._set(i++, `Seed: ${g.world.seed}${g.worldMeta && g.worldMeta.seedText ? ` ("${g.worldMeta.seedText}")` : ''}`);
     this._set(i++, t && t.hit ? `Target: ${BlockRegistry.nameOf(t.blockId)} at ${t.blockPos.x} ${t.blockPos.y} ${t.blockPos.z}` : 'Target: none');

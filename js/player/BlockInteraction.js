@@ -2,14 +2,15 @@
 // placing with player-collision checks, pick-block, and hand swing events.
 
 import { BlockIds } from '../blocks/BlockIds.js';
-import { BlockRegistry, SOLID, NEEDS_SUPPORT, BREAK_TIME, RENDER_TYPE, RenderType, PASS, RenderPass } from '../blocks/BlockRegistry.js';
+import { BlockRegistry, SOLID, BREAK_TIME, RENDER_TYPE, RenderType, PASS, RenderPass } from '../blocks/BlockRegistry.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
 import { EAT_SECONDS } from './Damage.js';
+import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemStack } from '../items/ItemStack.js';
 import { effectiveBreakTime, attackDamage, isSword } from '../items/Tools.js';
 import { ItemIds } from '../items/ItemDefinitions.js';
 import { RaycastHit } from './BlockRaycaster.js';
-import { isSource } from '../world/WaterLevels.js';
+import { isSource, isLavaSource, isLiquid } from '../world/WaterLevels.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
 import { REACH_SURVIVAL, REACH_CREATIVE, PLACE_REPEAT_SECONDS, ATTACK_REACH } from '../config/Constants.js';
 
@@ -221,8 +222,8 @@ export class BlockInteraction {
         this.entities.spawnItem(x + 0.5, y + 0.3, z + 0.5, drop, 1);
       }
     }
-    const above = this.world.getBlock(x, y + 1, z);
-    if (above !== BlockIds.AIR && NEEDS_SUPPORT[above] === 1) this.breakBlock(x, y + 1, z);
+    // Plants and standing torches above, wall torches beside: whatever this block held up breaks too (Update #11).
+    breakDependents(this.world, x, y, z, (nx, ny, nz) => this.breakBlock(nx, ny, nz));
     this.events.emit('block:broken', x, y, z, id);
   }
 
@@ -239,24 +240,27 @@ export class BlockInteraction {
     if (!t.hit) return;
     const creative = this.player.isCreative;
     if (itemId === ItemIds.BUCKET) {
-      if (!isSource(t.blockId)) return; // flowing water cannot be picked up
+      // Only sources can be picked up (flowing water / lava cannot); lava fills a Lava Bucket (Update #11).
+      const filled = isSource(t.blockId) ? ItemIds.WATER_BUCKET : isLavaSource(t.blockId) ? ItemIds.LAVA_BUCKET : null;
+      if (filled === null) return;
       const b = t.blockPos;
       this.world.setBlock(b.x, b.y, b.z, BlockIds.AIR);
       this.audio.playPlayer('bucket_fill', 0.8);
       this.events.emit('player:swing');
       if (!creative) {
         this.inventory.removeFromSlot(this.inventory.selectedIndex, 1);
-        const left = this.inventory.addItem(ItemIds.WATER_BUCKET, 1);
-        if (left > 0) this.entities.spawnItem(this.player.position.x, this.player.position.y + 0.5, this.player.position.z, ItemIds.WATER_BUCKET, 1);
+        const left = this.inventory.addItem(filled, 1);
+        if (left > 0) this.entities.spawnItem(this.player.position.x, this.player.position.y + 0.5, this.player.position.z, filled, 1);
       }
       return;
     }
-    // Water bucket: a source at the placement position (into a plant / flowing water is fine).
+    // Water / lava bucket: a source at the placement position (into a plant / flowing liquid is fine).
     let px = t.placePos.x, py = t.placePos.y, pz = t.placePos.z;
-    if (RENDER_TYPE[t.blockId] === RenderType.CROSS) { px = t.blockPos.x; py = t.blockPos.y; pz = t.blockPos.z; }
+    const rt = RENDER_TYPE[t.blockId];
+    if (rt === RenderType.CROSS || rt === RenderType.TORCH) { px = t.blockPos.x; py = t.blockPos.y; pz = t.blockPos.z; }
     const cur = this.world.getBlock(px, py, pz);
     if (!BlockRegistry.isReplaceable(cur) || !this.world.isLoadedAt(px, pz) || py < 0 || py > 255) return;
-    this.world.setBlock(px, py, pz, BlockIds.WATER);
+    this.world.setBlock(px, py, pz, itemId === ItemIds.LAVA_BUCKET ? BlockIds.LAVA : BlockIds.WATER);
     this.audio.playPlayer('bucket_empty', 0.8);
     this.events.emit('player:swing');
     if (!creative) this.inventory.set(this.inventory.selectedIndex, new ItemStack(ItemIds.BUCKET, 1));
@@ -277,7 +281,7 @@ export class BlockInteraction {
     const armor = ItemRegistry.armor(stack.itemId);
     if (armor) { if (!repeat) this._equipArmor(armor); return; }
     if (!t.hit) return;
-    if (stack.itemId === ItemIds.BUCKET || stack.itemId === ItemIds.WATER_BUCKET) { this._useBucket(stack.itemId); return; }
+    if (stack.itemId === ItemIds.BUCKET || stack.itemId === ItemIds.WATER_BUCKET || stack.itemId === ItemIds.LAVA_BUCKET) { this._useBucket(stack.itemId); return; }
     const item = ItemRegistry.get(stack.itemId);
     if (item && item.spawnEgg) { this._useSpawnEgg(item.spawnEgg); return; }
     if (!item || !item.isBlock) return; // non-block items (coal, ingots, pickaxes) never place anything
@@ -289,14 +293,25 @@ export class BlockInteraction {
     if (p.y < 0 || p.y > 255) return;
     // The targeted block itself may be replaceable (plants): place into it instead.
     let px = p.x, py = p.y, pz = p.z;
-    if (RENDER_TYPE[t.blockId] === RenderType.CROSS) { px = t.blockPos.x; py = t.blockPos.y; pz = t.blockPos.z; }
+    const intoPlant = RENDER_TYPE[t.blockId] === RenderType.CROSS;
+    if (intoPlant) { px = t.blockPos.x; py = t.blockPos.y; pz = t.blockPos.z; }
     const cur = this.world.getBlock(px, py, pz);
     if (!BlockRegistry.isReplaceable(cur)) return;
     if (!this.world.isLoadedAt(px, pz)) return;
+    // Torches (Update #11): on top of a block they stand, on its side they hang on that wall (tilted), never under a
+    // ceiling and never in a liquid; only full solid opaque cubes hold them (checked by isSupported below).
+    if (BlockRegistry.isTorch(id)) {
+      const n = t.faceNormal;
+      if (isLiquid(cur)) return;
+      if (!intoPlant) {
+        if (n.y < 0) return; // ceiling: nothing happens, nothing is used
+        if (n.y === 0) id = BlockRegistry.attachVariant(id, n.x > 0 ? 'west' : n.x < 0 ? 'east' : n.z > 0 ? 'north' : 'south');
+      }
+    }
     // Never inside anyone: the local player, other players or a mob (checked before the item is consumed; on a
     // LAN server the host runs the same check, so a rejection for this reason is rare and refunds the item).
     if (SOLID[id] === 1 && (this.player.aabb.intersectsBox(px, py, pz, px + 1, py + 1, pz + 1) || (this.entityBlocks && this.entityBlocks(px, py, pz)))) return;
-    if (NEEDS_SUPPORT[id] === 1 && !this.world.isSolid(px, py - 1, pz)) return;
+    if (!isSupported(this.world, px, py, pz, id)) return;
     const slot = this.inventory.selectedIndex, consumedId = stack.itemId;
     this.world.setBlock(px, py, pz, id);
     this.audio.playBlock('place', id, px + 0.5, py + 0.5, pz + 0.5);

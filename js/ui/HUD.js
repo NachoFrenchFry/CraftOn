@@ -16,6 +16,9 @@ export class HUD {
     this.popup = document.getElementById('item-name-popup');
     this.hint = document.getElementById('pointer-hint');
     this.underwater = document.getElementById('underwater-overlay');
+    this.lavaOverlay = document.getElementById('lava-overlay');
+    this.fireOverlay = document.getElementById('fire-overlay');
+    this._lavaShown = false; this._fireShown = false;
     this.fpsCounter = document.getElementById('fps-counter');
     this.healthBar = document.getElementById('health-bar');
     this.hbFill = this.healthBar.querySelector('.hb-fill');
@@ -138,5 +141,10 @@ export class HUD {
       this._underwaterShown = uw;
       this.underwater.classList.toggle('hidden', !uw);
     }
+    // Update #11: orange inside lava; flames on the screen edges while on fire (first person only; third person shows the particles).
+    const lv = !!this.game.player.headInLava;
+    if (lv !== this._lavaShown) { this._lavaShown = lv; this.lavaOverlay.classList.toggle('hidden', !lv); }
+    const fire = !!this.game.player.onFire && !this.game.player.dead && this.game.cameraController.isFirstPerson;
+    if (fire !== this._fireShown) { this._fireShown = fire; this.fireOverlay.classList.toggle('hidden', !fire); }
   }
 }

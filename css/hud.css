@@ -109,6 +109,18 @@
   inset: 0;
   background: rgba(20, 60, 180, 0.35);
 }
+/* Update #11: inside lava everything is orange; on fire, flames lick the screen edges. */
+#lava-overlay { position: absolute; inset: 0; background: rgba(226, 92, 18, 0.62); }
+#fire-overlay {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 108%, rgba(255, 150, 30, 0.75) 0%, rgba(255, 90, 10, 0.45) 40%, rgba(255, 60, 0, 0) 75%),
+    radial-gradient(ellipse 30% 60% at -5% 60%, rgba(255, 120, 20, 0.5) 0%, rgba(255, 60, 0, 0) 70%),
+    radial-gradient(ellipse 30% 60% at 105% 60%, rgba(255, 120, 20, 0.5) 0%, rgba(255, 60, 0, 0) 70%);
+  animation: fire-flicker 0.35s ease-in-out infinite alternate;
+}
+@keyframes fire-flicker { 0% { opacity: 0.75; transform: scaleY(1); } 100% { opacity: 1; transform: scaleY(1.06); } }
+#lava-overlay.hidden, #fire-overlay.hidden { display: none; }
 
 #debug-overlay {
   position: fixed;

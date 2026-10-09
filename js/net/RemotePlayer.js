@@ -132,6 +132,7 @@ export class RemotePlayer {
     st.yaw = s.yaw; st.pitch = s.pitch;
     st.onGround = s.onGround; st.sneaking = s.sneaking; st.swimming = s.swimming; st.crawling = s.crawling;
     st.flying = s.flying; st.inWater = s.inWater; st.sprinting = s.sprinting; st.spectator = s.spectator;
+    st.onFire = !!s.onFire; st.inLava = !!s.inLava;
     st.velocity.x = s.vx; st.velocity.y = s.vy; st.velocity.z = s.vz;
     st.horizontalSpeed = Math.hypot(s.vx, s.vz);
     if (st.swimming) st.swimTime += dt * Math.max(0.5, Math.hypot(s.vx, s.vy, s.vz) / 5.5);
@@ -139,6 +140,7 @@ export class RemotePlayer {
     this.visible = visible;
     this.model.root.visible = visible;
     if (visible) { if (this.game.lightAt) this.model.setLight(this.game.lightAt(o.x, o.y + 1, o.z)); this.model.update(dt, st); }
+    if (visible && st.onFire && this.game.particles) this.game.particles.spawnFlame(o.x, o.y + 0.9, o.z, 2, 0.35, 0.9); // burning (Update #11)
     this.nametag.visible = visible && !st.sneaking;
     this.nametag.position.set(o.x, o.y + (st.crawling || st.swimming ? 0.9 : NAMETAG_HEIGHT), o.z);
     if (this.mineTimer > 0) { this.mineTimer -= dt; if (this.mineTimer <= 0) this.overlay.hide(); }

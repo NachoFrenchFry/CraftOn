@@ -28,9 +28,9 @@ vec3 craftonFaceNormal(float e) {
 
 const VERTEX_HEAD = `#include <common>
 attribute float extra;
-attribute float light;
+attribute vec2 light;
 varying float vExtra;
-varying float vLight;
+varying vec2 vLight;
 varying vec3 vWorldPos;
 uniform float uTime;
 uniform float uWaving;
@@ -73,7 +73,7 @@ const VERTEX_COLOR = `#include <color_vertex>
 
 const FRAGMENT_HEAD = `#include <common>
 varying float vExtra;
-varying float vLight;
+varying vec2 vLight;
 varying vec3 vWorldPos;
 uniform float uTime;
 uniform float uWater;
@@ -95,20 +95,21 @@ ${LIGHT_CURVE_GLSL}`;
  * (the vertex colour). With Lighting off the baked face shade × AO × curve is used, like the shaders-off path.
  */
 const LIGHT_MODEL = `vec3 outgoingLight;
-craftonSkyTerm = craftonLightCurve(vLight);
+craftonSkyTerm = craftonLightCurve(vLight.x);
+vec3 craftonBlockTerm = craftonLightCurve(vLight.y) * craftonWarm; // torches / lava (Update #11): warm, unshadowed, visible deep in caves
 if (uLighting > 0.5) {
   vec3 nW = normalize(inverseTransformDirection(normal, viewMatrix));
   float shadow = 1.0;
   #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
     shadow = getShadow(directionalShadowMap[0], directionalLightShadows[0].shadowMapSize, directionalLightShadows[0].shadowBias, directionalLightShadows[0].shadowRadius, vDirectionalShadowCoord[0]);
   #endif
-  float skyVis = smoothstep(10.0 / 15.0, 1.0, vLight);
+  float skyVis = smoothstep(10.0 / 15.0, 1.0, vLight.x);
   float sun = max(dot(nW, uSunDir), 0.0) * shadow * skyVis;
   float hemi = nW.y >= 0.0 ? mix(0.5, 1.0, nW.y) : mix(0.5, 0.2, -nW.y);
   vec3 ambient = uSkyAmbient * craftonSkyTerm * (0.55 + 0.35 * hemi);
-  outgoingLight = diffuseColor.rgb * (ambient + uSunColor * sun * 0.6);
+  outgoingLight = diffuseColor.rgb * max(ambient + uSunColor * sun * 0.6, craftonBlockTerm);
 } else {
-  outgoingLight = diffuseColor.rgb * craftonSkyTerm;
+  outgoingLight = diffuseColor.rgb * max(vec3(craftonSkyTerm), craftonBlockTerm);
 }`;
 
 const FRAGMENT_TAIL = `#include <dithering_fragment>
@@ -309,10 +310,15 @@ export class ShaderPipeline {
       m.name = 'lit-' + key;
       return m;
     };
+    // Lava (Update #11): unlit and a little brighter than its texture (the bloom pass picks the glow up); never shadowed.
+    const lava = new THREE.MeshBasicMaterial({ map: atlas, vertexColors: true, fog: true, side: THREE.DoubleSide });
+    lava.color.setScalar(1.25);
+    lava.name = 'lit-lava';
     return {
       opaque: make('opaque', { side: THREE.FrontSide }),
       cutout: make('cutout', { alphaTest: 0.5, transparent: false, side: THREE.FrontSide }),
       translucent: make('translucent', { transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }),
+      lava,
     };
   }
 }

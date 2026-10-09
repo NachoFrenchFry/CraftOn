@@ -61,7 +61,7 @@ export class CameraController {
     // View bobbing: capped at walking strength (running only speeds the phase up), scaled by the slider.
     const setting = this.settings.get('viewBobbing');
     this.bobIntensity = (typeof setting === 'number' ? setting : setting ? BOB_DEFAULT_INTENSITY : 0) / BOB_DEFAULT_INTENSITY;
-    const bobbing = this.bobIntensity > 0 && p.onGround && !p.flying && !p.inWater && !p.swimming;
+    const bobbing = this.bobIntensity > 0 && p.onGround && !p.flying && !p.inWater && !p.inLava && !p.swimming;
     const targetBob = bobbing ? clamp(p.horizontalSpeed / WALK_SPEED, 0, 1.0) : 0;
     this.bobFactor = damp(this.bobFactor, targetBob, 10, dt);
     this.handBobFactor = this.bobFactor * this.bobIntensity;

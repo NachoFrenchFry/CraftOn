@@ -6,6 +6,7 @@
 import { Mob } from './Mob.js';
 import { MobState } from './MobAI.js';
 import { MOB_BY_TYPE, spawnsForChunk } from './MobSpawner.js';
+import { LAVA_DAMAGE, LAVA_DAMAGE_INTERVAL, FIRE_SECONDS, FIRE_DAMAGE, FIRE_INTERVAL } from '../../player/Damage.js';
 import { ItemRegistry } from '../../items/ItemRegistry.js';
 import { BlockRegistry } from '../../blocks/BlockRegistry.js';
 import { chunkKeyString } from '../../world/ChunkCoords.js';
@@ -178,8 +179,8 @@ export class MobManager {
   }
 
   /** Hit a mob with damage from the player's position; `crit` adds the star burst and the sharper sound. */
-  hit(mob, damage, fromX, fromZ, crit = false) {
-    const died = mob.hurt(damage, fromX, fromZ);
+  hit(mob, damage, fromX, fromZ, crit = false, knockback = true) {
+    const died = mob.hurt(damage, fromX, fromZ, knockback);
     const p = mob.position;
     this.hooks.playAt(died ? mob.def.sounds.death : mob.def.sounds.hurt, p.x, p.y + 0.5, p.z, 0.9);
     if (crit && this.hooks.crit) this.hooks.crit(p.x, p.y + mob.def.hitbox[1] * 0.6, p.z, mob.def.hitbox[0] * 0.5, mob.def.hitbox[1]);
@@ -230,6 +231,8 @@ export class MobManager {
       const wasGround = m.walkDistance;
       m.fixedUpdate(dt, this.world, this.waterSim);
       if (m.dead) { this._drop(i); continue; }
+      this._lavaAndFire(m, dt);
+      if (m.dead) { this._drop(i); continue; }
       // Quiet footsteps on the block underneath.
       if (m.onGround && m.walkDistance - m.lastStepDistance > 0.7) {
         m.lastStepDistance = m.walkDistance;
@@ -248,8 +251,28 @@ export class MobManager {
     }
   }
 
+  /** Lava (Update #11): the same numbers as the player (20 every 0.5 s in lava, then 5 s on fire at 5 per second; water puts it out). */
+  _lavaAndFire(m, dt) {
+    if (m.isDying) { m.fireTimer = 0; return; }
+    const p = m.position;
+    if (m.inLava) {
+      m.fireTimer = FIRE_SECONDS;
+      m.lavaTimer -= dt;
+      if (m.lavaTimer <= 0) { m.lavaTimer = LAVA_DAMAGE_INTERVAL; m.invulnTimer = 0; this.hit(m, LAVA_DAMAGE, p.x, p.z, false, false); }
+    } else m.lavaTimer = 0;
+    if (m.inWater) m.fireTimer = 0;
+    if (m.fireTimer > 0) {
+      m.fireTimer -= dt;
+      if (!m.inLava) { m.burnTick -= dt; if (m.burnTick <= 0) { m.burnTick = FIRE_INTERVAL; m.invulnTimer = 0; this.hit(m, FIRE_DAMAGE, p.x, p.z, false, false); } }
+    } else m.burnTick = 0;
+  }
+
   render(alpha, dt) {
-    for (const m of this.mobs) if (!m.frozen) m.render(alpha, dt, this.lightAt ? this.lightAt(m.position.x, m.position.y + 0.5, m.position.z) : 1);
+    for (const m of this.mobs) {
+      if (m.frozen) continue;
+      m.render(alpha, dt, this.lightAt ? this.lightAt(m.position.x, m.position.y + 0.5, m.position.z) : 1);
+      if (m.fireTimer > 0 && m.root.visible && this.hooks.flame) this.hooks.flame(m.root.position.x, m.root.position.y + m.def.hitbox[1] * 0.6, m.root.position.z, 1);
+    }
   }
 
   setRenderDistance(chunks) { this.renderDistanceBlocks = chunks * CHUNK_SIZE; }

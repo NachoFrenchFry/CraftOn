@@ -9,6 +9,21 @@ export function isWater(id) {
   return id === B.WATER || (id >= B.FLOWING_WATER_1 && id <= B.FALLING_WATER);
 }
 
+// ---- Lava (Update #11): the same shape with 3 flowing levels ----
+export const LAVA_MAX_LEVEL = 3;
+export function isLava(id) { return id === B.LAVA || (id >= B.FLOWING_LAVA_1 && id <= B.FALLING_LAVA); }
+export function isLavaSource(id) { return id === B.LAVA; }
+export function isLavaFalling(id) { return id === B.FALLING_LAVA; }
+/** 0 for the source and falling lava, 1..3 for flowing lava, -1 for non-lava. */
+export function lavaLevelOf(id) {
+  if (id === B.LAVA || id === B.FALLING_LAVA) return 0;
+  if (id >= B.FLOWING_LAVA_1 && id <= B.FLOWING_LAVA_3) return id - B.FLOWING_LAVA_1 + 1;
+  return -1;
+}
+export function lavaFlowingId(level) { return B.FLOWING_LAVA_1 + Math.min(LAVA_MAX_LEVEL, Math.max(1, level)) - 1; }
+/** Any liquid (water or lava). */
+export function isLiquid(id) { return isWater(id) || isLava(id); }
+
 export function isSource(id) { return id === B.WATER; }
 export function isFalling(id) { return id === B.FALLING_WATER; }
 
@@ -26,8 +41,9 @@ export function flowingId(level) {
 
 /** Rendered / physical surface height of a water block that has no water above it. */
 export function heightOf(id) {
-  if (id === B.WATER) return WATER_SURFACE_HEIGHT;
-  if (id === B.FALLING_WATER) return 1;
+  if (id === B.WATER || id === B.LAVA) return WATER_SURFACE_HEIGHT;
+  if (id === B.FALLING_WATER || id === B.FALLING_LAVA) return 1;
+  if (isLava(id)) { const l = lavaLevelOf(id); return l > 0 ? (8 - l * 2) / 9 : 0; } // 3 levels spread over the same drop
   const level = levelOf(id);
   return level > 0 ? (8 - level) / 9 : 0;
 }

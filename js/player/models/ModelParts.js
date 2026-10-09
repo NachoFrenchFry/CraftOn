@@ -61,10 +61,12 @@ const baseColorOf = new WeakMap();
  * variant (userData.baseMaterial set) are left alone until the flash ends.
  */
 export function tintModelLight(owner, root, factor) {
+  const rgb = typeof factor !== 'number';
   root.traverse((o) => {
     if (!o.isMesh || !o.material || o.userData.baseMaterial) return;
     let m = o.material;
     if (ownerOf.get(m) !== owner) { m = m.clone(); ownerOf.set(m, owner); baseColorOf.set(m, m.color.clone()); o.material = m; }
-    m.color.copy(baseColorOf.get(m)).multiplyScalar(factor);
+    const c = m.color.copy(baseColorOf.get(m));
+    if (rgb) { c.r *= factor[0]; c.g *= factor[1]; c.b *= factor[2]; } else c.multiplyScalar(factor); // [r, g, b]: sky + warm block light (Update #11)
   });
 }

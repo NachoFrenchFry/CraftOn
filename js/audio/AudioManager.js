@@ -7,6 +7,7 @@ import { SoundBank } from './SoundBank.js';
 import { SpatialAudio } from './SpatialAudio.js';
 import { registerBlockSounds } from './recipes/BlockSounds.js';
 import { registerPlayerSounds } from './recipes/PlayerSounds.js';
+import { registerLavaSounds } from './recipes/LavaSounds.js';
 import { registerUISounds } from './recipes/UISounds.js';
 import { registerAmbientSounds, WindLoop } from './recipes/AmbientSounds.js';
 import { registerMobSounds } from './recipes/MobSounds.js';
@@ -48,6 +49,7 @@ export class AudioManager {
     registerUISounds(this.bank);
     registerAmbientSounds(this.bank);
     registerMobSounds(this.bank);
+    registerLavaSounds(this.bank);
     events.on('settings:changed', (key) => { if (key.endsWith('Volume')) this.applyVolumes(); });
     const unlock = () => this.init();
     window.addEventListener('pointerdown', unlock, { once: true });
@@ -172,7 +174,7 @@ export class AudioManager {
       const y = player.position.y;
       let level = 0.12 + Math.max(0, (y - 100) / 120) * 0.35;
       if (this._enclosed) level *= 0.25;
-      if (player.headInWater) level *= 0.1;
+      if (player.headInWater || player.headInLava) level *= 0.1;
       this.wind.setLevel(Math.min(level, 0.5), this.ctx.currentTime);
     }
     this._updateWaterLoop();

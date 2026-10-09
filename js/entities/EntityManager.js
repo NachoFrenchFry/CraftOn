@@ -49,6 +49,8 @@ export class EntityManager {
     this.entityDistanceBlocks = Infinity;
     /** (x, y, z) → brightness factor of the sky light there (Update #10), set by Game. */
     this.lightAt = null;
+    /** (x, y, z) an item burned in lava (Update #11): Game plays the sizzle. */
+    this.onBurn = null;
     /** Host hooks (set by HostServer): broadcast spawns and removals. */
     this.onSpawn = null;
     this.onRemove = null;
@@ -141,7 +143,7 @@ export class EntityManager {
       if (simFar !== Infinity && !it.dead && Math.hypot(it.position.x - p.position.x, it.position.z - p.position.z) > simFar) continue; // outside the simulation distance: frozen
       it.fixedUpdate(dt);
       if (it.requestTimer > 0) it.requestTimer -= dt;
-      if (it.dead) continue;
+      if (it.dead) { if (it.burned && this.onBurn) { it.burned = false; this.onBurn(it.position.x, it.position.y, it.position.z); } continue; }
       // Merge with nearby identical items (the host decides; guests only mirror).
       if (!this.remote) for (let j = i + 1; j < items.length; j++) {
         const o = items[j];

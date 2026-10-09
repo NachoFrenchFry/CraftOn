@@ -6,7 +6,7 @@
 import { encodeChunk, decodeChunk } from '../core/cloud/ChunkCodec.js';
 
 /** Hosts and guests must match exactly ("Different game version"). */
-export const GAME_VERSION = '9';
+export const GAME_VERSION = '11';
 export const MAX_PLAYERS_DEFAULT = 8;
 export const MAX_PLAYERS_MIN = 2;
 export const MAX_PLAYERS_MAX = 8;
@@ -44,12 +44,13 @@ export const RejectReason = Object.freeze({
 });
 
 /** Pose bits in player snapshots. */
-export const Pose = Object.freeze({ ON_GROUND: 1, SNEAKING: 2, SWIMMING: 4, CRAWLING: 8, FLYING: 16, IN_WATER: 32, SPRINTING: 64, SPECTATOR: 128 });
+export const Pose = Object.freeze({ ON_GROUND: 1, SNEAKING: 2, SWIMMING: 4, CRAWLING: 8, FLYING: 16, IN_WATER: 32, SPRINTING: 64, SPECTATOR: 128, ON_FIRE: 256, IN_LAVA: 512 });
 
 /** Pose bits of a local Player. */
 export function poseBits(p) {
   return (p.onGround ? Pose.ON_GROUND : 0) | (p.sneaking ? Pose.SNEAKING : 0) | (p.swimming ? Pose.SWIMMING : 0) | (p.crawling ? Pose.CRAWLING : 0)
-    | (p.flying ? Pose.FLYING : 0) | (p.inWater ? Pose.IN_WATER : 0) | (p.sprinting ? Pose.SPRINTING : 0) | (p.isSpectator ? Pose.SPECTATOR : 0);
+    | (p.flying ? Pose.FLYING : 0) | (p.inWater ? Pose.IN_WATER : 0) | (p.sprinting ? Pose.SPRINTING : 0) | (p.isSpectator ? Pose.SPECTATOR : 0)
+    | (p.onFire ? Pose.ON_FIRE : 0) | (p.inLava ? Pose.IN_LAVA : 0);
 }
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -66,6 +67,7 @@ export function decodePlayerState(a) {
     x: a[0], y: a[1], z: a[2], vx: a[3], vy: a[4], vz: a[5], yaw: a[6], pitch: a[7], pose,
     onGround: !!(pose & Pose.ON_GROUND), sneaking: !!(pose & Pose.SNEAKING), swimming: !!(pose & Pose.SWIMMING), crawling: !!(pose & Pose.CRAWLING),
     flying: !!(pose & Pose.FLYING), inWater: !!(pose & Pose.IN_WATER), sprinting: !!(pose & Pose.SPRINTING), spectator: !!(pose & Pose.SPECTATOR),
+    onFire: !!(pose & Pose.ON_FIRE), inLava: !!(pose & Pose.IN_LAVA),
   };
 }
 

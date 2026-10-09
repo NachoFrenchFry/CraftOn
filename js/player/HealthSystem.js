@@ -4,7 +4,7 @@
 // Multiplayer: the host validates player-vs-player hits and tells the victim the amount (GuestClient /
 // HostServer); each player computes its own fall damage and reports its health to the host.
 import { State } from '../core/GameState.js';
-import { MAX_HEALTH, REGEN_SECONDS, INVULNERABLE_SECONDS, RESPAWN_INVULNERABLE_SECONDS, fallDamage, causeText } from './Damage.js';
+import { MAX_HEALTH, REGEN_SECONDS, INVULNERABLE_SECONDS, RESPAWN_INVULNERABLE_SECONDS, LAVA_DAMAGE_INTERVAL, FIRE_SECONDS, FIRE_INTERVAL, fallDamage, lavaDamage, fireDamage, causeText } from './Damage.js';
 import { ITEM_THROW_PICKUP_DELAY } from '../config/Constants.js';
 import { INVENTORY_SIZE, TOTAL_SLOTS } from '../items/Inventory.js';
 
@@ -20,6 +20,9 @@ export class HealthSystem {
     this.chipFrom = MAX_HEALTH;
     this.deathCause = null;
     this.deathPosition = null;
+    /** Lava (Update #11): time to the next lava tick; the fire tick while burning. */
+    this.lavaTimer = 0;
+    this.fireTick = 0;
   }
 
   get player() { return this.game.player; }
@@ -33,6 +36,7 @@ export class HealthSystem {
     this.regenTimer = 0; this.invulnTimer = 0; this.hurtFlash = 0;
     this.chipFrom = this.player.health;
     this.deathCause = null; this.deathPosition = null;
+    this.lavaTimer = 0; this.fireTick = 0; this.player.fireTimer = 0; this.player.onFire = false;
   }
 
   update(dt) {
@@ -40,11 +44,35 @@ export class HealthSystem {
     if (!g.state.inWorld) return;
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
     if (this.hurtFlash > 0) this.hurtFlash -= dt;
-    if (p.dead) return;
+    if (p.dead) { p.fireTimer = 0; p.onFire = false; return; }
+    this._lavaAndFire(dt);
     if (this.active && p.health < p.maxHealth) {
       this.regenTimer += dt;
       if (this.regenTimer >= REGEN_SECONDS) { this.regenTimer -= REGEN_SECONDS; this.heal(1); }
     } else this.regenTimer = 0;
+  }
+
+  /**
+   * Lava (Update #11): about 20 damage every 0.5 s while in it (armor reduces it), then on fire for 5 s at 5 per
+   * second; water puts the fire out at once. Creative and Spectator never burn.
+   */
+  _lavaAndFire(dt) {
+    const g = this.game, p = g.player, inv = g.inventory;
+    if (!this.active) { p.fireTimer = 0; p.onFire = false; this.lavaTimer = 0; this.fireTick = 0; return; }
+    if (p.inLava) {
+      p.fireTimer = FIRE_SECONDS;
+      this.lavaTimer -= dt;
+      if (this.lavaTimer <= 0) { this.lavaTimer = LAVA_DAMAGE_INTERVAL; this.damage(lavaDamage(inv.armorPoints()), { kind: 'lava' }, { ignoreInvuln: true }); }
+    } else this.lavaTimer = 0;
+    if (p.inWater) p.fireTimer = 0;
+    if (p.fireTimer > 0 && !p.dead) {
+      p.fireTimer -= dt;
+      if (!p.inLava) {
+        this.fireTick -= dt;
+        if (this.fireTick <= 0) { this.fireTick = FIRE_INTERVAL; this.damage(fireDamage(inv.armorPoints()), { kind: 'fire' }, { ignoreInvuln: true }); }
+      }
+    } else this.fireTick = 0;
+    p.onFire = p.fireTimer > 0;
   }
 
   heal(n) {
@@ -85,7 +113,7 @@ export class HealthSystem {
   /** Landing after a fall (PlayerPhysics 'player:land'): gentle damage, armor reduces it, boots count double. */
   onLand(fall) {
     const p = this.player, inv = this.game.inventory;
-    if (!this.active || p.dead || p.inWater) return;
+    if (!this.active || p.dead || p.inWater || p.inLava) return;
     const dmg = fallDamage(fall, inv.armorPoints(), inv.armorPointsFor('boots'));
     if (dmg > 0) this.damage(dmg, { kind: 'fall' }, { ignoreInvuln: true });
   }
@@ -103,6 +131,7 @@ export class HealthSystem {
     if (p.dead) return;
     p.dead = true;
     p.health = 0;
+    p.fireTimer = 0; p.onFire = false;
     this.deathCause = cause || { kind: 'other' };
     this.deathPosition = p.position.clone();
     p.velocity.set(0, 0, 0);
@@ -139,6 +168,7 @@ export class HealthSystem {
     this.chipFrom = p.health;
     this.invulnTimer = RESPAWN_INVULNERABLE_SECONDS;
     this.regenTimer = 0;
+    this.lavaTimer = 0; this.fireTick = 0; p.fireTimer = 0; p.onFire = false;
     p.teleport(p.spawn.x, p.spawn.y, p.spawn.z);
     p.flying = false;
     g.session.settleAfterRespawn();

@@ -3,7 +3,7 @@
 // voxel grid (Y, then X, then Z), sneaking edge protection and the crawl pose.
 
 import * as C from '../config/Constants.js';
-import { isWater, heightOf } from '../world/WaterLevels.js';
+import { isWater, isLava, heightOf } from '../world/WaterLevels.js';
 import { isSolidAt, sweepAxis, hasSupport, hasHeadroom } from '../entities/EntityPhysics.js';
 import { stepHorizontal, stepFlyVertical } from './Movement.js';
 
@@ -32,12 +32,17 @@ export class PlayerPhysics {
   /** Is there solid ground anywhere under the box's footprint? */
   _hasSupport(box) { return hasSupport(this.world, box); }
 
-  _isWater(x, y, z) {
+  _isWater(x, y, z) { return this._liquidAt(x, y, z) === 1; }
+
+  /** 0 = none, 1 = water, 2 = lava at a point (the liquid's surface height counts, a liquid block above fills the cell). */
+  _liquidAt(x, y, z) {
     const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
     const id = this.world.getBlock(bx, by, bz);
-    if (!isWater(id)) return false;
-    if (isWater(this.world.getBlock(bx, by + 1, bz))) return true;
-    return y - by < heightOf(id);
+    const kind = isWater(id) ? 1 : isLava(id) ? 2 : 0;
+    if (!kind) return 0;
+    const above = this.world.getBlock(bx, by + 1, bz);
+    if (kind === 1 ? isWater(above) : isLava(above)) return kind;
+    return y - by < heightOf(id) ? kind : 0;
   }
 
   /** Is the space above the current box free up to `height` above the feet? */
@@ -93,7 +98,7 @@ export class PlayerPhysics {
   /** Noclip flight for spectators (speed scaled by the wheel-adjusted multiplier). */
   _stepSpectator(p, v, intent, dt) {
     p.flying = true; p.swimming = false; p.crawling = false; p.sneaking = false; p.onGround = false;
-    p.inWater = false; p.headInWater = false; p.fallStartY = null;
+    p.inWater = false; p.headInWater = false; p.inLava = false; p.headInLava = false; p.fallStartY = null;
     const sinY = Math.sin(p.yaw), cosY = Math.cos(p.yaw);
     let fx = -sinY * intent.forward + cosY * intent.strafe;
     let fz = -cosY * intent.forward - sinY * intent.strafe;
@@ -124,14 +129,19 @@ export class PlayerPhysics {
       return;
     }
 
-    // Water state (sampled with the current pose).
-    const feetWater = this._isWater(p.position.x, p.position.y + 0.2, p.position.z);
-    const midWater = this._isWater(p.position.x, p.position.y + p.height * 0.5, p.position.z);
+    // Water / lava state (sampled with the current pose).
+    const feetLiquid = this._liquidAt(p.position.x, p.position.y + 0.2, p.position.z);
+    const midLiquid = this._liquidAt(p.position.x, p.position.y + p.height * 0.5, p.position.z);
+    const headLiquid = this._liquidAt(p.position.x, p.position.y + p.eyeHeight, p.position.z);
+    const feetWater = feetLiquid === 1, midWater = midLiquid === 1;
     const wasInWater = p.inWater;
     p.inWater = feetWater || midWater;
-    p.headInWater = this._isWater(p.position.x, p.position.y + p.eyeHeight, p.position.z);
+    p.inLava = feetLiquid === 2 || midLiquid === 2;
+    p.headInWater = headLiquid === 1;
+    p.headInLava = headLiquid === 2;
     if (p.inWater && !wasInWater && v.y < -6) this.events.emit('player:splash', -v.y);
-    if (p.inWater) p.flying = p.flying && p.isCreative;
+    if (p.inWater || p.inLava) p.flying = p.flying && p.isCreative;
+    if (p.inLava) p.fallStartY = null;
 
     this._updatePose(p, intent, midWater);
 
@@ -156,6 +166,7 @@ export class PlayerPhysics {
     let speed;
     if (p.flying) speed = p.sprinting ? C.SPRINT_FLY_SPEED : C.FLY_SPEED;
     else if (p.swimming) speed = C.SWIM_SPRINT_SPEED;
+    else if (p.inLava) speed = C.SWIM_SPEED * C.LAVA_SPEED_FACTOR; // thick and slow (Update #11)
     else if (p.inWater) speed = C.SWIM_SPEED * (p.sprinting ? 1.3 : 1);
     else if (p.sneaking || p.crawling) speed = C.SNEAK_SPEED;
     else speed = p.sprinting ? C.SPRINT_SPEED : C.WALK_SPEED;
@@ -177,8 +188,8 @@ export class PlayerPhysics {
     } else {
       // Velocity + drag movement (Movement.js): accelerate while pushing, drag every tick; the air keeps
       // momentum with a fifth of the control. Water keeps its gentle blend toward the target.
-      if (p.inWater && !p.flying) {
-        const blend = 1 - Math.exp(-12 * dt);
+      if ((p.inWater || p.inLava) && !p.flying) {
+        const blend = 1 - Math.exp(-(p.inLava ? 6 : 12) * dt);
         v.x += (fx * speed - v.x) * blend;
         v.z += (fz * speed - v.z) * blend;
       } else {
@@ -188,6 +199,16 @@ export class PlayerPhysics {
       // Vertical motion.
       if (p.flying) {
         v.y = stepFlyVertical(v.y, (intent.up ? 1 : 0) - (intent.down ? 1 : 0), speed * 0.8, dt);
+        p.fallStartY = null;
+      } else if (p.inLava) {
+        // Lava: sink slowly, climb slowly while holding jump, a weak hop out of a shallow pool.
+        if (intent.jump && p.onGround) { v.y = C.JUMP_VELOCITY * 0.55; p.onGround = false; }
+        else {
+          v.y -= C.WATER_GRAVITY * 0.6 * dt;
+          if (intent.jump) v.y = Math.min(v.y + 10 * dt, C.LAVA_UP_SPEED);
+          v.y *= Math.exp(-4 * dt);
+          if (v.y < -1.2) v.y = -1.2;
+        }
         p.fallStartY = null;
       } else if (p.inWater) {
         if (intent.jump && p.onGround) {
