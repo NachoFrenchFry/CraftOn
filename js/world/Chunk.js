@@ -2,6 +2,7 @@
 
 import { BLOCKS_PER_CHUNK, SECTION_COUNT, WORLD_HEIGHT } from '../config/Constants.js';
 import { blockIndex } from './ChunkCoords.js';
+import { RENDER_TYPE, RenderType } from '../blocks/BlockRegistry.js';
 
 export const ChunkState = Object.freeze({ PENDING: 0, GENERATED: 1 });
 
@@ -20,8 +21,17 @@ export class Chunk {
     this.sectionCounts = new Uint16Array(SECTION_COUNT);
     /** Bitmask of sections whose mesh is stale. */
     this.dirtySections = 0;
-    /** Incremented on every edit so stale worker results can be discarded. */
+    /** Incremented on every edit (the generation / light jobs and tools compare it). */
     this.version = 0;
+    /** Per-section edit counters (Update #14 §1a): a mesh job remembers them, so a section edited (and re-meshed at once) while
+     * the job ran keeps its fresh mesh instead of the job's stale one. */
+    this.sectionVersions = new Uint32Array(SECTION_COUNT);
+    /** Bumped only when a torch is placed or removed (the torch-effects cache rescans on this, not on every edit). */
+    this.torchVersion = 0;
+    /** Block edits made while this chunk's initial light job was in flight: replayed through the updater when the light lands. */
+    this.pendingLightEdits = null;
+    /** Per section (Update #14 §2c): which of its 6 faces connect through non-opaque blocks, as a 15-bit pair mask; all set = open. */
+    this.visMask = new Uint16Array(SECTION_COUNT).fill(0x7fff);
     /** True once a mesh has been built for the current version. */
     this.meshed = false;
     this.meshing = false;
@@ -52,6 +62,8 @@ export class Chunk {
     if (id === 0) this.sectionCounts[sy]--;
     this.dirtySections |= 1 << sy;
     this.version++;
+    this.sectionVersions[sy]++;
+    if (RENDER_TYPE[old] === RenderType.TORCH || RENDER_TYPE[id] === RenderType.TORCH) this.torchVersion++;
     return old;
   }
 

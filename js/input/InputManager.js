@@ -1,8 +1,9 @@
-// InputManager.js — keyboard/mouse state, pointer lock handling, wheel, per-frame edge detection and
-// a capture mode used by the Controls screen to record the next key or mouse button.
+// InputManager.js — keyboard/mouse state, wheel, per-frame edge detection and a capture mode used by the Controls
+// screen to record the next key or mouse button. The mouse lock itself belongs to PointerLockController (Update #13):
+// this class only mirrors its state (`pointerLocked`), forwards key / click presses to it as user activation, and
+// swallows the mouse buttons that were held when a lock arrived (the "Click to resume" click never reaches the game).
 
 const MAX_MOUSE_DELTA = 300; // clamp Chrome pointer-lock spikes
-const RELOCK_COOLDOWN_MS = 1100;
 const DOUBLE_TAP_MS = 300;
 
 export class InputManager {
@@ -22,10 +23,12 @@ export class InputManager {
     this.mouseDX = 0;
     this.mouseDY = 0;
     this.wheelDelta = 0;
+    /** Mirror of the lock controller's state (tests set it directly: headless Chrome has no real pointer lock). */
     this.pointerLocked = false;
-    this.wantPointerLock = false;
-    this.lastUnlockTime = -Infinity;
-    this.lockFailed = false;
+    /** The PointerLockController (set by Game); key and mouse presses are reported to it as user activation. */
+    this.lock = null;
+    /** Mouse buttons held when the lock was obtained: ignored until released, so the resume click never breaks or places. */
+    this.swallowed = new Set();
     this.mouseX = 0;
     this.mouseY = 0;
     /** When true keyboard game input is ignored (text field focused). */
@@ -51,8 +54,7 @@ export class InputManager {
     document.addEventListener('mousemove', (e) => this._onMouseMove(e));
     document.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
-    document.addEventListener('pointerlockchange', () => this._onLockChange());
-    document.addEventListener('pointerlockerror', () => this._onLockError());
+    this.events.on('input:pointerlock', (locked) => this._onLockChange(locked));
   }
 
   _onKey(e, isDown) {
@@ -71,6 +73,7 @@ export class InputManager {
     if (this.shouldPreventDefault(code)) e.preventDefault();
     if (isDown) {
       if (e.repeat) return;
+      if (this.lock) this.lock.onUserInput(code); // a key press is user activation: a pending re-lock goes through now (never on Esc)
       this.down.add(code);
       this.pressed.add(code);
       this._trackDoubleTap(code);
@@ -78,6 +81,7 @@ export class InputManager {
     } else {
       this.down.delete(code);
       this.released.add(code);
+      if (this.lock) this.lock.onKeyUp(code);
       this.events.emit('input:keyup', code, e);
     }
   }
@@ -94,12 +98,14 @@ export class InputManager {
     }
     if (isDown) {
       if (e.button === 1 || e.button >= 3) e.preventDefault();
+      if (this.lock) this.lock.onUserInput(code); // a click is user activation too
       this.down.add(code);
       this.pressed.add(code);
       this._trackDoubleTap(code);
       this.events.emit('input:mousedown', e.button, e);
     } else {
       this.down.delete(code);
+      this.swallowed.delete(code);
       this.released.add(code);
       this.events.emit('input:mouseup', e.button, e);
     }
@@ -122,46 +128,17 @@ export class InputManager {
     this.events.emit('input:wheel', Math.sign(e.deltaY), e);
   }
 
-  _onLockChange() {
-    const locked = document.pointerLockElement === this.element;
+  /** The controller reports a lock change: mirror it; on a new lock swallow every mouse button held right now. */
+  _onLockChange(locked) {
     const was = this.pointerLocked;
     this.pointerLocked = locked;
-    if (was && !locked) {
-      this.lastUnlockTime = performance.now();
-      this.clearAll();
+    if (was && !locked) this.clearAll();
+    if (locked) {
+      // The click that obtained the lock (the "Click to resume" overlay, the canvas) must never reach the game:
+      // every mouse button held right now is ignored until it is released.
+      for (const code of this.down) if (code.startsWith('Mouse')) { this.swallowed.add(code); this.pressed.delete(code); this.doubleTapped.delete(code); }
+      this.mouseDX = 0; this.mouseDY = 0;
     }
-    this.events.emit('input:pointerlock', locked);
-  }
-
-  _onLockError() {
-    this.lockFailed = true;
-    this.events.emit('input:pointerlockfailed');
-  }
-
-  /** Request pointer lock; handles the ~1 s browser cooldown gracefully. */
-  requestPointerLock() {
-    if (this.pointerLocked) return;
-    if (performance.now() - this.lastUnlockTime < RELOCK_COOLDOWN_MS) {
-      this.events.emit('input:pointerlockfailed');
-      return;
-    }
-    try {
-      const p = this.element.requestPointerLock({ unadjustedMovement: true });
-      if (p && typeof p.catch === 'function') {
-        p.catch(() => {
-          try {
-            const p2 = this.element.requestPointerLock();
-            if (p2 && p2.catch) p2.catch(() => this._onLockError());
-          } catch (err) { this._onLockError(); }
-        });
-      }
-    } catch (e) {
-      try { this.element.requestPointerLock(); } catch (err) { this._onLockError(); }
-    }
-  }
-
-  exitPointerLock() {
-    if (document.pointerLockElement) document.exitPointerLock();
   }
 
   /** Uses event timestamps so detection does not depend on the frame rate; a third press does not re-trigger. */
@@ -176,9 +153,9 @@ export class InputManager {
     }
   }
 
-  isDown(code) { return !this.textInputActive && this.down.has(code); }
-  wasDoubleTapped(code) { return !this.textInputActive && this.doubleTapped.has(code); }
-  wasPressed(code) { return !this.textInputActive && this.pressed.has(code); }
+  isDown(code) { return !this.textInputActive && this.down.has(code) && !this.swallowed.has(code); }
+  wasDoubleTapped(code) { return !this.textInputActive && this.doubleTapped.has(code) && !this.swallowed.has(code); }
+  wasPressed(code) { return !this.textInputActive && this.pressed.has(code) && !this.swallowed.has(code); }
   wasReleased(code) { return this.released.has(code); }
 
   /** Read and reset the accumulated mouse delta. */
@@ -207,6 +184,7 @@ export class InputManager {
     this.down.clear();
     this.pressed.clear();
     this.released.clear();
+    this.swallowed.clear();
     this.mouseDX = 0;
     this.mouseDY = 0;
   }

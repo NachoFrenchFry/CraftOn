@@ -11,6 +11,9 @@ export class MainMenu {
     this.game = game;
     this.root = document.getElementById('main-menu');
     this.worldRoot = document.getElementById('world-menu');
+    /** The "Create New World" form on its own screen (Update #12 §6). */
+    this.createRoot = document.getElementById('create-world-menu');
+    this.createError = document.getElementById('create-error');
     this.worldList = document.getElementById('world-list');
     this.nameInput = document.getElementById('world-name');
     this.seedInput = document.getElementById('world-seed');
@@ -35,6 +38,8 @@ export class MainMenu {
     document.getElementById('btn-multiplayer').addEventListener('click', () => { game.audio.playUI('click'); ui.multiplayer.showMain(); });
     document.getElementById('btn-options').addEventListener('click', () => { game.audio.playUI('click'); ui.options.open(() => this.show()); this.hide(); });
     document.getElementById('btn-world-back').addEventListener('click', () => { game.audio.playUI('click'); this.hideWorlds(); this.show(); });
+    document.getElementById('btn-new-world').addEventListener('click', () => { game.audio.playUI('click'); this.showCreate(); });
+    document.getElementById('btn-create-back').addEventListener('click', () => { game.audio.playUI('click'); this.hideCreate(); this.showWorlds(); });
     document.getElementById('btn-create-world').addEventListener('click', () => this._create());
     for (const input of [this.nameInput, this.seedInput]) {
       input.addEventListener('focus', () => { game.input.textInputActive = true; });
@@ -59,7 +64,7 @@ export class MainMenu {
     this.busy = busy;
     for (const el of [this.nameInput, this.seedInput, this.modeSelect]) el.disabled = busy;
     for (const b of this.worldList.querySelectorAll('button')) b.disabled = busy;
-    this._busyButton(this.createButton, busy ? label : null, 'Create New World');
+    this._busyButton(this.createButton, busy ? label : null, 'Create');
   }
 
   refreshAccount() { const u = this.game.account && this.game.account.username; this.accountLine.textContent = u ? `Logged in as ${u}` : ''; }
@@ -71,13 +76,25 @@ export class MainMenu {
     await this.refreshList();
   }
 
-  hideWorlds() { this.worldRoot.classList.add('hidden'); }
+  hideWorlds() { this.worldRoot.classList.add('hidden'); this.hideCreate(); }
+
+  /** The create form (name, seed, game mode) on its own screen; Back returns to the list. */
+  showCreate() {
+    this.worldRoot.classList.add('hidden');
+    this.createRoot.classList.remove('hidden');
+    this.createError.textContent = ''; this.createError.classList.add('hidden');
+    this.nameInput.focus();
+  }
+
+  hideCreate() { this.createRoot.classList.add('hidden'); this.game.input.textInputActive = false; }
 
   showError(text) {
     this.worldError.textContent = text || '';
     this.worldError.classList.toggle('hidden', !text);
     this.worldRetry.classList.toggle('hidden', !text);
   }
+
+  _showCreateError(text) { this.createError.textContent = text || ''; this.createError.classList.toggle('hidden', !text); }
 
   async refreshList() {
     this.showError('');
@@ -102,7 +119,7 @@ export class MainMenu {
     if (!worlds.length) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'No saved worlds yet. Create one below.';
+      empty.textContent = 'No saved worlds yet. Use "Create New World".';
       this.worldList.appendChild(empty);
       return;
     }
@@ -129,7 +146,7 @@ export class MainMenu {
         if (this.busy) return;
         this.game.audio.playUI('click');
         if (!confirm(`Delete world "${w.name}"? This cannot be undone.`)) return;
-        this._setBusy(true, 'Create New World');
+        this._setBusy(true, 'Create');
         this._busyButton(del, 'Deleting…');
         try { await this.game.saveManager.deleteWorld(w.id); } catch (e) { this._setBusy(false); this._busyButton(del, null, 'Delete'); this.showError("Couldn't delete the world. Check your connection."); return; }
         this._setBusy(false);
@@ -147,10 +164,10 @@ export class MainMenu {
     const seedText = this.seedInput.value.trim();
     const seed = seedText ? hashSeed(seedText) : randomSeed();
     const gameMode = this.modeSelect.value;
-    this.showError('');
+    this._showCreateError('');
     this._setBusy(true, 'Creating…');
     let record;
-    try { record = await this.game.saveManager.createWorld({ name, seed, seedText, gameMode }); } catch (e) { this._setBusy(false); this.showError("Couldn't create the world. Check your connection."); return; }
+    try { record = await this.game.saveManager.createWorld({ name, seed, seedText, gameMode }); } catch (e) { this._setBusy(false); this._showCreateError("Couldn't create the world. Check your connection."); return; }
     this._setBusy(false);
     this.hideWorlds();
     this.game.startWorld(record.id);

@@ -21,9 +21,13 @@ export class ChunkManager {
     this.world = world;
     this.meshManager = meshManager;
     this.settings = settings;
+    // Workers (Update #14 §3): one pool of chunk workers (generation, the initial light pass and meshing in one script) with up
+    // to hardwareConcurrency − 1 workers, at most 6, so a 4-core laptop runs 3 and an 8-core desktop 6; every job goes to the
+    // idlest worker. `genPool` / `meshPool` are the same pool (kept as names for the dispatch caps and the overlay).
     const cores = navigator.hardwareConcurrency || 4;
-    this.genPool = new WorkerPool(new URL('../generation/generation.worker.js', import.meta.url), Math.max(1, Math.min(4, cores - 1)));
-    this.meshPool = new WorkerPool(new URL('../rendering/meshing.worker.js', import.meta.url), Math.max(1, Math.min(2, cores - 2)));
+    this.pool = new WorkerPool(new URL('./chunk.worker.js', import.meta.url), Math.max(2, Math.min(6, cores - 1)));
+    this.genPool = this.pool;
+    this.meshPool = this.pool;
     this.genQueue = [];
     this.genInFlight = new Set();
     this.genResults = [];
@@ -42,6 +46,9 @@ export class ChunkManager {
     this.centerCZ = null;
     this.generation = 0; // bumped on clear() so stale worker replies are ignored
     this.queuesDirty = true;
+    /** Chunks integrated this frame whose 'chunk:loaded' fan-out (springs, mobs) still has to run: drained within the budget (Update #14 §1d). */
+    this.loadedQueue = [];
+    this._candidates = [];
     /** Worker timing accumulators (for the debug overlay). */
     this.genTiming = { total: 0, count: 0 };
     this.meshTiming = { total: 0, count: 0 };
@@ -56,12 +63,12 @@ export class ChunkManager {
   get unloadRadius() { return this.genRadius + UNLOAD_MARGIN; }
 
   setSeed(seed) {
-    this.genPool.broadcast({ type: 'init', seed });
+    this.pool.broadcast({ type: 'init', seed });
   }
 
-  /** Mirror the atlas' transparency overrides in the mesh workers (main-thread mesher shares the registry). */
+  /** Mirror the atlas' transparency overrides in the workers (main-thread mesher shares the registry). */
   setCutoutBlocks(ids) {
-    this.meshPool.broadcast({ type: 'init', cutoutBlocks: ids });
+    this.pool.broadcast({ type: 'init', cutoutBlocks: ids });
   }
 
   /** Drop every chunk, mesh and pending job. */
@@ -76,6 +83,7 @@ export class ChunkManager {
     this.lightCheck.clear();
     this.lightInFlight.clear();
     this.lightResults.length = 0;
+    this.loadedQueue.length = 0;
     this.lightUpdater.clear();
     this.meshManager.removeAll();
     this.world.chunks.clear();
@@ -117,12 +125,32 @@ export class ChunkManager {
       this.queuesDirty = false;
       this._recompute(cx, cz, dirX, dirZ);
     }
+    const pr = this.world.profiler;
+    if (pr) pr.begin('chunks');
     this._dispatchGeneration();
+    if (pr) pr.end('chunks');
+    if (pr) pr.begin('integrate');
     this._integrate();
+    if (pr) pr.end('integrate');
+    if (pr) pr.begin('light');
     this.lightUpdater.update(LIGHT_BUDGET_MS);
+    if (pr) pr.end('light');
+    if (pr) pr.begin('chunks');
     this._queueLightRemeshes();
+    this._queueDirtyRemeshes();
     this._dispatchLighting();
+    if (pr) pr.end('chunks');
+    if (pr) pr.begin('meshing');
     this._dispatchMeshing();
+    if (pr) pr.end('meshing');
+  }
+
+  /** Sections marked dirty by block changes since the last frame (Update #14 §1a): queue their chunks for a partial worker job. */
+  _queueDirtyRemeshes() {
+    const dirty = this.meshManager.dirtyChunks;
+    if (!dirty.size) return;
+    for (const key of dirty) if (this.world.chunks.has(key)) this.meshCheck.add(key);
+    dirty.clear();
   }
 
   /** Sections whose light changed get a partial remesh (worker job limited to those sections). */
@@ -142,7 +170,7 @@ export class ChunkManager {
 
   /** Initial lighting in the worker once a chunk and its eight neighbours have block data (a 3×3 grid is exact). */
   _dispatchLighting() {
-    const maxInFlight = this.meshPool.size + this.genPool.size;
+    const maxInFlight = this.pool.size;
     if (this.lightInFlight.size >= maxInFlight || this.lightCheck.size === 0) return;
     const reach = this.renderDistance + 1;
     for (const key of this.lightCheck) {
@@ -160,8 +188,7 @@ export class ChunkManager {
         if (n) { const copy = n.blocks.slice(); grid.push(copy); tops.push(chunkTop(n)); transfer.push(copy.buffer); } else { grid.push(null); tops.push(0); }
       }
       const gen = this.generation;
-      const pool = this.genPool.inFlight <= this.meshPool.inFlight ? this.genPool : this.meshPool; // both pools run light jobs
-      pool.post({ type: 'light', cx: chunk.cx, cz: chunk.cz, grid, tops, version: chunk.version }, transfer).then((r) => {
+      this.pool.post({ type: 'light', cx: chunk.cx, cz: chunk.cz, grid, tops, version: chunk.version }, transfer).then((r) => {
         if (gen !== this.generation) return;
         this.lightTiming.total += r.ms || 0; this.lightTiming.count++;
         if (r.phases) for (const k of Object.keys(this.lightPhases)) this.lightPhases[k] += r.phases[k] || 0;
@@ -209,13 +236,13 @@ export class ChunkManager {
   }
 
   _dispatchGeneration() {
-    const maxInFlight = this.genPool.size * 3;
+    const maxInFlight = this.pool.size * 2;
     while (this.genInFlight.size < maxInFlight && this.genQueue.length) {
       const job = this.genQueue.shift();
       if (this.world.chunks.has(job.key)) continue;
       this.genInFlight.add(job.key);
       const gen = this.generation;
-      this.genPool.post({ type: 'generate', cx: job.cx, cz: job.cz, seed: this.world.seed }).then((r) => {
+      this.pool.post({ type: 'generate', cx: job.cx, cz: job.cz, seed: this.world.seed }).then((r) => {
         if (gen !== this.generation) return;
         this.genTiming.total += r.ms || 0; this.genTiming.count++;
         this.genResults.push(r);
@@ -229,6 +256,7 @@ export class ChunkManager {
   }
 
   _integrate() {
+    const pr = this.world.profiler;
     const start = performance.now();
     let uploads = 0;
     const [maxUploads, budgetMs] = this.uploadBudget;
@@ -239,10 +267,11 @@ export class ChunkManager {
       const chunk = this.world.chunks.get(key);
       if (!chunk) continue;
       chunk.lighting = false;
-      if (chunk.version !== r.version) { this.lightCheck.add(key); continue; } // edited meanwhile: light it again
       chunk.light = r.light;
       chunk.lit = true;
-      this.lightUpdater.onChunkLit(chunk);
+      if (pr) pr.begin('light');
+      this.lightUpdater.onChunkLit(chunk); // replays edits made while the job ran and queues the seam slices (budgeted in update())
+      if (pr) pr.end('light');
       this.meshCheck.add(key);
     }
     while (this.meshResults.length && uploads < maxUploads && performance.now() - start < budgetMs) {
@@ -252,10 +281,11 @@ export class ChunkManager {
       const chunk = this.world.chunks.get(key);
       if (!chunk) continue;
       chunk.meshing = false;
-      if (chunk.version !== r.version) { this.meshCheck.add(key); continue; }
-      this.meshManager.applyChunkResult(r.cx, r.cz, r, r.sectionMask);
+      if (pr) pr.begin('meshing');
+      this.meshManager.applyChunkResult(r.cx, r.cz, r, r.sectionMask, r.versions);
+      if (pr) pr.end('meshing');
       chunk.meshed = true;
-      chunk.dirtySections = 0;
+      if (chunk.remeshMask) this.meshCheck.add(key); // sections edited while the job ran: the next (partial) job
       uploads++;
     }
     while (this.genResults.length && performance.now() - start < budgetMs) {
@@ -275,12 +305,21 @@ export class ChunkManager {
       this.world.chunks.set(key, chunk);
       this.lightCheck.add(key);
       this.meshCheck.add(key);
-      if (this.world.events) this.world.events.emit('chunk:loaded', r.cx, r.cz);
+      this.loadedQueue.push(key);
       for (const [dx, dz] of NEIGHBOR_OFFSETS) {
         const nk = chunkKey(r.cx + dx, r.cz + dz);
         const n = this.world.chunks.get(nk);
         if (n) { this.meshCheck.add(nk); if (!n.lit && !n.lighting) this.lightCheck.add(nk); }
       }
+    }
+    // The 'chunk:loaded' fan-out (cave springs, stowed mobs, the first mob group) counts against the same budget; what does not
+    // fit waits for the next frame (Update #14 §1d).
+    while (this.loadedQueue.length && performance.now() - start < budgetMs) {
+      const key = this.loadedQueue.shift();
+      if (!this.world.chunks.has(key)) continue;
+      if (pr) pr.begin('chunkLoaded');
+      if (this.world.events) this.world.events.emit('chunk:loaded', keyToChunkX(key), keyToChunkZ(key));
+      if (pr) pr.end('chunkLoaded');
     }
   }
 
@@ -290,37 +329,52 @@ export class ChunkManager {
   }
 
   _dispatchMeshing() {
-    const maxInFlight = this.meshPool.size * 2;
+    const maxInFlight = this.pool.size * 2;
     if (this.meshInFlight.size >= maxInFlight || this.meshCheck.size === 0) return;
     const rd = this.renderDistance;
     const ao = this.settings.get('smoothLighting');
     const fastLeaves = !this.settings.get('fancyLeaves');
+    // Eligible chunks: those without any mesh yet first (a chunk refreshed every tick by nearby water must never starve one
+    // that has never been drawn), then nearest the player first (Update #14 §1a).
+    const cand = this._candidates;
+    cand.length = 0;
     for (const key of this.meshCheck) {
-      if (this.meshInFlight.size >= maxInFlight) break;
       const chunk = this.world.chunks.get(key);
       if (!chunk) { this.meshCheck.delete(key); continue; }
       if ((chunk.meshed && !chunk.remeshMask) || chunk.meshing) { this.meshCheck.delete(key); continue; }
       if (!this._withinRadius(chunk.cx, chunk.cz, rd)) continue;
-      if (!this._hasAllNeighbors(chunk.cx, chunk.cz)) continue;
       if (!chunk.lit) continue; // lighting runs first (the light pass is queued by _dispatchLighting)
+      if (!this._hasAllNeighbors(chunk.cx, chunk.cz)) continue;
+      cand.push(chunk);
+    }
+    if (cand.length > 1) {
+      const ccx = this.centerCX, ccz = this.centerCZ;
+      cand.sort((a, b) => (a.meshed - b.meshed) || (((a.cx - ccx) ** 2 + (a.cz - ccz) ** 2) - ((b.cx - ccx) ** 2 + (b.cz - ccz) ** 2)));
+    }
+    for (let i = 0; i < cand.length && this.meshInFlight.size < maxInFlight; i++) {
+      const chunk = cand[i];
+      const key = chunkKey(chunk.cx, chunk.cz);
       this.meshCheck.delete(key);
+      const partial = chunk.meshed && chunk.remeshMask; // a refresh of some sections of an existing mesh
+      const sectionMask = partial ? chunk.remeshMask : chunk.nonEmptyMask();
+      chunk.remeshMask = 0;
+      if (!sectionMask) continue;
       chunk.meshing = true;
       this.meshInFlight.add(key);
       const padded = allocPadded();
       buildPaddedChunk(this.world, chunk.cx, chunk.cz, padded);
       const light = chunk.light.slice();
-      const partial = chunk.meshed && chunk.remeshMask; // a lit-section refresh of an existing mesh
-      const sectionMask = partial ? (chunk.remeshMask & chunk.nonEmptyMask()) : chunk.nonEmptyMask();
-      chunk.remeshMask = 0;
-      if (partial && !sectionMask) { chunk.meshing = false; this.meshInFlight.delete(key); continue; }
+      const versions = Array.from(chunk.sectionVersions);
       const msg = { type: 'mesh', cx: chunk.cx, cz: chunk.cz, padded, light, sectionMask, ao, fastLeaves, version: chunk.version };
       const gen = this.generation;
-      this.meshPool.post(msg, [padded.buffer, light.buffer]).then((r) => {
+      this.pool.post(msg, [padded.buffer, light.buffer]).then((r) => {
         if (gen !== this.generation) return;
         this.meshTiming.total += r.ms || 0; this.meshTiming.count++;
+        r.versions = versions;
         this.meshResults.push(r);
       });
     }
+    cand.length = 0;
   }
 
   /** True when the chunk at world (x, z) has block data. */
@@ -361,7 +415,6 @@ export class ChunkManager {
   }
 
   dispose() {
-    this.genPool.terminate();
-    this.meshPool.terminate();
+    this.pool.terminate();
   }
 }

@@ -37,6 +37,9 @@ export function fallDamage(fallDistance, armorPoints = 0, bootsPoints = 0) {
   return raw <= 0 ? 0 : Math.round(raw * armorReduction(armorPoints + bootsPoints));
 }
 
+/** Mob fall damage (Update #12 §5d): the player's curve on the mob's health scale, max(0, fall − 3) × 0.215 (a 10-health cow dies from about 50 blocks). */
+export function mobFallDamage(fallDistance) { return Math.max(0, fallDistance - 3) * 0.215; }
+
 /** Smallest whole fall (blocks) that kills a 100-health player with that armor. */
 export function lethalFall(armorPoints = 0, bootsPoints = 0) {
   for (let f = 3; f < 2000; f++) if (fallDamage(f, armorPoints, bootsPoints) >= MAX_HEALTH) return f;

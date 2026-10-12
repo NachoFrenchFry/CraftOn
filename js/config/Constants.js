@@ -25,6 +25,10 @@ export const PHYSICS_HZ = 60;
 export const PHYSICS_STEP = 1 / PHYSICS_HZ;
 export const MAX_PHYSICS_STEPS = 5;
 export const MAX_FRAME_DT = 0.1;
+/** /tick (Update #12): Minecraft's scale, 20 ticks per second = normal speed; timeScale = rate / 20. One tick = 3 physics steps. */
+export const TICK_RATE_DEFAULT = 20;
+export const TICK_RATE_MIN = 1;
+export const TICK_RATE_MAX = 100;
 
 export const PLAYER_WIDTH = 0.6;
 export const PLAYER_HEIGHT = 1.8;
@@ -64,7 +68,15 @@ export const VOID_Y = -64;
 
 export const REACH_SURVIVAL = 5;
 export const REACH_CREATIVE = 6;
-export const PLACE_REPEAT_SECONDS = 0.25;
+export const PLACE_REPEAT_SECONDS = 0.25;           // Survival hold-to-place
+/** Creative hold actions, keyboard-auto-repeat style: the click itself does one block; repeating starts only after the button
+ * has been held for CREATIVE_REPEAT_DELAY, then every CREATIVE_BREAK_REPEAT / CREATIVE_PLACE_REPEAT. Releasing resets the delay. */
+export const CREATIVE_REPEAT_DELAY = 0.3;
+export const CREATIVE_BREAK_REPEAT = 0.13;
+export const CREATIVE_PLACE_REPEAT = 0.13;
+/** Repeats faster than this play their sound a little quieter. */
+export const FAST_REPEAT_SECONDS = 0.15;
+export const FAST_REPEAT_VOLUME = 0.6;
 
 // ---- Chunk streaming ----
 /**
@@ -95,7 +107,9 @@ export const WATER_SURFACE_HEIGHT = 0.875;   // source water with air above
 
 // ---- Flowing water ----
 export const WATER_TICK_SECONDS = 0.25;        // scheduled water update interval (5 game ticks)
-export const MAX_WATER_UPDATES_PER_TICK = 300; // cap so floods never lag the game
+export const WATER_TICK_BUDGET_MS = 1.5;      // Update #14 §1b: a tick stops scheduling updates after this much main-thread time; the rest waits
+export const WATER_NEAR_RADIUS = 48;          // cells within this distance of the player run before the rest of a tick
+export const MAX_WATER_UPDATES_PER_TICK = 4000; // hard safety cap behind the time budget
 export const WATER_SLOPE_SEARCH = 4;           // blocks to search for a drop when choosing flow directions
 export const WATER_MAX_LEVEL = 7;              // flowing level 7 is the weakest; 8 dries up
 // Lava (Update #11): slow thick updates, 3 blocks of spread, dense orange fog, damage numbers in player/Damage.js.
@@ -105,11 +119,19 @@ export const LAVA_FOG_NEAR = 0.2;
 export const LAVA_FOG_FAR = 3.5;
 export const LAVA_SPEED_FACTOR = 0.35;        // of the water swim speed
 export const LAVA_UP_SPEED = 1.6;             // slow climb while holding jump
-export const LAVA_POOL_CAVERN_BLOCKS = 350;   // cheese-carved blocks in a chunk before its floor basins may hold lava
-export const LAVA_POOL_MAX_Y = 25;
-export const LAVA_POOL_MAX_CELLS = 48;
-export const LAVA_POOL_CHANCE = 0.7;          // per qualifying chunk
-export const DESERT_LAKE_CHANCE = 1 / 50;     // per all-desert chunk (about 1 per 40–60 desert chunks)
+export const LAVA_POOL_CAVERN_BLOCKS = 250;   // cheese-carved blocks in a chunk before its floor basins may hold lava
+export const LAVA_POOL_MAX_Y = 30;            // ordinary-cave basins (6–15 blocks) up to here (Update #12 §5a)
+export const LAVA_POOL_MAX_CELLS = 180;
+export const LAVA_POOL_CHANCE = 0.9;          // per qualifying chunk
+/** Lava sea (Update #12 §5a): every cave cell at or below this height is lava, so the floors of deep caverns become lakes 20–60 blocks across. */
+export const LAVA_SEA_LEVEL = 10;
+export const DESERT_LAKE_CHANCE = 2 / 5;      // per desert chunk cell; with the flatness check about one lake every 4–6 desert chunks (Update #13: smaller lakes, slightly commoner)
+// Mega caves (Update #12 §5b): one enormous cave system per MEGA_CAVE_CELL × MEGA_CAVE_CELL block cell, radius 200–320.
+export const MEGA_CAVE_CELL = 2048;
+export const MEGA_CAVE_RADIUS_MIN = 200;
+export const MEGA_CAVE_RADIUS_MAX = 320;
+export const MEGA_CAVE_TOP_Y = 110;
+export const MEGA_CAVE_DIAMOND_FACTOR = 8;    // exposed diamond chance below y 40 inside a mega cave
 export const WATER_PUSH_ACCEL = 14;            // player push (settles at ≈1.2 b/s against water drag)
 export const ITEM_WATER_PUSH = 5;              // item entity push acceleration
 export const ITEM_BUOYANCY = 14;               // item entities float up in water
@@ -128,9 +150,15 @@ export const MOB_HURT_FLASH_SECONDS = 0.4;
 export const MOB_INVULNERABLE_SECONDS = 0.5;
 export const MOB_PANIC_SECONDS = 5;
 export const MOB_DEATH_SECONDS = 1;
-export const MOB_AI_INTERVAL = 0.25;
-export const MOB_CAP = 40;
-export const MOB_SPAWN_CHANCE = 1 / 6;
+export const MOB_AI_INTERVAL = 0.15;        // seconds between AI decisions (about 7 Hz, staggered per mob; Update #14 §3)
+export const MOB_CAP = 60;
+export const MOB_SPAWN_CHANCE = 1 / 2;          // first-generation groups (Update #12 §5d)
+export const MOB_GROUP_MIN = 3;
+export const MOB_GROUP_MAX = 5;
+export const MOB_RESPAWN_SECONDS = 30;          // natural respawn attempts while under the cap
+export const MOB_RESPAWN_MIN_DISTANCE = 24;     // from every player
+export const MOB_RESPAWN_MIN_SKY_LIGHT = 9;     // not in caves
+export const MOB_FALL_DAMAGE_PER_BLOCK = 0.215; // max(0, fall − 3) × this, on the mob's own health scale
 export const MOB_WANDER_RADIUS = 10;
 export const MOB_MAX_DROP = 3;
 export const MOB_JUMP_VELOCITY = 8.6;

@@ -7,14 +7,16 @@
 // copies are written. Pure JS, no DOM / Three.js.
 import { SKY, BLOCK, LIGHT_MAX, OPACITY_BARRIER, lightIndex } from './LightStorage.js';
 import { LightQueue, propagate, removeLight } from './LightEngine.js';
-import { seamPass, SEAM_SIDES } from './LightSeams.js';
+import { seamSlice, SEAM_SIDES } from './LightSeams.js';
 import { LIGHT_OPACITY, LIGHT_EMISSION } from '../../blocks/BlockRegistry.js';
 import { blockIndex, chunkKey } from '../ChunkCoords.js';
 import { WORLD_HEIGHT } from '../../config/Constants.js';
 
 export const LIGHT_BUDGET_MS = 2;
-/** Work done at once inside setBlock (so the edited section's instant remesh has fresh light); flowing water makes many edits per tick. */
+/** Work done at once inside a player's own setBlock (so the edited section's instant remesh has fresh light). */
 const IMMEDIATE_MS = 0.3;
+/** Rows of a chunk border compared per seam step (a step is one unit of budgeted work). */
+const SEAM_ROWS = 32;
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 export class LightUpdater {
@@ -27,6 +29,8 @@ export class LightUpdater {
     /** Chunk keys whose `lightDirty` mask is non-zero (consumed by ChunkManager). */
     this.dirtyChunks = new Set();
     this.timing = { total: 0, count: 0 };
+    /** Seam jobs (Update #14 §1c): { cx, cz, dx, dz, y } border comparisons of freshly lit chunks, run in slices inside update(). */
+    this.seams = [];
     const self = this;
     /** LightEngine access over the loaded world (unlit chunks are barriers). */
     this.access = {
@@ -51,7 +55,7 @@ export class LightUpdater {
 
   get pending() { return this.removal[0].length + this.removal[1].length + this.propagation[0].length + this.propagation[1].length; }
 
-  clear() { for (const q of this.removal) q.clear(); for (const q of this.propagation) q.clear(); this.dirtyChunks.clear(); }
+  clear() { for (const q of this.removal) q.clear(); for (const q of this.propagation) q.clear(); this.dirtyChunks.clear(); this.seams.length = 0; }
 
   /** Write a cell into its chunk and into the border copies of up to three neighbours; mark the sections that read it. */
   _set(x, y, z, channel, v) {
@@ -89,9 +93,16 @@ export class LightUpdater {
    * the sky column above, through the engine's straight-down rule). Runs one budget slice at once so the
    * synchronous remesh of the edited section already sees the new light; the rest continues in update().
    */
-  onBlockChanged(x, y, z) {
+  onBlockChanged(x, y, z, immediate = false) {
     const c = this.world.getChunk(x >> 4, z >> 4);
-    if (!c || !c.lit) return;
+    if (!c) return;
+    if (!c.lit) {
+      // Edited while its initial light job is in flight: replayed when that light lands (Update #14 §1d).
+      if (c.lighting) { if (!c.pendingLightEdits) c.pendingLightEdits = []; c.pendingLightEdits.push(x, y, z); }
+      return;
+    }
+    const pr = this.world.profiler;
+    if (pr) pr.begin('light');
     const t0 = now();
     const old = this.access.get(x, y, z, SKY);
     if (old > 0) { this._set(x, y, z, SKY, 0); this.removal[SKY].push(x, y, z, old); }
@@ -107,24 +118,40 @@ export class LightUpdater {
       q.push(x, y + 1, z, 0); q.push(x, y - 1, z, 0);
       q.push(x, y, z + 1, 0); q.push(x, y, z - 1, 0);
     }
-    this.update(IMMEDIATE_MS);
+    if (immediate) this.update(IMMEDIATE_MS); // a player's edit: the instant remesh that follows sees fresh light
     this.timing.total += now() - t0; this.timing.count++;
+    if (pr) pr.end('light');
   }
 
-  /** A chunk's initial light arrived: seams with lit neighbours catch edits made while the job was in flight (both channels). */
+  /**
+   * A chunk's initial light arrived: queue seam comparisons with every lit neighbour (both channels); they run in slices inside
+   * update()'s budget, never in one go (Update #14 §1c). Edits made while the job was in flight are replayed first.
+   */
   onChunkLit(chunk) {
-    for (const [side, dx, dz] of SEAM_SIDES) {
+    const edits = chunk.pendingLightEdits;
+    if (edits) { chunk.pendingLightEdits = null; for (let i = 0; i + 2 < edits.length; i += 3) this.onBlockChanged(edits[i], edits[i + 1], edits[i + 2]); }
+    for (const [, dx, dz] of SEAM_SIDES) {
       const n = this.world.getChunk(chunk.cx + dx, chunk.cz + dz);
       if (!n || !n.lit) continue;
-      seamPass(this.access, SKY, chunk.cx, chunk.cz, side, this.propagation[SKY]);
-      seamPass(this.access, BLOCK, chunk.cx, chunk.cz, side, this.propagation[BLOCK]);
+      this.seams.push({ cx: chunk.cx, cz: chunk.cz, dx, dz, y: 0 });
     }
   }
 
-  /** Per frame: removal first, then propagation, for both channels, within the budget. Returns true when the queues are empty. */
+  /** Pending seam jobs (F3). */
+  get seamsPending() { return this.seams.length; }
+
+  /** Per frame: seam slices, then removal and propagation for both channels, within the budget. Returns true when everything is done. */
   update(budgetMs = LIGHT_BUDGET_MS) {
-    if (this.removal[0].empty && this.removal[1].empty && this.propagation[0].empty && this.propagation[1].empty) return true;
+    if (this.seams.length === 0 && this.removal[0].empty && this.removal[1].empty && this.propagation[0].empty && this.propagation[1].empty) return true;
     const deadline = now() + budgetMs;
+    while (this.seams.length) {
+      const j = this.seams[0];
+      const c = this.world.getChunk(j.cx, j.cz);
+      if (c && c.lit) { seamSlice(this.world, j.cx, j.cz, j.dx, j.dz, j.y, Math.min(WORLD_HEIGHT, j.y + SEAM_ROWS), this.propagation[SKY], this.propagation[BLOCK]); j.y += SEAM_ROWS; }
+      else j.y = WORLD_HEIGHT;
+      if (j.y >= WORLD_HEIGHT) this.seams.shift();
+      if (now() >= deadline) return false;
+    }
     if (!removeLight(this.access, SKY, this.removal[SKY], this.propagation[SKY], deadline)) return false;
     if (!removeLight(this.access, BLOCK, this.removal[BLOCK], this.propagation[BLOCK], deadline)) return false;
     if (!propagate(this.access, SKY, this.propagation[SKY], deadline)) return false;

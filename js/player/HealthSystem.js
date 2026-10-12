@@ -137,7 +137,7 @@ export class HealthSystem {
     p.velocity.set(0, 0, 0);
     if (!this.keepInventory) this.dropInventory();
     g.interaction._stopMining();
-    g.input.exitPointerLock();
+    g.lock.release('death');
     g.state.set(State.DEAD);
     g.events.emit('player:died', this.deathCause);
   }
@@ -173,7 +173,7 @@ export class HealthSystem {
     p.flying = false;
     g.session.settleAfterRespawn();
     g.state.set(State.PLAYING);
-    g.requestPointerLock();
+    g.requestPointerLock('respawn');
     g.events.emit('player:health', p.health, 0);
     g.events.emit('player:respawned');
   }

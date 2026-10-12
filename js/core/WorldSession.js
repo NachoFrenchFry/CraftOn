@@ -138,9 +138,11 @@ export class WorldSession {
     this.retryIndex = 0;
     this.changedSinceSave = false; // a fresh spawn alone never triggers the leave-page prompt
     this.loading = false;
+    g.resetTick();
+    g.ui.chat.clear();
     g.state.set(State.PLAYING);
     g.loop.resetTiming();
-    g.requestPointerLock();
+    g.requestPointerLock('world-start');
     return true;
   }
 
@@ -213,9 +215,12 @@ export class WorldSession {
     this.retryIndex = 0;
     this.changedSinceSave = false;
     this.loading = false;
+    g.resetTick();
+    g.ui.chat.clear();
+    if (w.tick) { g.setTickRate(w.tick.rate || 20, true); g.setTickFrozen(!!w.tick.frozen, true); } // the host's speed (Update #12)
     g.state.set(State.PLAYING);
     g.loop.resetTiming();
-    g.requestPointerLock();
+    g.requestPointerLock('world-join');
     client.sendInventory();
     client._sendMeta();
     return true;
@@ -402,7 +407,7 @@ export class WorldSession {
 
   _leave() {
     const g = this.game;
-    g.input.exitPointerLock();
+    g.lock.release('leave');
     g.chunkManager.clear();
     g.world.clear();
     g.entities.clear();

@@ -10,6 +10,11 @@
 import { PeerLink } from './PeerLink.js';
 import { playerBlocksAt, playerHeightForPose, mobBlocksAt } from '../player/PlacementRules.js';
 import { pvpDamage, PVP_REACH, PVP_REACH_SLACK, deathMessage } from '../player/Damage.js';
+import { cleanChatText } from '../ui/Chat.js';
+
+/** Chat rate limit per guest (Update #12): at most this many messages per window. */
+const CHAT_LIMIT = 5;
+const CHAT_WINDOW_MS = 5000;
 import { attackDamage } from '../items/Tools.js';
 import { ARMOR_POINTS } from '../items/ItemDefinitions.js';
 import { Signaling } from './Signaling.js';
@@ -185,6 +190,8 @@ export class HostServer {
       case Msg.HIT: return this._hit(peer, msg);
       case Msg.HEALTH: return this._health(peer, msg);
       case Msg.DEATH: return this._death(peer, msg);
+      case Msg.CHAT: return this._chat(peer, msg);
+      case Msg.TICK: return; // only the host sets the rate
       case Msg.BYE: return this._peerClosed(peer, 'left');
       default: return undefined;
     }
@@ -214,6 +221,7 @@ export class HostServer {
     for (const other of this.peers.values()) if (other !== peer && other.state) players.push(this._playerRow(other.userId, other.name, other.state, { held: other.held, armor: other.armor, mode: other.mode }));
     peer.link.send(Msg.WELCOME, {
       seed: g.world.seed, worldName: meta.name, gameMode: meta.gameMode, version: GAME_VERSION, hostId: this.userId, hostName: this.name,
+      tick: { rate: g.tick.rate, frozen: g.tick.frozen },
       spawn: { x: g.player.spawn.x, y: g.player.spawn.y, z: g.player.spawn.z },
       you: { player: saved ? saved.player : null, inventory: saved ? saved.inventory : null, mode: peer.mode, canChangeMode: peer.canChangeMode },
       keepInventory: !!meta.keepInventory, pvp: meta.pvp !== false,
@@ -225,7 +233,7 @@ export class HostServer {
       peer.link.send(Msg.CHUNKS, { rows: batches[i], done: i === batches.length - 1 });
     }
     this.broadcast(Msg.JOIN, { id: peer.userId, name: peer.name }, peer);
-    g.ui.hud.showToast(`${peer.name} joined`, false);
+    g.systemChat(`${peer.name} joined the game`, 'yellow');
     this._heartbeat();
   }
 
@@ -359,12 +367,36 @@ export class HostServer {
   /** A guest died: everyone else gets the message. */
   _death(peer, msg) {
     const text = deathMessage(peer.name, msg.cause);
-    this.game.ui.hud.showToast(text, false);
+    this.game.systemChat(text, 'yellow', false);
     this.broadcast(Msg.DEATH, { id: peer.userId, text }, peer);
   }
 
-  /** The host died: tell the guests. */
-  announceOwnDeath(cause) { this.broadcast(Msg.DEATH, { id: this.userId, text: deathMessage(this.name, cause) }); }
+  /** The host died: tell the guests (the host's own chat already shows its death screen message). */
+  announceOwnDeath(cause) { const text = deathMessage(this.name, cause); this.game.ui.chat.system(text, 'yellow'); this.broadcast(Msg.DEATH, { id: this.userId, text }); }
+
+  // ---- Chat (Update #12) ----
+
+  /** A guest's chat line: validated (length, control characters, about 5 per 5 s) and sent to everyone with the name the guest joined with — never a name from the message. */
+  _chat(peer, msg) {
+    if (!peer.ready) return;
+    const text = cleanChatText(msg && msg.text);
+    if (!text) return;
+    const now = performance.now();
+    peer.chatTimes = (peer.chatTimes || []).filter((t) => now - t < CHAT_WINDOW_MS);
+    if (peer.chatTimes.length >= CHAT_LIMIT) { peer.link.send(Msg.CHAT, { system: 'Slow down: at most 5 messages every 5 seconds.', color: 'red' }); return; }
+    peer.chatTimes.push(now);
+    this.game.ui.chat.add({ name: peer.name, text, host: false });
+    this.broadcast(Msg.CHAT, { name: peer.name, text, host: false });
+  }
+
+  /** The host's own line (already shown locally). */
+  broadcastChat(name, text, host = true) { this.broadcast(Msg.CHAT, { name, text, host }); }
+
+  /** A system line for every guest (joins, leaves, deaths). */
+  broadcastSystem(text, color = 'yellow') { this.broadcast(Msg.CHAT, { system: text, color }); }
+
+  /** /tick: guests follow the host's rate and freeze state. */
+  broadcastTick(tick) { this.broadcast(Msg.TICK, { rate: tick.rate, frozen: !!tick.frozen }); }
 
   /** PvP / keep inventory changed in Server Settings: guests follow. */
   broadcastWorldSettings() { const m = this.game.worldMeta; this.broadcast(Msg.WORLD, { keepInventory: !!(m && m.keepInventory), pvp: !m || m.pvp !== false }); }
@@ -479,7 +511,7 @@ export class HostServer {
     if (!wasIn) return;
     if (peer.remote) { this.remote.remove(peer.userId); peer.remote = null; }
     this.broadcast(Msg.LEAVE, { id: peer.userId });
-    if (this.running) this.game.ui.hud.showToast(`${peer.name || 'A player'} left`, false);
+    if (this.running) this.game.systemChat(`${peer.name || 'A player'} left the game`, 'yellow');
     this._heartbeat();
   }
 

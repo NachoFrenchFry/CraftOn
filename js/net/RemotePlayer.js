@@ -8,7 +8,8 @@ import * as THREE from 'three';
 import { PlayerModel } from '../player/models/PlayerModel.js';
 import { BreakOverlay } from '../rendering/BreakOverlay.js';
 import { Interpolator } from './Interpolator.js';
-import { decodePlayerState } from './Protocol.js';
+import { Pose } from './Protocol.js';
+import { rayBox } from '../utils/RayBox.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { PLAYER_HEIGHT, PLAYER_WIDTH, SWIM_STROKE_INTERVAL } from '../config/Constants.js';
 
@@ -127,15 +128,16 @@ export class RemotePlayer {
     const o = this.interp.sample(now);
     if (!this.interp.hasData) return;
     const st = this.state;
-    const s = decodePlayerState([o.x, o.y, o.z, o.vx, o.vy, o.vz, o.yaw, o.pitch, o.extra | 0]);
+    const pose = o.extra | 0; // the pose bits decoded in place (Update #14 §3: no per-frame snapshot object)
     st.renderPosition.set(o.x, o.y, o.z);
-    st.yaw = s.yaw; st.pitch = s.pitch;
-    st.onGround = s.onGround; st.sneaking = s.sneaking; st.swimming = s.swimming; st.crawling = s.crawling;
-    st.flying = s.flying; st.inWater = s.inWater; st.sprinting = s.sprinting; st.spectator = s.spectator;
-    st.onFire = !!s.onFire; st.inLava = !!s.inLava;
-    st.velocity.x = s.vx; st.velocity.y = s.vy; st.velocity.z = s.vz;
-    st.horizontalSpeed = Math.hypot(s.vx, s.vz);
-    if (st.swimming) st.swimTime += dt * Math.max(0.5, Math.hypot(s.vx, s.vy, s.vz) / 5.5);
+    st.yaw = o.yaw; st.pitch = o.pitch;
+    st.onGround = !!(pose & Pose.ON_GROUND); st.sneaking = !!(pose & Pose.SNEAKING); st.swimming = !!(pose & Pose.SWIMMING); st.crawling = !!(pose & Pose.CRAWLING);
+    st.flying = !!(pose & Pose.FLYING); st.inWater = !!(pose & Pose.IN_WATER); st.sprinting = !!(pose & Pose.SPRINTING); st.spectator = !!(pose & Pose.SPECTATOR);
+    st.onFire = !!(pose & Pose.ON_FIRE); st.inLava = !!(pose & Pose.IN_LAVA);
+    st.velocity.x = o.vx; st.velocity.y = o.vy; st.velocity.z = o.vz;
+    st.horizontalSpeed = Math.hypot(o.vx, o.vz);
+    const s = o;
+    if (st.swimming) st.swimTime += dt * Math.max(0.5, Math.hypot(o.vx, o.vy, o.vz) / 5.5);
     const visible = (!st.spectator || localPlayer.isSpectator) && Math.hypot(o.x - localPlayer.position.x, o.z - localPlayer.position.z) <= maxDistance;
     this.visible = visible;
     this.model.root.visible = visible;
@@ -180,6 +182,7 @@ export class RemotePlayer {
 export class RemotePlayerManager {
   /** @param {import('../core/Game.js').Game} game */
   constructor(game) {
+    this._hit = { player: null, distance: 0 };
     this.game = game;
     /** @type {Map<string, RemotePlayer>} */
     this.players = new Map();
@@ -214,18 +217,12 @@ export class RemotePlayerManager {
       if (!rp.visible || rp.state.spectator || !rp.interp.hasData) continue;
       const p = rp.position, hw = PLAYER_WIDTH / 2;
       const h = rp.state.crawling || rp.state.swimming ? 0.6 : rp.state.sneaking ? 1.5 : PLAYER_HEIGHT;
-      let tmin = 0, tmax = bestT, ok = true;
-      const axes = [[ox, dx, p.x - hw, p.x + hw], [oy, dy, p.y, p.y + h], [oz, dz, p.z - hw, p.z + hw]];
-      for (const [o, d, lo, hi] of axes) {
-        if (Math.abs(d) < 1e-9) { if (o < lo || o > hi) { ok = false; break; } continue; }
-        let t1 = (lo - o) / d, t2 = (hi - o) / d;
-        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
-        tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
-        if (tmin > tmax) { ok = false; break; }
-      }
-      if (ok && tmin < bestT) { bestT = tmin; best = rp; }
+      const t = rayBox(ox, oy, oz, dx, dy, dz, p.x - hw, p.y, p.z - hw, p.x + hw, p.y + h, p.z + hw, bestT);
+      if (t >= 0 && t < bestT) { bestT = t; best = rp; }
     }
-    return best ? { player: best, distance: bestT } : null;
+    if (!best) return null;
+    this._hit.player = best; this._hit.distance = bestT; // reused (Update #14 §3)
+    return this._hit;
   }
 
   update(dt) {

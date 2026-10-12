@@ -31,7 +31,7 @@ export class TorchEffects {
   torchesOf(chunk) {
     const key = chunkKey(chunk.cx, chunk.cz);
     let e = this.cache.get(key);
-    if (e && e.version === chunk.version) return e.list;
+    if (e && e.version === chunk.torchVersion) return e.list;
     const list = [];
     const b = chunk.blocks;
     for (let sy = 0; sy < 16; sy++) {
@@ -41,7 +41,7 @@ export class TorchEffects {
         if (RENDER_TYPE[id] === RenderType.TORCH) list.push(chunk.cx * CHUNK_SIZE + (col & 15), y, chunk.cz * CHUNK_SIZE + (col >> 4), id);
       }
     }
-    if (!e) { e = { version: chunk.version, list }; this.cache.set(key, e); } else { e.version = chunk.version; e.list = list; }
+    if (!e) { e = { version: chunk.torchVersion, list }; this.cache.set(key, e); } else { e.version = chunk.torchVersion; e.list = list; }
     // Forget chunks that are gone.
     if (this.cache.size > 64) for (const k of this.cache.keys()) if (!this.world.chunks.has(k)) this.cache.delete(k);
     return list;

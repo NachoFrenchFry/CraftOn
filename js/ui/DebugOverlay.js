@@ -13,13 +13,19 @@ export class DebugOverlay {
     this.visible = false;
     this.timer = 0;
     this.lines = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 18; i++) {
       const el = document.createElement('div');
       el.className = 'debug-line';
       this.root.appendChild(el);
       this.root.appendChild(document.createElement('br'));
       this.lines.push(el);
     }
+    // The performance graph (Update #14 §0): one bar per frame (240 frames), green under 16.7 ms, yellow under 33, red above.
+    this.graph = document.createElement('canvas');
+    this.graph.id = 'debug-graph';
+    this.graph.width = 240; this.graph.height = 60;
+    this.root.appendChild(this.graph);
+    this.gfx = this.graph.getContext('2d');
   }
 
   toggle() {
@@ -30,10 +36,32 @@ export class DebugOverlay {
 
   update(dt) {
     if (!this.visible) return;
+    this._drawGraph();
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = 0.25;
     this.refresh();
+  }
+
+  _drawGraph() {
+    const pr = this.game.profiler, ctx = this.gfx, w = this.graph.width, h = this.graph.height;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, w, h);
+    const scale = h / 50; // 50 ms = full height
+    const n = pr.interval.length;
+    for (let i = 0; i < w; i++) {
+      const v = pr.interval[(pr.pos - w + i + n * 2) % n];
+      const c = pr.cpu[(pr.pos - w + i + n * 2) % n];
+      const bh = Math.min(h, v * scale);
+      ctx.fillStyle = v > 33 ? '#e0483a' : v > 16.8 ? '#e8c43a' : '#5ad05a';
+      ctx.fillRect(i, h - bh, 1, bh);
+      const ch = Math.min(h, c * scale);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.fillRect(i, h - ch, 1, 1);
+    }
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.fillRect(0, h - 16.7 * scale, w, 1);
+    ctx.fillRect(0, h - 33.3 * scale, w, 1);
   }
 
   _set(i, text) {
@@ -51,7 +79,7 @@ export class DebugOverlay {
     const t = g.interaction ? g.interaction.target : null;
     const f = (n) => n.toFixed(3);
     let i = 0;
-    this._set(i++, `CraftOn  ${g.loop.fps} fps  (${g.loop.fps > 0 ? (1000 / g.loop.fps).toFixed(1) : '-'} ms)`);
+    this._set(i++, `CraftOn  ${g.loop.fps} fps  (${g.loop.fps > 0 ? (1000 / g.loop.fps).toFixed(1) : '-'} ms)   Tick: ${g.tick.rate} TPS (${(g.tick.rate / 20).toFixed(2)}×)${g.tick.frozen ? ' FROZEN' : ''}`);
     this._set(i++, `XYZ: ${f(pos.x)} / ${f(pos.y)} / ${f(pos.z)}`);
     this._set(i++, `Block: ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}   Chunk: ${Math.floor(pos.x) >> 4} ${Math.floor(pos.z) >> 4}  (${Math.floor(pos.x) & 15} ${Math.floor(pos.z) & 15})`);
     this._set(i++, `Facing: ${compassFromYaw(p.yaw)}  yaw ${radToDeg(p.yaw).toFixed(1)}  pitch ${radToDeg(p.pitch).toFixed(1)}`);
@@ -59,13 +87,17 @@ export class DebugOverlay {
     this._set(i++, `Chunks: ${stats.loaded} loaded  meshes ${stats.meshes}  pending ${stats.meshPending}  gen queue ${stats.genQueue}  light pending ${stats.lightPending}  light queue ${stats.lightQueue}`);
     const lt = g.chunkManager.lightTiming, lu = g.chunkManager.lightUpdater.timing;
     this._set(i++, `Light: sky ${g.world.getSkyLightAt(pos.x, pos.y + 0.5, pos.z)} / block ${g.world.getBlockLightAt(pos.x, pos.y + 0.5, pos.z)} at feet, sky ${g.world.getSkyLightAt(pos.x, pos.y + 1.6, pos.z)} / block ${g.world.getBlockLightAt(pos.x, pos.y + 1.6, pos.z)} at eyes   initial pass avg ${lt.count ? (lt.total / lt.count).toFixed(1) : '-'} ms   edit update avg ${lu.count ? (lu.total / lu.count).toFixed(2) : '-'} ms   brightness ${g.settings.get('brightness')}%`);
-    this._set(i++, `Draw calls: ${g.renderer.worldStats.calls}  triangles: ${g.renderer.worldStats.triangles}  geometries: ${info.memory.geometries}`);
+    const vs = g.meshManager.stats;
+    this._set(i++, `Draw calls: ${g.renderer.worldStats.calls}  triangles: ${g.renderer.worldStats.triangles}  geometries: ${info.memory.geometries}   culling: ${vs.visible} of ${vs.sections} sections in ${vs.chunksVisible} chunks (${g.visibility.lastMs.toFixed(2)} ms)`);
     this._set(i++, `Seed: ${g.world.seed}${g.worldMeta && g.worldMeta.seedText ? ` ("${g.worldMeta.seedText}")` : ''}`);
     this._set(i++, t && t.hit ? `Target: ${BlockRegistry.nameOf(t.blockId)} at ${t.blockPos.x} ${t.blockPos.y} ${t.blockPos.z}` : 'Target: none');
     this._set(i++, `Mode: ${p.gameMode}  ${p.flying ? 'flying ' : ''}${p.sprinting ? 'sprinting ' : ''}${p.sneaking ? 'sneaking ' : ''}${p.inWater ? 'in water ' : ''}${p.onGround ? 'on ground' : 'airborne'}   swimming: ${p.swimming}${p.crawling ? ' (crawling)' : ''}`);
     this._set(i++, `Perspective: ${['first person', 'third person (back)', 'third person (front)'][g.cameraController.perspective]}   Items: ${g.entities.items.length}   Armor: ${g.inventory.armorPoints()}`);
     const rs = g.settings.get('renderScale');
     this._set(i++, `Render scale: ${Math.round(g.renderer.renderScale * 100)}%${rs === 0 ? ' (auto)' : ''}   FPS cap: ${g.loop.maxFps > 0 ? g.loop.maxFps : 'unlimited'}   Sim distance: ${g.settings.get('simulationDistance')} chunks   Shaders: ${g.settings.get('shadersOn') ? g.settings.get('shaderPreset') : 'off'}`);
+    const pr = g.profiler;
+    this._set(i++, `Frame: ${pr.lastInterval.toFixed(1)} ms (cpu ${pr.lastCpu.toFixed(1)} ms)   longest frame ${pr.longestFrame.toFixed(0)} ms   longest task ${pr.longestTask.toFixed(0)} ms (${pr.longTasks} over 50 ms)   water pending ${g.waterSim.pendingCount} lava ${g.lavaSim.pendingCount}`);
+    this._set(i++, 'Systems (ms/frame): ' + pr.breakdown().slice(0, 12).map(([n, v]) => `${n} ${v.toFixed(2)}`).join('  '));
     for (; i < this.lines.length; i++) this._set(i, '');
   }
 }

@@ -14,8 +14,8 @@ export const ORE_TABLE = [
   { block: B.DIRT, minY: 1, maxY: 250, count: 6, sizeMin: 20, sizeMax: 32, pocket: true },
   { block: B.GRAVEL, minY: 1, maxY: 250, count: 4, sizeMin: 20, sizeMax: 32, pocket: true },
   { block: B.COAL_ORE, minY: 5, maxY: 128, count: 20, sizeMin: 8, sizeMax: 16 },
-  { block: B.IRON_ORE, minY: 5, maxY: 64, count: 12, sizeMin: 4, sizeMax: 9 },
-  { block: B.GOLD_ORE, minY: 5, maxY: 32, count: 3, sizeMin: 4, sizeMax: 9 },
+  { block: B.GOLD_ORE, minY: 5, maxY: 80, count: 14, sizeMin: 4, sizeMax: 9 }, // Update #12 §5c: gold is the weaker tier, so it is the commoner metal
+  { block: B.IRON_ORE, minY: 5, maxY: 64, count: 10, sizeMin: 4, sizeMax: 9 },
   { block: B.DIAMOND_ORE, minY: 5, maxY: 16, count: 2, sizeMin: 3, sizeMax: 6 },
 ];
 
@@ -25,8 +25,8 @@ export const ORE_TABLE = [
  */
 export const EXPOSED_ORE_TABLE = [
   { block: B.COAL_ORE, maxY: 128, chance: 0.0040, sizeMin: 2, sizeMax: 5 },
-  { block: B.IRON_ORE, maxY: 64, chance: 0.0050, sizeMin: 2, sizeMax: 4 },
-  { block: B.GOLD_ORE, maxY: 32, chance: 0.0020, sizeMin: 1, sizeMax: 3 },
+  { block: B.GOLD_ORE, maxY: 80, chance: 0.0060, sizeMin: 2, sizeMax: 4 },
+  { block: B.IRON_ORE, maxY: 64, chance: 0.0045, sizeMin: 2, sizeMax: 4 },
   { block: B.DIAMOND_ORE, maxY: 16, chance: 0.0009, sizeMin: 1, sizeMax: 2 },
 ];
 const STEPS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
@@ -64,8 +64,9 @@ export class OreGenerator {
    * start a small cluster, so walking through caverns shows coal / iron on the walls and, deeper down,
    * gold and the occasional diamond. Deterministic per chunk.
    * @param {Uint8Array} heightMap terrain height per column (16×16)
+   * @param {number} [diamondFactor] multiplies the exposed-diamond chance below y 40 (mega caves, Update #12 §5b)
    */
-  exposeOres(blocks, cx, cz, heightMap) {
+  exposeOres(blocks, cx, cz, heightMap, diamondFactor = 1) {
     const rng = chunkRandom(this.seed, cx, cz, EXPOSED_SALT);
     for (let y = MIN_CAVE_Y + 1; y < 128; y++) {
       for (let col = 0; col < 256; col++) {
@@ -80,9 +81,11 @@ export class OreGenerator {
         const roll = rng.next();
         let acc = 0;
         for (const ore of EXPOSED_ORE_TABLE) {
-          if (y > ore.maxY) continue;
-          acc += ore.chance;
-          if (roll < acc) { this._cluster(blocks, rng, lx, y, lz, rng.nextIntRange(ore.sizeMin, ore.sizeMax), ore.block, ore.maxY); break; }
+          // Mega caves: exposed diamonds up to y 40 at diamondFactor × the normal chance (walls and floors glitter).
+          const megaDiamond = ore.block === B.DIAMOND_ORE && diamondFactor > 1 && y < 40;
+          if (y > ore.maxY && !megaDiamond) continue;
+          acc += megaDiamond ? ore.chance * diamondFactor : ore.chance;
+          if (roll < acc) { this._cluster(blocks, rng, lx, y, lz, rng.nextIntRange(ore.sizeMin, ore.sizeMax), ore.block, megaDiamond ? 40 : ore.maxY); break; }
         }
       }
     }

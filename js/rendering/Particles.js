@@ -253,6 +253,11 @@ export class ParticleSystem {
     this.angle[i] = this.angle[last]; this.spin[i] = this.spin[last]; this.fade[i] = this.fade[last]; this.gravityScale[i] = this.gravityScale[last]; this.unlit[i] = this.unlit[last];
   }
 
+  _range(attr, count) {
+    if (attr.clearUpdateRanges) { attr.clearUpdateRanges(); attr.addUpdateRange(0, count); } else if (attr.updateRange) { attr.updateRange.offset = 0; attr.updateRange.count = count; }
+    attr.needsUpdate = true;
+  }
+
   update(dt, camera) {
     const world = this.world;
     for (let i = 0; i < this.count; i++) {
@@ -296,9 +301,11 @@ export class ParticleSystem {
         Cc[co] = r; Cc[co + 1] = g; Cc[co + 2] = bl; Cc[co + 3] = alpha;
       }
     }
-    this.posAttr.needsUpdate = true;
-    this.uvAttr.needsUpdate = true;
-    this.colAttr.needsUpdate = true;
+    // Only the live particles are uploaded (Update #14 §3): three used to re-send the whole 110 KB of buffers every frame.
+    if (this.count > 0) {
+      const n = this.count * 4;
+      this._range(this.posAttr, n * 3); this._range(this.uvAttr, n * 2); this._range(this.colAttr, n * 4);
+    }
     this.geometry.setDrawRange(0, this.count * 6);
     this.mesh.visible = this.count > 0;
   }

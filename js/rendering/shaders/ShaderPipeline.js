@@ -6,6 +6,7 @@
 // chain (PostFX.js) for bloom, god rays, tone mapping, vignette and the underwater wobble. The sun direction is
 // Sky.sunDir (no day / night cycle). Everything is client-only; game logic never reads it.
 import * as THREE from 'three';
+import { createChunkMaterial } from '../Materials.js';
 import { AO_BRIGHTNESS, SKY_COLOR } from '../../config/Constants.js';
 import { SHADER_PRESETS } from '../../config/DefaultSettings.js';
 import { PostFX } from './PostFX.js';
@@ -128,7 +129,12 @@ const FRAGMENT_TAIL = `#include <dithering_fragment>
     float spec = pow(max(dot(n, h), 0.0), 160.0) * 0.9;
     float flat_ = 1.0 - max(dot(viewDir, vec3(0.0, 1.0, 0.0)), 0.0);
     gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * 0.5, flat_ * 0.55);
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, uSkyColor * craftonSkyTerm, fres * 0.65) + uSunColor * spec * craftonSkyTerm; // cave water is dark too
+    // Update #12 §4: the sky reflection and the sun glint only where the surface sees the sky (the terrain's
+    // skyVisibility term); underground the water reflects the dark cave, warmed by nearby torches or lava.
+    float skyVis = smoothstep(10.0 / 15.0, 1.0, vLight.x);
+    vec3 caveReflect = vec3(0.02, 0.025, 0.03) + craftonLightCurve(vLight.y) * craftonWarm * 0.25;
+    vec3 reflectColor = mix(caveReflect, uSkyColor * craftonSkyTerm, skyVis);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, reflectColor, fres * 0.65) + uSunColor * spec * craftonSkyTerm * skyVis;
     gl_FragColor.a = clamp(gl_FragColor.a + fres * 0.2 + flat_ * 0.15, 0.0, 1.0);
   }
   if (uUnderwater > 0.5 && face > 1.5 && face < 2.5) {
@@ -189,7 +195,7 @@ export class ShaderPipeline {
   _enable() {
     const g = this.game, r = g.renderer.renderer;
     this.enabled = true;
-    this.litMaterials = this._createLitMaterials(g.atlas.texture);
+    this.litMaterials = this._createLitMaterials(g.atlas);
     g.meshManager.setLitMaterials(this.litMaterials);
     const [hemi, dir] = this.lights;
     hemi.intensity = 0.75;
@@ -290,18 +296,22 @@ export class ShaderPipeline {
   }
 
   _createLitMaterials(atlas) {
+    // The chunk vertices carry tile-local coordinates and a tile index (Update #14 §2a): `map` stays set so Three generates the
+    // uv varying, but the texel comes from the tile array.
     const make = (key, params) => {
-      const m = new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true, fog: true, ...params });
+      const m = new THREE.MeshLambertMaterial({ map: atlas.texture, vertexColors: true, fog: true, ...params });
       m.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, this.uniforms);
+        shader.uniforms.uTiles = { value: atlas.arrayTexture };
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', VERTEX_HEAD)
+          .replace('#include <common>', VERTEX_HEAD + '\nattribute float tile;\nvarying float vTile;')
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = craftonFaceNormal(extra);\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3(tangent.xyz);\n#endif')
-          .replace('#include <begin_vertex>', VERTEX_BEGIN)
+          .replace('#include <begin_vertex>', VERTEX_BEGIN + '\nvTile = tile;')
           .replace('#include <color_vertex>', VERTEX_COLOR)
           .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', FRAGMENT_HEAD)
+          .replace('#include <common>', FRAGMENT_HEAD + '\nprecision highp sampler2DArray;\nuniform sampler2DArray uTiles;\nvarying float vTile;')
+          .replace('#include <map_fragment>', 'vec4 sampledDiffuseColor = texture(uTiles, vec3(fract(vMapUv), vTile));\ndiffuseColor *= sampledDiffuseColor;')
           .replace('vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;', LIGHT_MODEL)
           .replace('#include <dithering_fragment>', FRAGMENT_TAIL);
       };
@@ -311,9 +321,7 @@ export class ShaderPipeline {
       return m;
     };
     // Lava (Update #11): unlit and a little brighter than its texture (the bloom pass picks the glow up); never shadowed.
-    const lava = new THREE.MeshBasicMaterial({ map: atlas, vertexColors: true, fog: true, side: THREE.DoubleSide });
-    lava.color.setScalar(1.25);
-    lava.name = 'lit-lava';
+    const lava = createChunkMaterial(atlas.arrayTexture, 'lit-lava', { lit: false, side: THREE.DoubleSide, boost: 1.25 });
     return {
       opaque: make('opaque', { side: THREE.FrontSide }),
       cutout: make('cutout', { alphaTest: 0.5, transparent: false, side: THREE.FrontSide }),

@@ -12,11 +12,10 @@ import { ItemIds } from '../items/ItemDefinitions.js';
 import { RaycastHit } from './BlockRaycaster.js';
 import { isSource, isLavaSource, isLiquid } from '../world/WaterLevels.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
-import { REACH_SURVIVAL, REACH_CREATIVE, PLACE_REPEAT_SECONDS, ATTACK_REACH } from '../config/Constants.js';
+import { REACH_SURVIVAL, REACH_CREATIVE, PLACE_REPEAT_SECONDS, CREATIVE_REPEAT_DELAY, CREATIVE_BREAK_REPEAT, CREATIVE_PLACE_REPEAT, FAST_REPEAT_SECONDS, FAST_REPEAT_VOLUME, ATTACK_REACH } from '../config/Constants.js';
 
 const HIT_SOUND_INTERVAL = 0.25;
 const ATTACK_BLOCK_SECONDS = 0.3;
-const CREATIVE_BREAK_COOLDOWN = 0.18;
 const SWING_INTERVAL = 0.25;
 
 export class BlockInteraction {
@@ -33,7 +32,10 @@ export class BlockInteraction {
     this.hitSoundTimer = 0;
     this.swingTimer = 0;
     this.placeTimer = 0;
+    /** Hold-to-place is past its initial delay (Creative): the next repeats come every CREATIVE_PLACE_REPEAT. */
+    this.placeRepeating = false;
     this.creativeCooldown = 0;
+    this.creativeBreaks = 0;
     this.enabled = true;
     /** Mob under the crosshair (closer than any block), or null. */
     this.targetMob = null;
@@ -78,7 +80,7 @@ export class BlockInteraction {
 
     if (!this.enabled || !this.input.pointerLocked || this.player.isSpectator) {
       this._stopMining();
-      this.placeTimer = 0;
+      this.placeTimer = 0; this.placeRepeating = false;
       this.eatTimer = 0;
       return;
     }
@@ -115,12 +117,15 @@ export class BlockInteraction {
     } else {
       this.eatTimer = 0;
       if (use) {
-        if (this.actions.wasPressed('use')) { this._place(false); this.placeTimer = 0; }
+        if (this.actions.wasPressed('use')) { this._place(false); this.placeTimer = 0; this.placeRepeating = false; }
         else {
           this.placeTimer += dt;
-          if (this.placeTimer >= PLACE_REPEAT_SECONDS) { this.placeTimer = 0; this._place(true); }
+          // Creative works like keyboard auto-repeat: nothing for CREATIVE_REPEAT_DELAY after the click, then every CREATIVE_PLACE_REPEAT;
+          // Survival repeats every PLACE_REPEAT_SECONDS as before.
+          const interval = this.player.isCreative ? (this.placeRepeating ? CREATIVE_PLACE_REPEAT : CREATIVE_REPEAT_DELAY) : PLACE_REPEAT_SECONDS;
+          if (this.placeTimer >= interval) { this.placeTimer = 0; this.placeRepeating = true; this._place(true); }
         }
-      } else this.placeTimer = 0;
+      } else { this.placeTimer = 0; this.placeRepeating = false; }
     }
 
     if (this.actions.wasPressed('pick') && t.hit) this._pickBlock(t.blockId);
@@ -176,12 +181,14 @@ export class BlockInteraction {
   _mine(dt) {
     const t = this.target;
     const id = t.blockId;
-    if (!this.mining) { this.mining = true; this.events.emit('player:swing'); this.swingTimer = 0; }
+    if (!this.mining) { this.mining = true; this.events.emit('player:swing'); this.swingTimer = 0; this.creativeBreaks = 0; this.creativeCooldown = 0; } // the click itself breaks at once
     this.swingTimer += dt;
     if (this.swingTimer >= SWING_INTERVAL) { this.swingTimer = 0; this.events.emit('player:swing'); }
 
     if (this.player.isCreative) {
-      if (this.creativeCooldown <= 0) { this.breakBlock(t.blockPos.x, t.blockPos.y, t.blockPos.z, true); this.creativeCooldown = CREATIVE_BREAK_COOLDOWN; }
+      // Keyboard-auto-repeat timing: the first break is immediate, the next waits CREATIVE_REPEAT_DELAY, the rest come every
+      // CREATIVE_BREAK_REPEAT; releasing (which stops mining) resets the delay. A normal click therefore breaks exactly one block.
+      if (this.creativeCooldown <= 0) { this.breakBlock(t.blockPos.x, t.blockPos.y, t.blockPos.z, true, this.creativeBreaks > 0 ? FAST_REPEAT_VOLUME : 1); this.creativeCooldown = this.creativeBreaks === 0 ? CREATIVE_REPEAT_DELAY : CREATIVE_BREAK_REPEAT; this.creativeBreaks++; } // repeats after the first break are quieter
       return;
     }
     const held = this.inventory.getSelected();
@@ -208,11 +215,11 @@ export class BlockInteraction {
    * Remove a block with effects and drops; cascades to unsupported blocks above.
    * @param {boolean} force Creative: also breaks unbreakable blocks (bedrock), dropping nothing.
    */
-  breakBlock(x, y, z, force = false) {
+  breakBlock(x, y, z, force = false, volume = 1) {
     const id = this.world.getBlock(x, y, z);
     if (id === BlockIds.AIR || (!force && !isFinite(BREAK_TIME[id]))) return;
-    this.world.setBlock(x, y, z, BlockIds.AIR);
-    this.audio.playBlock('break', id, x + 0.5, y + 0.5, z + 0.5);
+    this.world.setBlock(x, y, z, BlockIds.AIR, true, true); // immediate: the player's own edit re-meshes at once (Update #14 §1a)
+    this.audio.playBlock('break', id, x + 0.5, y + 0.5, z + 0.5, volume);
     this.particles.spawnBlockBreak(x, y, z, id, 12 + Math.floor(Math.random() * 8));
     this.breakOverlay.hide();
     if (!this.player.isCreative && !this.guest) { // on a LAN server the host spawns the drop for everyone
@@ -244,7 +251,7 @@ export class BlockInteraction {
       const filled = isSource(t.blockId) ? ItemIds.WATER_BUCKET : isLavaSource(t.blockId) ? ItemIds.LAVA_BUCKET : null;
       if (filled === null) return;
       const b = t.blockPos;
-      this.world.setBlock(b.x, b.y, b.z, BlockIds.AIR);
+      this.world.setBlock(b.x, b.y, b.z, BlockIds.AIR, true, true);
       this.audio.playPlayer('bucket_fill', 0.8);
       this.events.emit('player:swing');
       if (!creative) {
@@ -260,7 +267,7 @@ export class BlockInteraction {
     if (rt === RenderType.CROSS || rt === RenderType.TORCH) { px = t.blockPos.x; py = t.blockPos.y; pz = t.blockPos.z; }
     const cur = this.world.getBlock(px, py, pz);
     if (!BlockRegistry.isReplaceable(cur) || !this.world.isLoadedAt(px, pz) || py < 0 || py > 255) return;
-    this.world.setBlock(px, py, pz, itemId === ItemIds.LAVA_BUCKET ? BlockIds.LAVA : BlockIds.WATER);
+    this.world.setBlock(px, py, pz, itemId === ItemIds.LAVA_BUCKET ? BlockIds.LAVA : BlockIds.WATER, true, true);
     this.audio.playPlayer('bucket_empty', 0.8);
     this.events.emit('player:swing');
     if (!creative) this.inventory.set(this.inventory.selectedIndex, new ItemStack(ItemIds.BUCKET, 1));
@@ -313,8 +320,8 @@ export class BlockInteraction {
     if (SOLID[id] === 1 && (this.player.aabb.intersectsBox(px, py, pz, px + 1, py + 1, pz + 1) || (this.entityBlocks && this.entityBlocks(px, py, pz)))) return;
     if (!isSupported(this.world, px, py, pz, id)) return;
     const slot = this.inventory.selectedIndex, consumedId = stack.itemId;
-    this.world.setBlock(px, py, pz, id);
-    this.audio.playBlock('place', id, px + 0.5, py + 0.5, pz + 0.5);
+    this.world.setBlock(px, py, pz, id, true, true);
+    this.audio.playBlock('place', id, px + 0.5, py + 0.5, pz + 0.5, repeat && (this.player.isCreative ? CREATIVE_PLACE_REPEAT : PLACE_REPEAT_SECONDS) < FAST_REPEAT_SECONDS ? FAST_REPEAT_VOLUME : 1); // fast repeats are a little quieter
     this.events.emit('player:swing');
     let consumed = null;
     if (!this.player.isCreative) {

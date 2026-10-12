@@ -8,7 +8,7 @@ import { MobAI, MobState } from './MobAI.js';
 import { createMobModel } from './MobModel.js';
 import { moveBox, hasSupport, isSolidAt } from '../EntityPhysics.js';
 import { isWater, isLava } from '../../world/WaterLevels.js';
-import { multiplyLight } from '../../rendering/LightUniforms.js';
+import { multiplyLight, sameLight, copyLight } from '../../rendering/LightUniforms.js';
 import * as C from '../../config/Constants.js';
 import { angleDelta, damp, clamp } from '../../utils/MathUtils.js';
 import { SEA_LEVEL } from '../../config/Constants.js';
@@ -41,6 +41,10 @@ export class Mob {
     this.lavaTimer = 0;
     this.fireTimer = 0;
     this.burnTick = 0;
+    /** Fall damage (Update #12 §5d): where the fall began, and the last landing's distance for MobManager. */
+    this.fallStartY = null;
+    this.lastFall = 0;
+    this.justLanded = false;
     this.stuckTimer = 0;
     this.flashTimer = 0;
     this.invulnTimer = 0;
@@ -129,8 +133,14 @@ export class Mob {
     v.z += (dirZ * speed - v.z) * blend;
     if (speed > 0) this.yaw += angleDelta(Math.atan2(-dirX, -dirZ), this.yaw) * (1 - Math.exp(-8 * dt));
 
+    // Fall tracking: from the first step falling in the air until the landing (water and lava reset it).
+    if (this.inWater || this.inLava) this.fallStartY = null;
+    else if (!this.onGround && v.y < 0 && this.fallStartY === null) this.fallStartY = p.y;
     const m = moveBox(world, box, v.x, v.y, v.z, dt, this._move);
-    if (m.landed) v.y = 0;
+    if (m.landed) {
+      v.y = 0;
+      if (this.fallStartY !== null) { this.lastFall = this.fallStartY - box.minY; this.justLanded = this.lastFall > 3; this.fallStartY = null; }
+    }
     if (m.hitCeiling) v.y = 0;
     this.onGround = m.landed || (this.onGround && m.movedY === 0 && hasSupport(world, box));
     if (m.blockedX) v.x = 0;
@@ -181,8 +191,9 @@ export class Mob {
     root.rotation.y = this.yaw;
     const pivots = this.model.pivots;
     const swing = Math.sin(this.walkTime * 6) * 0.7 * clamp(this.velocity.length() / this.def.walkSpeed, 0, 1.3);
-    const legs = ['leg0', 'leg1', 'leg2', 'leg3'];
-    legs.forEach((name, i) => { const pv = pivots.get(name); if (pv) pv.rotation.x = (i === 0 || i === 3) ? swing : -swing; });
+    if (!this._legs) this._legs = [pivots.get('leg0') || null, pivots.get('leg1') || null, pivots.get('leg2') || null, pivots.get('leg3') || null];
+    const legs = this._legs;
+    for (let i = 0; i < 4; i++) { const pv = legs[i]; if (pv) pv.rotation.x = (i === 0 || i === 3) ? swing : -swing; }
     const head = pivots.get('head');
     if (head) {
       const target = this.intent.speed > 0 ? this.yaw : (this.intent.headYaw ?? this.yaw);
@@ -192,7 +203,11 @@ export class Mob {
     // Hurt flash, then the voxel light at the mob (Update #10): a cow in a cave is darker too.
     if (this.flashTimer > 0) this.flashTimer -= dt;
     const base = this.flashTimer > 0 ? HURT_RED : WHITE;
-    for (const m of this.model.materials) multiplyLight(m.color.copy(base), light); // a factor or [r, g, b] (sky + warm block light)
+    // Material colours are written only when the light or the flash changed (Update #14 §3).
+    if (base !== this._lastBase || !sameLight(light, this._lastLight)) {
+      this._lastBase = base; this._lastLight = copyLight(light, this._lastLight);
+      for (const m of this.model.materials) multiplyLight(m.color.copy(base), light); // a factor or [r, g, b] (sky + warm block light)
+    }
     if (this.isDying) {
       const t = clamp(this.deathTimer / C.MOB_DEATH_SECONDS, 0, 1);
       root.rotation.z = (t * t * (3 - 2 * t)) * (Math.PI / 2);

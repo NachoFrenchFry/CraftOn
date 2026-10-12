@@ -12,7 +12,7 @@ export class PerformanceMonitor {
   constructor(game) {
     this.game = game;
     this.lowTime = 0; this.highTime = 0;
-    this.playTime = 0; this.samples = [];
+    this.playTime = 0; this.sampleSum = 0; this.sampleCount = 0;
     this.suggested = this._flag();
     this.shaderLowTime = 0; this.shaderTipShown = false; this.shaderTipArmed = false;
     this.root = document.getElementById('perf-suggest');
@@ -46,11 +46,11 @@ export class PerformanceMonitor {
     // One-time Performance mode suggestion.
     if (!this.suggested && g.state.is(State.PLAYING) && this.suggestionsAllowed) {
       this.playTime += dt;
-      if (fps > 0) this.samples.push(fps);
+      if (fps > 0) { this.sampleSum += fps; this.sampleCount++; }
       const cores = navigator.hardwareConcurrency || 8;
       if (this.playTime > 3 && cores <= 4) this.suggest(`This device has ${cores} CPU cores. Performance mode lowers the render scale and distances for a smoother game.`);
       else if (this.playTime > 15) {
-        const avg = this.samples.length ? Math.round(this.samples.reduce((a, b) => a + b, 0) / this.samples.length) : 60;
+        const avg = this.sampleCount ? Math.round(this.sampleSum / this.sampleCount) : 60;
         if (avg < 30) this.suggest(`The game ran at about ${avg} fps. Performance mode lowers the render scale and distances for a smoother game.`);
         else this._markSuggested();
       }
@@ -66,8 +66,7 @@ export class PerformanceMonitor {
     this._markSuggested();
     this.text.textContent = text;
     this.root.classList.remove('hidden');
-    this.game.input.exitPointerLock();
-    this.game.pause();
+    this.game.pause(); // pause() releases the lock through the controller
   }
 
   hideSuggestion() { this.root.classList.add('hidden'); }

@@ -181,14 +181,14 @@ export class EntityManager {
     }
   }
 
-  render(alpha, dt) {
+  render(alpha, dt, frustum = null) {
     this.time += dt;
     const far = this.entityDistanceBlocks, p = this.player.position;
     for (const it of this.items) {
       it.group.visible = far === Infinity || Math.hypot(it.position.x - p.x, it.position.z - p.z) <= far;
       if (it.group.visible) it.render(alpha, this.time, this.lightAt ? this.lightAt(it.position.x, it.position.y + 0.2, it.position.z) : 1);
     }
-    if (this.mobs) this.mobs.render(alpha, dt);
+    if (this.mobs) this.mobs.render(alpha, dt, frustum);
   }
 
   serialize() {

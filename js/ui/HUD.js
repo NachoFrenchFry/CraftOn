@@ -20,12 +20,13 @@ export class HUD {
     this.fireOverlay = document.getElementById('fire-overlay');
     this._lavaShown = false; this._fireShown = false;
     this.fpsCounter = document.getElementById('fps-counter');
+    this.tickBadge = document.getElementById('tick-badge');
     this.healthBar = document.getElementById('health-bar');
     this.hbFill = this.healthBar.querySelector('.hb-fill');
     this.hbChip = this.healthBar.querySelector('.hb-chip');
     this.hbText = this.healthBar.querySelector('.hb-text');
     this.hurtOverlay = document.getElementById('hurt-overlay');
-    this._hbShown = null; this._hbHealth = -1; this._hbLow = false; this._hurtShown = false; this._chipTimer = null;
+    this._hbShown = null; this._hbHealth = -1; this._hbLow = false; this._hurtShown = false; this._chipTimer = null; this._hurtOpacity = -1; this._hotbarShown = null;
     game.events.on('player:damaged', () => { this.healthBar.classList.remove('hit'); void this.healthBar.offsetWidth; this.healthBar.classList.add('hit'); });
     this.fpsTimer = 0;
     this._fpsShown = false;
@@ -36,7 +37,7 @@ export class HUD {
     this._crosshairShown = true;
     game.events.on('inventory:selected', () => this.showItemName());
     game.events.on('inventory:changed', () => this._refreshPopupIfVisible());
-    this.hint.addEventListener('click', () => game.requestPointerLock());
+    this.hint.addEventListener('click', () => game.requestPointerLock('overlay'));
   }
 
   show() { this.root.classList.remove('hidden'); }
@@ -66,7 +67,17 @@ export class HUD {
     this.popupTimer = POPUP_SECONDS;
   }
 
-  setHotbarVisible(v) { this.hotbar.root.classList.toggle('hidden', !v); }
+  setHotbarVisible(v) { if (v !== this._hotbarShown) { this._hotbarShown = v; this.hotbar.root.classList.toggle('hidden', !v); } }
+
+  /** /tick (Update #12): the top-right badge while the rate is not 20 or time is frozen. */
+  setTickBadge(tick) {
+    if (!this.tickBadge) return;
+    const normal = tick.rate === 20 && !tick.frozen;
+    this.tickBadge.classList.toggle('hidden', normal);
+    if (normal) return;
+    const speed = (tick.rate / 20).toFixed(tick.rate % 20 === 0 ? 0 : 2).replace(/\.?0+$/, '');
+    this.tickBadge.textContent = tick.frozen ? `⏱ frozen · ${tick.rate} TPS (step with /tick step)` : `⏱ ${tick.rate} TPS (${speed}×)`;
+  }
 
   /** Small non-blocking notice (e.g. "Couldn't save, retrying…"); sticky toasts stay until hidden. */
   showToast(text, sticky = false) {
@@ -108,7 +119,7 @@ export class HUD {
     }
     const hurt = !!hs && hs.hurtFlash > 0 && shown;
     if (hurt !== this._hurtShown) { this._hurtShown = hurt; this.hurtOverlay.classList.toggle('hidden', !hurt); }
-    if (hurt) this.hurtOverlay.style.opacity = String(Math.min(1, hs.hurtFlash / 0.35));
+    if (hurt) { const op = Math.round(Math.min(1, hs.hurtFlash / 0.35) * 50) / 50; if (op !== this._hurtOpacity) { this._hurtOpacity = op; this.hurtOverlay.style.opacity = String(op); } }
   }
 
   setCrosshairVisible(v) {

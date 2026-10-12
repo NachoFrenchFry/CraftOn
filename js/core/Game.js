@@ -8,8 +8,11 @@ import { GameLoop } from './GameLoop.js';
 import { WorldSession } from './WorldSession.js';
 import { InputManager } from '../input/InputManager.js';
 import { ActionMap } from '../input/ActionMap.js';
+import { PointerLockController } from '../input/PointerLockController.js';
 import { KeyBindingStore } from './KeyBindingStore.js';
-import { PAUSE_CODE } from '../config/KeyBindings.js';
+import { PAUSE_CODE, CHAT_ENTER_CODE, CHAT_SLASH_CODE } from '../config/KeyBindings.js';
+import { createCommands } from '../commands/index.js';
+import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX } from '../config/Constants.js';
 import { Renderer } from '../rendering/Renderer.js';
 import { TextureAtlas } from '../rendering/TextureAtlas.js';
 import { ChunkMeshManager } from '../rendering/ChunkMeshManager.js';
@@ -65,6 +68,9 @@ import { WaterSimulation, LIQUID_KINDS } from '../world/WaterSimulation.js';
 import { CraftingSystem } from '../crafting/CraftingSystem.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
+import { Profiler } from './Profiler.js';
+import { ChunkVisibility } from '../rendering/Visibility.js';
+import { Benchmark } from './Benchmark.js';
 
 const STEP_DISTANCE = 1.6;
 
@@ -77,9 +83,15 @@ export class Game {
     this.bootScreen = new BootScreen();
     this.debuglog = false;
     this.events = new EventBus();
+    /** Per-system main-thread timers (Update #14 §0): the F3 graph and the benchmark read them. */
+    this.profiler = new Profiler();
+    this.bench = new Benchmark(this);
     this.settings = new Settings(this.events);
     this.state = new GameState(this.events);
     this.input = new InputManager(canvas, this.events);
+    /** The one owner of the mouse lock (Update #13 §1); the input manager mirrors it and reports user activation. */
+    this.lock = new PointerLockController(this.canvas, this.events);
+    this.input.lock = this.lock;
     this.keybinds = new KeyBindingStore(this.events);
     this.actions = new ActionMap(this.input, this.keybinds);
     this.input.shouldPreventDefault = (code) => this.keybinds.shouldPreventDefault(code);
@@ -108,9 +120,15 @@ export class Game {
     this.player = new Player();
     this.session = new WorldSession(this);
     this.ui = new UIManager(this);
-    this.loop = new GameLoop((dt) => this.fixedUpdate(dt), (alpha, dt) => this.frame(alpha, dt));
+    this.loop = new GameLoop((dt) => this.fixedUpdate(dt), (alpha, gameDt, realDt) => this.frame(alpha, gameDt, realDt));
+    this.loop.isSimulating = () => this.state.simulating;
+    this.loop.onFrameEnd = (interval, cpu) => { this.profiler.endFrame(interval, cpu); this.bench.record(interval, cpu); };
+    this.world.profiler = this.profiler;
+    this.renderer.profiler = this.profiler;
+    /** /tick (Update #12): Minecraft's scale, 20 = normal; never saved, reset when a world loads. */
+    this.tick = { rate: TICK_RATE_DEFAULT, frozen: false };
+    this.commands = createCommands(this);
     this.worldMeta = null;
-    this.expectUnlock = false;
     this._eye = new THREE.Vector3();
     this._dir = new THREE.Vector3();
     this._lastStepDistance = 0;
@@ -163,7 +181,8 @@ export class Game {
     const buildPhase = T.start('subsystems + UI');
     const scene = this.renderer.scene;
     this.icons = new BlockIconRenderer(this.atlas); // icons are drawn on demand (hotbar, catalog on first open)
-    this.meshManager = new ChunkMeshManager(scene, this.world, this.atlas.texture, this.settings);
+    this.meshManager = new ChunkMeshManager(scene, this.world, this.atlas, this.settings);
+    this.visibility = new ChunkVisibility(this.meshManager); // cave culling (Update #14 §2c)
     this.chunkManager = new ChunkManager(this.world, this.meshManager, this.settings);
     this.chunkManager.setCutoutBlocks(this.atlas.cutoutBlocks); // blocks whose textures have transparent pixels
     this.sky = new Sky(scene);
@@ -196,6 +215,12 @@ export class Game {
     });
     this.entities.mobs.waterSim = this.waterSim;
     this.entities.mobs.setRenderDistance(this.settings.get('renderDistance'));
+    // Natural respawns (Update #12 §5d) keep away from every player: the local one and, when hosting, the guests.
+    this.entities.mobs.playerPositions = () => {
+      const p = this.player, out = [{ x: p.position.x, y: p.position.y, z: p.position.z, dirX: -Math.sin(p.yaw), dirZ: -Math.cos(p.yaw) }];
+      if (this.remotePlayers) for (const rp of this.remotePlayers.players.values()) { const o = rp.state && rp.state.renderPosition ? rp.state.renderPosition : null; if (o) out.push({ x: o.x, y: o.y, z: o.z, dirX: -Math.sin(rp.state.yaw || 0), dirZ: -Math.cos(rp.state.yaw || 0) }); }
+      return out;
+    };
     // Instant crafting / smelting; results that do not fit drop at the player's feet.
     this.crafting = new CraftingSystem(this.inventory, this.events, (itemId, n) => {
       const p = this.player.position;
@@ -284,7 +309,7 @@ export class Game {
     ev.on('settings:changed', (key, value) => {
       if (key === 'renderDistance') { this.sky.setRenderDistance(value); this.chunkManager.invalidate(); this.entities.mobs.setRenderDistance(value); this._applyPerformanceSettings(); }
       else if (key === 'smoothLighting' || key === 'fancyLeaves') this.chunkManager.remeshAll();
-      else if (key === 'renderScale') { this.renderer.autoScale = 1; this.renderer.resize(); }
+      else if (key === 'renderScale' || key === 'hiDpi') { this.renderer.autoScale = 1; this.renderer.resize(); }
       else if (key === 'maxFps' || key === 'simulationDistance' || key === 'entityDistance' || key === 'particles') this._applyPerformanceSettings();
       else if (key === 'shadersOn' || (key.startsWith('sh') && key !== 'shaderPreset' && key !== 'showFps')) this.shaders.apply();
       else if (key === 'brightness') applyBrightness(value); // live: a shader uniform, no re-bake
@@ -312,10 +337,11 @@ export class Game {
     ev.on('player:jump', () => this.audio.playStep(this._blockUnderPlayer(), 0.18));
     ev.on('player:splash', () => this.audio.playPlayer('splash', 0.8));
     ev.on('item:pickup', () => this.audio.playUI('pop', 0.9));
-    ev.on('block:changed', (x, y, z) => { this.waterSim.onBlockChanged(x, y, z); this.lavaSim.onBlockChanged(x, y, z); });
+    ev.on('block:changed', (x, y, z) => { if (this.isGuest) return; this.waterSim.onBlockChanged(x, y, z); this.lavaSim.onBlockChanged(x, y, z); }); // guests only mirror the host's flow
     ev.on('chunk:loaded', (cx, cz) => {
       if (this.net && !this.net.isHost) return; // guests: the host owns water flow and mobs
       this.waterSim.onChunkLoaded(cx, cz);
+      this.lavaSim.onChunkLoaded(cx, cz); // lava flow parked at an unloaded chunk border resumes too
       this.entities.mobs.onChunkLoaded(cx, cz);
       // First generation of this chunk in this world: roll the deterministic mob group.
       const key = chunkKeyString(cx, cz);
@@ -330,7 +356,7 @@ export class Game {
     ev.on('craft:done', (recipe) => this.audio.playUI(recipe.stations.includes('furnace') ? 'smelt' : 'craft', 0.8));
     ev.on('item:thrown', () => this.audio.playUI('drop', 0.7));
     this.canvas.addEventListener('mousedown', () => {
-      if (this.state.is(State.PLAYING) && !this.input.pointerLocked) this.requestPointerLock();
+      if (this.state.is(State.PLAYING) && !this.lock.locked && !this.ui.chat.isOpen) this.requestPointerLock('canvas');
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) { this.session.save(false); this._hiddenSince = performance.now(); }
@@ -368,8 +394,9 @@ export class Game {
     this.net = host;
     this.loop.setHiddenTicker(document.hidden);
     this.ui.hud.showToast(`Hosting · code ${host.joinCode} · keep this tab visible while hosting`, false);
+    this.systemChat(`Hosting · join code ${host.joinCode}`, 'gray', false);
     this.ui.pause.refresh();
-    this.events.emit('net:changed');
+    this._netChanged();
     return true;
   }
 
@@ -380,7 +407,7 @@ export class Game {
     this.net = null;
     this.loop.setHiddenTicker(false);
     this.ui.pause.refresh();
-    this.events.emit('net:changed');
+    this._netChanged();
   }
 
   /** Join a lobby (Find Server / Join by code): connect, download, generate, play. Errors go back to the Find screen. */
@@ -405,7 +432,7 @@ export class Game {
     if (this.worldMeta) { this.worldMeta.keepInventory = !!welcome.keepInventory; this.worldMeta.pvp = welcome.pvp !== false; }
     const mode = you.mode || welcome.gameMode;
     if (mode && this.player.gameMode !== mode) this.setGameMode(mode, true);
-    this.events.emit('net:changed');
+    this._netChanged();
     return true;
   }
 
@@ -418,7 +445,7 @@ export class Game {
     if (this.state.inWorld || this.state.is(State.LOADING)) this.session.abandon();
     if (!this.state.is(State.KICKED)) this.state.set(State.MENU);
     if (message) this.ui.multiplayer.showDisconnected(message);
-    this.events.emit('net:changed');
+    this._netChanged();
   }
 
   _connectionLost(reason) {
@@ -431,7 +458,7 @@ export class Game {
     if (this.net.isHost) { this.net.stop('closed'); this.loop.setHiddenTicker(false); }
     else this.net.close(true);
     this.net = null;
-    this.events.emit('net:changed');
+    this._netChanged();
   }
 
   /**
@@ -447,7 +474,7 @@ export class Game {
     this._dropNet();
     if (wasInWorld && !remote) { try { await this.session.saveWithTimeout(3000); } catch (e) { /* best effort */ } }
     if (wasInWorld) this.session.abandon();
-    this.input.exitPointerLock();
+    this.lock.release('kicked');
     this.state.set(State.KICKED);
   }
 
@@ -498,30 +525,35 @@ export class Game {
 
   startWorld(worldId) { return this.session.start(worldId); }
 
-  requestPointerLock() { this.input.requestPointerLock(); }
+  /** Ask the lock controller for the mouse; `source` is for the ?debuglog trace. */
+  requestPointerLock(source = 'game') { return this.lock.request(source); }
 
   pause() {
     if (!this.state.is(State.PLAYING)) return;
+    if (this.ui.chat && this.ui.chat.isOpen) this.ui.chat.close(false);
     this.state.set(State.PAUSED);
-    this.input.exitPointerLock();
+    this.lock.release('pause');
   }
 
   /**
-   * Back to the game. `lock` is false when a key (Esc) closed the menu: browsers refuse pointer lock right after
-   * Esc (about a 1 s cooldown and no user activation), so the game resumes unlocked behind a small "Click to
-   * resume" overlay and the next click captures the mouse. The Resume button (a click) locks immediately.
+   * Back to the game. `lock` is false when Esc closed the menu: Esc is not user activation, so the lock is requested on
+   * the next key press or click instead (Update #12 §3c); a click (the Resume button) or a key such as E locks at once.
+   * In single player the world was paused, so the loop's timing restarts without catching up.
    */
   resume(lock = true) {
-    if (this.state.is(State.PAUSED)) { this.state.set(State.PLAYING); if (lock) this.requestPointerLock(); }
-    else if (this.state.is(State.INVENTORY)) this.closeInventory(lock);
+    if (this.state.is(State.PAUSED)) {
+      this.state.set(State.PLAYING);
+      this.loop.resetTiming();
+      if (lock) this.requestPointerLock('resume'); else this.lock.relockOnNextInput();
+    } else if (this.state.is(State.INVENTORY)) this.closeInventory(lock);
   }
 
   /** @param {'inventory'|'crafting_table'|'furnace'} station recipe list to show */
   openInventory(station = 'inventory') {
     if (!this.state.is(State.PLAYING)) return;
     if (this.player.isSpectator && station !== 'inventory') return; // spectators cannot use stations
-    this.expectUnlock = true;
-    this.input.exitPointerLock();
+    if (this.ui.chat.isOpen) this.ui.chat.close(false);
+    this.lock.release('inventory');
     this.state.set(State.INVENTORY);
     this.ui.inventory.open(station);
     this.audio.playUI('inv_open');
@@ -532,7 +564,73 @@ export class Game {
     this.ui.inventory.close();
     this.state.set(State.PLAYING);
     this.audio.playUI('inv_close');
-    if (lock) this.requestPointerLock();
+    if (lock) this.requestPointerLock('inventory-close'); else this.lock.relockOnNextInput();
+  }
+
+  // ---- Chat and commands (Update #12) ----
+
+  /** Chat box: `prefill` '/' when the slash key opened it. */
+  openChat(prefill = '') {
+    if (!this.state.is(State.PLAYING) || this.ui.chat.isOpen) return;
+    this.ui.chat.open(prefill);
+  }
+
+  /** The chat box closed: Enter (a key press, user activation) re-locks now; Esc re-locks on the next key or click. */
+  onChatClosed(viaKey) {
+    if (!this.state.is(State.PLAYING)) return;
+    if (viaKey) this.requestPointerLock('chat-enter'); else this.lock.relockOnNextInput();
+  }
+
+  /** A chat line typed by this player: shown locally (single player / host) and sent to everyone; guests send it to the host. */
+  sendChat(text) {
+    const name = (this.account && this.account.username) || (this.net ? this.net.name : null) || 'you';
+    if (this.isGuest) { this.net.sendChat(text); return; }
+    this.ui.chat.add({ name, text, host: !!this.net });
+    if (this.net) this.net.broadcastChat(name, text, true);
+  }
+
+  /** A system line (joins, leaves, deaths): shown here and, when hosting, sent to every guest. */
+  systemChat(text, color = 'yellow', broadcast = true) {
+    this.ui.chat.system(text, color);
+    if (broadcast && this.net && this.net.isHost) this.net.broadcastSystem(text, color);
+  }
+
+  // ---- /tick (Update #12): game speed on Minecraft's 20-ticks-per-second scale ----
+
+  setTickRate(rate, fromHost = false) {
+    rate = Math.min(TICK_RATE_MAX, Math.max(TICK_RATE_MIN, Math.round(rate)));
+    this.tick.rate = rate;
+    this.loop.setTickRate(rate);
+    this.audio.setTimeScale(this.tick.frozen ? 0 : rate / TICK_RATE_DEFAULT);
+    this._tickChanged(fromHost);
+  }
+
+  setTickFrozen(frozen, fromHost = false) {
+    frozen = !!frozen;
+    if (this.tick.frozen === frozen && this.loop.frozen === frozen) return;
+    this.tick.frozen = frozen;
+    this.loop.frozen = frozen;
+    if (!frozen) this.loop.resetTiming();
+    this.audio.setTimeScale(frozen ? 0 : this.tick.rate / TICK_RATE_DEFAULT);
+    this._tickChanged(fromHost);
+  }
+
+  /** /tick step: advance whole ticks (1/20 s each) while frozen. */
+  stepTicks(n = 1) { this.loop.stepTicks(n); }
+
+  /** A world loads: back to normal speed (the rate is never saved). */
+  resetTick() { this.tick.rate = TICK_RATE_DEFAULT; this.tick.frozen = false; this.loop.setTickRate(TICK_RATE_DEFAULT); this.loop.frozen = false; this.loop.pendingGameTime = 0; this.audio.setTimeScale(1); this._tickChanged(true); }
+
+  _tickChanged(fromHost) {
+    if (this.ui.hud) this.ui.hud.setTickBadge(this.tick);
+    if (!fromHost && this.net && this.net.isHost) this.net.broadcastTick(this.tick);
+    this.events.emit('tick:changed', this.tick);
+  }
+
+  /** The pause menu is only an overlay in multiplayer (the host's simulation never stops, guests keep mirroring). */
+  _netChanged() {
+    this.state.overlayPause = !!this.net;
+    this.events.emit('net:changed');
   }
 
   /** Survival → Creative → Spectator → Survival. */
@@ -614,9 +712,15 @@ export class Game {
     }
     if (a.wasPressed('inventory')) {
       if (st.is(State.PLAYING)) this.openInventory();
-      else if (st.is(State.INVENTORY)) this.closeInventory(false);
+      else if (st.is(State.INVENTORY)) this.closeInventory(true); // closing with the key re-locks at once (Update #12 §3c)
     }
     if (!st.is(State.PLAYING)) return;
+    // Chat (Update #12): the bindable key, Enter, or "/" with a slash already typed. While the box is open the input
+    // element has focus, so no game key reaches here.
+    if (!this.ui.chat.isOpen) {
+      if (a.wasPressed('chat') || this.input.wasPressed(CHAT_ENTER_CODE)) { this.openChat(''); return; }
+      if (this.input.wasPressed(CHAT_SLASH_CODE)) { this.openChat('/'); return; }
+    }
     if (a.wasPressed('perspective')) this.cameraController.cycle();
     if (a.wasPressed('toggleGameMode')) this.cycleGameMode();
     const wheel = this.input.consumeWheel();
@@ -666,32 +770,45 @@ export class Game {
 
   fixedUpdate(dt) {
     if (!this.state.simulating) return;
+    const pr = this.profiler;
+    pr.begin('physics');
     if (!this.player.dead) this.physics.step(dt); // a dead player's body waits for Respawn
+    pr.end('physics');
+    pr.begin('mobs');
     this.entities.fixedUpdate(dt);
+    pr.end('mobs');
     // Scheduled water updates every WATER_TICK_SECONDS (only blocks touched by a change are processed); the host
     // of a LAN server runs them for everyone, guests only mirror.
     this._waterTimer += dt;
     if (this._waterTimer >= WATER_TICK_SECONDS) {
       this._waterTimer -= WATER_TICK_SECONDS;
-      if (!this.isGuest) { this.waterSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.waterSim.tick(); }
+      if (!this.isGuest) { pr.begin('water'); this.waterSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.waterSim.tick(); pr.end('water'); }
     }
     this._lavaTimer += dt;
     if (this._lavaTimer >= LAVA_TICK_SECONDS) {
       this._lavaTimer -= LAVA_TICK_SECONDS;
-      if (!this.isGuest) { this.lavaSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.lavaSim.tick(); }
+      if (!this.isGuest) { pr.begin('lava'); this.lavaSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.lavaSim.tick(); pr.end('lava'); }
     }
   }
 
-  frame(alpha, dt) {
+  /**
+   * Per frame. `dt` is game time (scaled by /tick, 0 while paused or frozen) for everything that moves or animates;
+   * `realDt` is wall-clock time for the UI, autosave, networking and the performance monitor. Mouse look uses the raw
+   * mouse delta, so it is never scaled.
+   */
+  frame(alpha, dt, realDt = dt) {
     const hosting = !!(this.net && this.net.isHost);
     const hidden = document.hidden && !this.ignoreHidden;
     if (hidden && !hosting) { this.input.endFrame(); return; } // a hosting tab keeps simulating (but does not draw)
     this._handleKeys();
     const st = this.state;
+    const pr = this.profiler;
     if (st.inWorld) {
       const playing = st.is(State.PLAYING);
       const p = this.player;
-      this.controller.enabled = playing && this.input.pointerLocked;
+      if (this.bench.active) this.bench.update(realDt);
+      pr.begin('misc');
+      this.controller.enabled = playing && this.input.pointerLocked && !this.ui.chat.isOpen;
       this.controller.updateLook();
       this.controller.updateIntent();
       p.interpolate(alpha);
@@ -700,12 +817,25 @@ export class Game {
       p.getEyePosition(this._eye);
       p.getLookDirection(this._dir);
       const spectator = p.isSpectator;
-      this.interaction.enabled = playing && !spectator;
+      this.interaction.enabled = playing && !spectator && !this.ui.chat.isOpen;
+      pr.end('misc');
+      pr.begin('interaction');
       this.interaction.update(dt, this._eye.x, this._eye.y, this._eye.z, this._dir.x, this._dir.y, this._dir.z);
+      pr.end('interaction');
       this.chunkManager.update(p.position.x, p.position.z, this._dir.x, this._dir.z);
-      this.entities.render(alpha, dt);
+      pr.begin('culling');
+      this.visibility.update(this.renderer.camera, Math.floor(p.position.x) >> 4, Math.floor(p.position.z) >> 4, this.chunkManager.renderDistance);
+      pr.end('culling');
+      pr.begin('mobs');
+      this.entities.render(alpha, dt, this.visibility.enabled ? this.visibility.frustum : null);
+      pr.end('mobs');
+      pr.begin('torches');
       this.torchEffects.update(dt, p.position.x, p.position.y, p.position.z);
+      pr.end('torches');
+      pr.begin('particles');
       this.particles.update(dt, this.renderer.camera);
+      pr.end('particles');
+      pr.begin('misc');
       this.hand.visible = first && !spectator && !p.dead;
       this.hand.eating = this.interaction.eatProgress;
       this.hand.setLight(this.lightAt(this._eye.x, this._eye.y, this._eye.z));
@@ -721,18 +851,29 @@ export class Game {
       this._footsteps();
       this._swimSounds(dt);
       this.ui.hud.setCrosshairVisible(this.cameraController.perspective !== Perspective.THIRD_FRONT);
-      this.session.update(dt);
-      if (this.net) this.net.update(dt);
+      pr.end('misc');
+      pr.begin('autosave');
+      this.session.update(realDt);   // autosave stays on real time
+      pr.end('autosave');
+      pr.begin('net');
+      if (this.net) this.net.update(realDt);
       this.remotePlayers.update(dt);
-      this.perf.update(dt);
+      pr.end('net');
+      pr.begin('misc');
+      this.perf.update(realDt);
       this.renderer.handVisible = first;
       this.shaders.update(dt);
+      pr.end('misc');
+      pr.begin('render');
       if (!hidden) this.renderer.render();
+      pr.end('render');
       if (this.afterRender) this.afterRender();
     } else if (st.is(State.LOADING)) {
       // Keep the sky/scene warm; nothing else to draw.
     }
-    this.ui.update(dt);
+    pr.begin('ui');
+    this.ui.update(realDt); // UI fades are real-time
+    pr.end('ui');
     this.input.endFrame();
   }
 }

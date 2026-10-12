@@ -30,6 +30,10 @@ export class Renderer {
     this.worldStats = { calls: 0, triangles: 0 };
     /** Render scale picked by the Auto mode (PerformanceMonitor lowers it while the FPS stays under the target). */
     this.autoScale = 1;
+    /** Fixed internal resolution ({ w, h }) for the benchmark (Update #14 §0); null = the window size × DPR × scale. */
+    this.fixedSize = null;
+    /** Set by Game: the post-effect chain is timed apart from the world pass (Update #14 §0). */
+    this.profiler = null;
     this._dprQuery = null;
     this._bindResize();
     this.resize();
@@ -61,14 +65,20 @@ export class Renderer {
     this.resize();
   }
 
+  setFixedSize(w, h) { this.fixedSize = w && h ? { w, h } : null; this.resize(); }
+
   resize() {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
     this.width = w;
     this.height = h;
     const scale = this.renderScale;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * scale);
-    this.renderer.setSize(w, h, false);
+    if (this.fixedSize) { this.renderer.setPixelRatio(1); this.renderer.setSize(this.fixedSize.w, this.fixedSize.h, false); }
+    else {
+      // HiDPI off (the default, Update #14 §2d): one internal pixel per CSS pixel, whatever the screen's ratio.
+      const dpr = this.settings.get('hiDpi') ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+      this.renderer.setPixelRatio(dpr * scale); this.renderer.setSize(w, h, false);
+    }
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.handCamera.aspect = w / h;
@@ -86,7 +96,7 @@ export class Renderer {
   render() {
     const r = this.renderer;
     r.clear();
-    if (this.post) this.post.render(); else r.render(this.scene, this.camera);
+    if (this.post) { if (this.profiler) this.profiler.begin('post'); this.post.render(); if (this.profiler) this.profiler.end('post'); } else r.render(this.scene, this.camera);
     this.worldStats.calls = r.info.render.calls;
     this.worldStats.triangles = r.info.render.triangles;
     if (this.handVisible) {

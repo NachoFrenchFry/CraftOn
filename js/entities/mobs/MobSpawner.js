@@ -1,10 +1,10 @@
-// MobSpawner.js — deterministic group spawns for freshly generated chunks: about 1 in 6 chunks gets a
-// group of 2–4 of one mob type on grass with two blocks of air above (never on sand, snow or in water).
-// Pure: returns spawn positions; MobManager instantiates them.
+// MobSpawner.js — deterministic group spawns for freshly generated chunks: about 1 in 2 chunks gets a
+// group of 3–5 of one mob type on grass with two blocks of air above (never on sand, snow or in water)
+// (Update #12 §5d). Pure: returns spawn positions; MobManager instantiates them and handles natural respawns.
 
 import { chunkRandom } from '../../utils/Random.js';
 import { BlockIds as B } from '../../blocks/BlockIds.js';
-import { MOB_SPAWN_CHANCE } from '../../config/Constants.js';
+import { MOB_SPAWN_CHANCE, MOB_GROUP_MIN, MOB_GROUP_MAX } from '../../config/Constants.js';
 import { COW } from './Cow.js';
 import { PIG } from './Pig.js';
 import { SHEEP } from './Sheep.js';
@@ -22,7 +22,7 @@ export function spawnsForChunk(seed, chunk) {
   const rng = chunkRandom(seed, chunk.cx, chunk.cz, SALT_MOBS);
   if (rng.next() >= MOB_SPAWN_CHANCE) return [];
   const def = MOB_TYPES[rng.nextInt(MOB_TYPES.length)];
-  const count = 2 + rng.nextInt(3);
+  const count = MOB_GROUP_MIN + rng.nextInt(MOB_GROUP_MAX - MOB_GROUP_MIN + 1);
   const out = [];
   const b = chunk.blocks;
   for (let attempt = 0; attempt < count * 6 && out.length < count; attempt++) {

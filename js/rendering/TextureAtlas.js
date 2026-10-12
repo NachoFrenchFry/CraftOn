@@ -44,6 +44,8 @@ export class TextureAtlas {
   constructor() {
     this.canvas = null;
     this.texture = null;
+    /** The tiles as a DataArrayTexture (Update #14 §2a), built with the atlas. */
+    this.arrayTexture = null;
     /** name → 16×16 canvas (used by icons, particles, debug view) */
     this.tiles = new Map();
     this.missingNames = [];
@@ -142,6 +144,33 @@ export class TextureAtlas {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
     this.texture = tex;
+    this.arrayTexture = this._composeArray();
+  }
+
+  /**
+   * The same tiles as a texture array (Update #14 §2a): one 16×16 RGBA layer per tile, rows bottom-up so v = 0 is the bottom
+   * of the image like the flipped canvas atlas. Nearest filtering, no mipmaps: pixel-identical to the atlas.
+   */
+  _composeArray() {
+    const layers = TEXTURE_NAMES.length;
+    const data = new Uint8Array(layers * TILE_SIZE * TILE_SIZE * 4);
+    TEXTURE_NAMES.forEach((name, i) => {
+      const tile = this.getTile(name);
+      const px = tile.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, TILE_SIZE, TILE_SIZE).data;
+      for (let row = 0; row < TILE_SIZE; row++) {
+        const src = (TILE_SIZE - 1 - row) * TILE_SIZE * 4;
+        data.set(px.subarray(src, src + TILE_SIZE * 4), i * TILE_SIZE * TILE_SIZE * 4 + row * TILE_SIZE * 4);
+      }
+    });
+    const arr = new THREE.DataArrayTexture(data, TILE_SIZE, TILE_SIZE, layers);
+    arr.format = THREE.RGBAFormat;
+    arr.type = THREE.UnsignedByteType;
+    arr.magFilter = THREE.NearestFilter;
+    arr.minFilter = THREE.NearestFilter;
+    arr.generateMipmaps = false;
+    arr.colorSpace = THREE.SRGBColorSpace;
+    arr.needsUpdate = true;
+    return arr;
   }
 
   getUV(name) { return getUV(name); }

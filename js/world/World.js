@@ -18,6 +18,8 @@ export class World {
     this.meshManager = null;
     /** Set by ChunkManager: incremental voxel lighting (Update #10). */
     this.lightUpdater = null;
+    /** Set by Game (Update #14 §0): the mesh and light managers time their main-thread work with it. */
+    this.profiler = null;
   }
 
   clear() {
@@ -53,10 +55,12 @@ export class World {
   isLiquid(x, y, z) { return RENDER_TYPE[this.getBlock(x, y, z)] === RenderType.LIQUID; }
 
   /**
-   * Set a block. Records the edit (for saving), remeshes affected sections immediately and emits
-   * 'block:changed' (x, y, z, {old, id}).
+   * Set a block. Records the edit (for saving), marks the affected mesh sections dirty (re-meshed in the worker pool within the
+   * frame budget) and queues the light change, then emits 'block:changed' (x, y, z, {old, id}). A player's own edit passes
+   * `immediate = true` (Update #14 §1a): its section is re-meshed synchronously with a slice of light work first, so feedback
+   * stays instant; water, lava, light, multiplayer and generation changes never re-mesh on the main thread.
    */
-  setBlock(x, y, z, id, record = true) {
+  setBlock(x, y, z, id, record = true, immediate = false) {
     if (y < 0 || y >= WORLD_HEIGHT) return false;
     const cx = x >> 4, cz = z >> 4;
     const chunk = this.chunks.get(chunkKey(cx, cz));
@@ -65,8 +69,8 @@ export class World {
     const old = chunk.set(lx, y, lz, id);
     if (old === id) return false;
     if (record) this.edits.record(cx, cz, blockIndex(lx, y, lz), id);
-    if (this.lightUpdater) this.lightUpdater.onBlockChanged(x, y, z); // light first, so the remesh below already sees it
-    if (this.meshManager) this.meshManager.onBlockChanged(x, y, z);
+    if (this.lightUpdater) this.lightUpdater.onBlockChanged(x, y, z, immediate); // light first, so an immediate remesh already sees it
+    if (this.meshManager) this.meshManager.onBlockChanged(x, y, z, immediate);
     this.events.emit('block:changed', x, y, z, { old, id, recorded: record });
     return true;
   }

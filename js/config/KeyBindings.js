@@ -28,6 +28,7 @@ export const ACTIONS = Object.freeze([
   { id: 'hotbar7', label: 'Hotbar Slot 7', group: 'Hotbar', default: 'Digit7' },
   { id: 'hotbar8', label: 'Hotbar Slot 8', group: 'Hotbar', default: 'Digit8' },
   { id: 'hotbar9', label: 'Hotbar Slot 9', group: 'Hotbar', default: 'Digit9' },
+  { id: 'chat', label: 'Open Chat (Enter and / always work too)', group: 'Misc', default: 'KeyT' },
   { id: 'debug', label: 'Debug Overlay', group: 'Misc', default: 'F3' },
   { id: 'toggleGameMode', label: 'Toggle Survival / Creative', group: 'Misc', default: 'F4' },
   { id: 'atlasDebug', label: 'Texture Atlas View', group: 'Misc', default: 'F7' },
@@ -41,7 +42,10 @@ export const PAUSE_CODE = 'Escape';
 export const RESERVED_CODES = Object.freeze(new Set([PAUSE_CODE]));
 
 /** Keys whose browser default is always suppressed while playing, in addition to every bound key. */
-export const ALWAYS_PREVENT_DEFAULT = Object.freeze(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+export const ALWAYS_PREVENT_DEFAULT = Object.freeze(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Slash']);
+/** Fixed chat openers besides the bindable action: Enter opens the box, "/" opens it with a slash typed (Update #12). */
+export const CHAT_ENTER_CODE = 'Enter';
+export const CHAT_SLASH_CODE = 'Slash';
 
 const KEY_NAMES = {
   Space: 'Space', ShiftLeft: 'Left Shift', ShiftRight: 'Right Shift', ControlLeft: 'Left Ctrl', ControlRight: 'Right Ctrl',

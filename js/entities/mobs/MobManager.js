@@ -3,6 +3,8 @@
 // Multiplayer (Update #8): every mob has an id; the host runs AI / physics / damage and announces spawns,
 // removals and hurts through hooks, while a guest (`remote`) only mirrors snapshots with interpolation.
 
+import { Sphere } from 'three';
+import { rayBox } from '../../utils/RayBox.js';
 import { Mob } from './Mob.js';
 import { MobState } from './MobAI.js';
 import { MOB_BY_TYPE, spawnsForChunk } from './MobSpawner.js';
@@ -10,7 +12,10 @@ import { LAVA_DAMAGE, LAVA_DAMAGE_INTERVAL, FIRE_SECONDS, FIRE_DAMAGE, FIRE_INTE
 import { ItemRegistry } from '../../items/ItemRegistry.js';
 import { BlockRegistry } from '../../blocks/BlockRegistry.js';
 import { chunkKeyString } from '../../world/ChunkCoords.js';
-import { MOB_CAP, CHUNK_SIZE, MOB_HURT_FLASH_SECONDS, MOB_DEATH_SECONDS, MOB_KNOCKBACK, MOB_KNOCKBACK_UP } from '../../config/Constants.js';
+import { MOB_CAP, CHUNK_SIZE, MOB_HURT_FLASH_SECONDS, MOB_DEATH_SECONDS, MOB_KNOCKBACK, MOB_KNOCKBACK_UP, MOB_RESPAWN_SECONDS, MOB_RESPAWN_MIN_DISTANCE, MOB_RESPAWN_MIN_SKY_LIGHT, MOB_GROUP_MIN, MOB_GROUP_MAX } from '../../config/Constants.js';
+import { mobFallDamage } from '../../player/Damage.js';
+import { BlockIds } from '../../blocks/BlockIds.js';
+import { MOB_TYPES } from './MobSpawner.js';
 import { Interpolator } from '../../net/Interpolator.js';
 import { clamp } from '../../utils/MathUtils.js';
 
@@ -27,6 +32,7 @@ export class MobManager {
     this.textures = textures;
     this.hooks = hooks;
     /** @type {Mob[]} */
+    this._sphere = new Sphere();
     this.mobs = [];
     /** chunk key → serialized mobs waiting for that chunk to load. */
     this.stored = new Map();
@@ -47,6 +53,10 @@ export class MobManager {
     this.onSpawn = null;
     this.onRemove = null;
     this.onHurt = null;
+    /** Natural respawning (Update #12 §5d): every MOB_RESPAWN_SECONDS while under the cap; () => [{x, y, z, dirX, dirZ}] of every player (set by Game). */
+    this.respawnTimer = MOB_RESPAWN_SECONDS;
+    this.playerPositions = null;
+    this.respawns = 0;
   }
 
   clear() {
@@ -203,16 +213,8 @@ export class MobManager {
     for (const m of this.mobs) {
       if (m.isDying || m.frozen) continue;
       const b = m.aabb;
-      let tmin = 0, tmax = bestT, ok = true;
-      const axes = [[ox, dx, b.minX, b.maxX], [oy, dy, b.minY, b.maxY], [oz, dz, b.minZ, b.maxZ]];
-      for (const [o, d, lo, hi] of axes) {
-        if (Math.abs(d) < 1e-9) { if (o < lo || o > hi) { ok = false; break; } continue; }
-        let t1 = (lo - o) / d, t2 = (hi - o) / d;
-        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
-        tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
-        if (tmin > tmax) { ok = false; break; }
-      }
-      if (ok && tmin < bestT) { bestT = tmin; best = m; }
+      const t = rayBox(ox, oy, oz, dx, dy, dz, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ, bestT);
+      if (t >= 0 && t < bestT) { bestT = t; best = m; }
     }
     this._ray.mob = best; this._ray.distance = bestT;
     return best ? this._ray : null;
@@ -221,6 +223,8 @@ export class MobManager {
   fixedUpdate(dt, player) {
     if (this.remote) { this._mirror(dt, player); return; }
     const px = player.position.x, pz = player.position.z;
+    this.respawnTimer -= dt;
+    if (this.respawnTimer <= 0) { this.respawnTimer = MOB_RESPAWN_SECONDS; this.tryRespawn(px, pz); }
     const far = Math.min(this.renderDistanceBlocks, this.simDistanceBlocks);
     for (let i = this.mobs.length - 1; i >= 0; i--) {
       const m = this.mobs[i];
@@ -230,6 +234,8 @@ export class MobManager {
       if (m.frozen) continue;
       const wasGround = m.walkDistance;
       m.fixedUpdate(dt, this.world, this.waterSim);
+      if (m.dead) { this._drop(i); continue; }
+      if (m.justLanded) { m.justLanded = false; const dmg = Math.round(mobFallDamage(m.lastFall) * 10) / 10; if (dmg > 0) { m.invulnTimer = 0; this.hit(m, dmg, m.position.x, m.position.z, false, false); } }
       if (m.dead) { this._drop(i); continue; }
       this._lavaAndFire(m, dt);
       if (m.dead) { this._drop(i); continue; }
@@ -251,6 +257,50 @@ export class MobManager {
     }
   }
 
+  /**
+   * Natural respawning (Update #12 §5d, host only): every MOB_RESPAWN_SECONDS, while fewer than MOB_CAP mobs are
+   * loaded, try to put a group of 3–5 of one type on grass under the sky (sky light ≥ 9) at least 24 blocks from
+   * every player, preferably behind them. Returns the number spawned (0 when nothing qualified).
+   */
+  tryRespawn(centerX, centerZ, rng = Math.random) {
+    if (this.remote || this.mobs.length >= MOB_CAP) return 0;
+    const players = this.playerPositions ? this.playerPositions() : [{ x: centerX, y: 0, z: centerZ, dirX: 0, dirZ: -1 }];
+    const far = Math.max(MOB_RESPAWN_MIN_DISTANCE + 8, this.simDistanceBlocks);
+    let spot = null, fallback = null;
+    for (let attempt = 0; attempt < 24 && !spot; attempt++) {
+      const a = rng() * Math.PI * 2, d = MOB_RESPAWN_MIN_DISTANCE + rng() * (far - MOB_RESPAWN_MIN_DISTANCE);
+      const x = Math.floor(centerX + Math.cos(a) * d), z = Math.floor(centerZ + Math.sin(a) * d);
+      if (!this.world.isLoadedAt(x, z)) continue;
+      const top = this.world.getTopY(x, z);
+      if (top < 0 || this.world.getBlock(x, top, z) !== BlockIds.GRASS_BLOCK) continue;
+      if (this.world.getBlock(x, top + 1, z) !== BlockIds.AIR || this.world.getBlock(x, top + 2, z) !== BlockIds.AIR) continue;
+      if (this.world.getSkyLight(x, top + 1, z) < MOB_RESPAWN_MIN_SKY_LIGHT) continue;
+      let tooClose = false, inView = false;
+      for (const p of players) {
+        const dx = x + 0.5 - p.x, dz = z + 0.5 - p.z, dist = Math.hypot(dx, dz);
+        if (dist < MOB_RESPAWN_MIN_DISTANCE) { tooClose = true; break; }
+        if (dist > 0 && (dx * (p.dirX || 0) + dz * (p.dirZ || 0)) / dist > 0.3) inView = true;
+      }
+      if (tooClose) continue;
+      const candidate = { x, y: top + 1, z };
+      if (!inView) spot = candidate; else if (!fallback) fallback = candidate;
+    }
+    spot = spot || fallback;
+    if (!spot) return 0;
+    const def = MOB_TYPES[Math.floor(rng() * MOB_TYPES.length)];
+    const count = MOB_GROUP_MIN + Math.floor(rng() * (MOB_GROUP_MAX - MOB_GROUP_MIN + 1));
+    let spawned = 0;
+    for (let k = 0; k < count * 4 && spawned < count && this.mobs.length < MOB_CAP; k++) {
+      const x = spot.x + Math.floor(rng() * 7) - 3, z = spot.z + Math.floor(rng() * 7) - 3;
+      const top = this.world.getTopY(x, z);
+      if (top < 0 || Math.abs(top + 1 - spot.y) > 2 || this.world.getBlock(x, top, z) !== BlockIds.GRASS_BLOCK) continue;
+      if (this.world.getBlock(x, top + 1, z) !== BlockIds.AIR || this.world.getBlock(x, top + 2, z) !== BlockIds.AIR) continue;
+      if (this._add(def, x + 0.5, top + 1, z + 0.5, Math.floor(rng() * 0xffffffff))) spawned++;
+    }
+    this.respawns += spawned;
+    return spawned;
+  }
+
   /** Lava (Update #11): the same numbers as the player (20 every 0.5 s in lava, then 5 s on fire at 5 per second; water puts it out). */
   _lavaAndFire(m, dt) {
     if (m.isDying) { m.fireTimer = 0; return; }
@@ -267,11 +317,18 @@ export class MobManager {
     } else m.burnTick = 0;
   }
 
-  render(alpha, dt) {
+  /** Per frame: animate the mobs that can be seen (Update #14 §3: off-screen and far mobs skip the animation; their physics still runs). */
+  render(alpha, dt, frustum = null) {
+    const sphere = this._sphere;
     for (const m of this.mobs) {
-      if (m.frozen) continue;
+      if (m.frozen || !m.root.visible) continue;
+      if (frustum) {
+        sphere.center.set(m.position.x, m.position.y + m.def.hitbox[1] * 0.5, m.position.z);
+        sphere.radius = Math.max(m.def.hitbox[0], m.def.hitbox[1]) + 0.5;
+        if (!frustum.intersectsSphere(sphere)) continue;
+      }
       m.render(alpha, dt, this.lightAt ? this.lightAt(m.position.x, m.position.y + 0.5, m.position.z) : 1);
-      if (m.fireTimer > 0 && m.root.visible && this.hooks.flame) this.hooks.flame(m.root.position.x, m.root.position.y + m.def.hitbox[1] * 0.6, m.root.position.z, 1);
+      if (m.fireTimer > 0 && this.hooks.flame) this.hooks.flame(m.root.position.x, m.root.position.y + m.def.hitbox[1] * 0.6, m.root.position.z, 1);
     }
   }
 

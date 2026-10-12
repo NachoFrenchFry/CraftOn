@@ -20,10 +20,13 @@ const HIP_HEIGHT = 12 * PX;
 /** Freestyle flutter kick: legs alternate ±SWIM_KICK_AMP at SWIM_KICK_HZ, a little faster when moving faster. */
 export const SWIM_KICK_AMP = 0.35;
 export const SWIM_KICK_HZ = 2.5;
-export function flutterKick(t) {
+export function flutterKick(t, out = { left: 0, right: 0 }) {
   const k = Math.sin(t * Math.PI * 2) * SWIM_KICK_AMP;
-  return { left: k, right: -k };
+  out.left = k; out.right = -k;
+  return out;
 }
+const KICK = { left: 0, right: 0 };
+const NO_KICK = Object.freeze({ left: 0, right: 0 });
 
 const hurtCache = new WeakMap();
 /** Red-tinted copy of a material (textured ones multiply the map by a pink tint). */
@@ -223,7 +226,7 @@ export class PlayerModel {
     // Swim cycle: arms still along the sides, legs in an alternating flutter kick (opposite phase).
     const swimTime = p.swimTime || 0;
     const speedUp = 1 + clamp(Math.hypot(p.velocity ? p.velocity.x : 0, p.velocity ? p.velocity.z : 0) / 5.5, 0, 1) * 0.4;
-    const kick = p.swimming ? flutterKick(swimTime * speedUp * SWIM_KICK_HZ) : { left: 0, right: 0 };
+    const kick = p.swimming ? flutterKick(swimTime * speedUp * SWIM_KICK_HZ, KICK) : NO_KICK; // reused (Update #14 §3)
     this.leftLeg.pivot.rotation.x = walkAngle * (1 - sw) + kick.left * sw;
     this.rightLeg.pivot.rotation.x = -walkAngle * (1 - sw) + kick.right * sw;
     this.leftArm.pivot.rotation.x = -walkAngle * (1 - sw);
@@ -268,7 +271,7 @@ export class PlayerModel {
     this.head.pivot.rotation.set(pitch - this.hips.rotation.x, 0, 0, 'YXZ');
     this.bodyPivot.rotation.x = 0;
     this.bodyPivot.position.set(0, 0, 0);
-    const kick = flutterKick(((phase % 1) + 1) % 1);
+    const kick = flutterKick(((phase % 1) + 1) % 1, KICK);
     this.leftLeg.pivot.rotation.set(kick.left, 0, 0);
     this.rightLeg.pivot.rotation.set(kick.right, 0, 0);
     this.leftLeg.pivot.position.z = this.rightLeg.pivot.position.z = 0;

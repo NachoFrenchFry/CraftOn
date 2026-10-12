@@ -8,10 +8,10 @@
 // Worker-safe.
 
 import { SimplexNoise } from '../utils/noise/SimplexNoise.js';
-import { deriveSeed } from '../utils/Random.js';
+import { deriveSeed, chunkRandom } from '../utils/Random.js';
 import { fieldOffset } from './NoiseOffsets.js';
 import { BlockIds as B } from '../blocks/BlockIds.js';
-import { MIN_CAVE_Y, SPAGHETTI_THRESHOLD, SPAGHETTI2_THRESHOLD, NOODLE_THRESHOLD, CHEESE_THRESHOLD, CHEESE_TOP_Y, PILLAR_THRESHOLD } from '../config/Constants.js';
+import { MIN_CAVE_Y, SPAGHETTI_THRESHOLD, SPAGHETTI2_THRESHOLD, NOODLE_THRESHOLD, CHEESE_THRESHOLD, CHEESE_TOP_Y, PILLAR_THRESHOLD, MEGA_CAVE_CELL, MEGA_CAVE_RADIUS_MIN, MEGA_CAVE_RADIUS_MAX, MEGA_CAVE_TOP_Y } from '../config/Constants.js';
 
 const H_STEP = 4;
 const V_STEP = 4;
@@ -25,6 +25,10 @@ const CHEESE = [1 / 96, 1 / 56];
 const PILLAR_SCALE = 1 / 14; // 2D: pillars run straight from the cavern floor to its ceiling
 const FIELDS = 7; // A, B, A2, B2, N, C, C2
 const F_A = 0, F_B = 1, F_A2 = 2, F_B2 = 3, F_N = 4, F_C = 5, F_C2 = 6;
+/** Mega caves (Update #12 §5b): the cavern field stretched vertically, sampled only inside a region. */
+const MEGA_CHEESE = [1 / 110, 1 / 190];
+const MEGA_SALT = 0x3e9a;
+const MEGA_WOBBLE_SCALE = 1 / 140;
 /** Tunnel and noodle caves stop here; above it only the cliff field (A2) is sampled, so tall peaks stay cheap (Update #8). */
 export const CAVE_TOP_Y = 150;
 
@@ -37,7 +41,14 @@ export class NoiseCaves {
     for (let i = 0; i <= FIELDS; i++) this.off.push(fieldOffset(seed, 21 + i)); // per-field origins (see NoiseOffsets.js)
     this.grid = new Float32Array(FIELDS * GX * GX * MAX_GY);
     this.pillarGrid = new Float32Array(GX * GX);
-    this.colv = new Float32Array(FIELDS * (MAX_GY + 1)); // per-column bilinear values per grid layer
+    this.seed = seed;
+    /** Mega caves: the stretched cavern field on the coarse grid and the region mask per grid column / per block column. */
+    this.megaGrid = new Float32Array(GX * GX * MAX_GY);
+    this.megaMaskGrid = new Float32Array(GX * GX);
+    this.megaMask = new Float32Array(256);
+    this.megaWobble = new SimplexNoise(deriveSeed(seed, 61));
+    this.megaCells = new Map();
+    this.colv = new Float32Array((FIELDS + 1) * (MAX_GY + 1)); // per-column bilinear values per grid layer (+1: the mega-cave field)
     /** Set to an array to record pillar decisions ({ col, y0, y1, keep }) — used by the Node check. */
     this.debugPillars = null;
   }
@@ -45,6 +56,47 @@ export class NoiseCaves {
   /** Cheese cavern threshold: constant up to CHEESE_TOP_Y, then rising so caverns fade toward the surface. */
   static cheeseThreshold(y) {
     return CHEESE_THRESHOLD + Math.max(0, (y - CHEESE_TOP_Y) / 30) * 0.45;
+  }
+
+  /**
+   * Mega-cave region of a MEGA_CAVE_CELL × MEGA_CAVE_CELL block cell (Update #12 §5b): one centre per cell, kept 400
+   * blocks from the cell edge, radius 200–320 blocks, so regions sit 1500–3000 blocks apart. Deterministic per seed.
+   * @returns {{cx:number, cz:number, r:number}} centre and radius in blocks
+   */
+  megaCell(gx, gz) {
+    const key = gx + ',' + gz;
+    let c = this.megaCells.get(key);
+    if (c) return c;
+    const rng = chunkRandom(this.seed, gx, gz, MEGA_SALT);
+    const margin = 400;
+    c = { cx: gx * MEGA_CAVE_CELL + margin + rng.nextInt(MEGA_CAVE_CELL - 2 * margin), cz: gz * MEGA_CAVE_CELL + margin + rng.nextInt(MEGA_CAVE_CELL - 2 * margin), r: MEGA_CAVE_RADIUS_MIN + rng.nextInt(MEGA_CAVE_RADIUS_MAX - MEGA_CAVE_RADIUS_MIN + 1) };
+    this.megaCells.set(key, c);
+    return c;
+  }
+
+  /** Region mask 0..1 at a world column: 1 well inside a mega cave, fading to 0 at its (wobbly) edge. */
+  megaMaskAt(x, z) {
+    const gx = Math.floor(x / MEGA_CAVE_CELL), gz = Math.floor(z / MEGA_CAVE_CELL);
+    let best = 0;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const c = this.megaCell(gx + dx, gz + dz);
+      const ddx = x - c.cx, ddz = z - c.cz;
+      const d = Math.sqrt(ddx * ddx + ddz * ddz);
+      if (d > c.r * 1.3) continue;
+      const wobble = 1 + 0.25 * this.megaWobble.noise2D(x * MEGA_WOBBLE_SCALE, z * MEGA_WOBBLE_SCALE);
+      const t = d / (c.r * wobble);
+      const m = t <= 0.7 ? 1 : t >= 1 ? 0 : (1 - (t - 0.7) / 0.3);
+      if (m > best) best = m * m * (3 - 2 * m);
+    }
+    return best;
+  }
+
+  /** The nearest mega cave centre to a point (for the spawn check and the Node check). */
+  nearestMegaCave(x, z) {
+    const gx = Math.floor(x / MEGA_CAVE_CELL), gz = Math.floor(z / MEGA_CAVE_CELL);
+    let best = null, bestD = Infinity;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) { const c = this.megaCell(gx + dx, gz + dz); const d = Math.hypot(x - c.cx, z - c.cz); if (d < bestD) { bestD = d; best = c; } }
+    return best;
   }
 
   _sample(field, x0, y0, z0) {
@@ -62,6 +114,12 @@ export class NoiseCaves {
     }
   }
 
+  /** The mega-cave cavern field: the first cavern noise stretched vertically (chambers 60–100 blocks tall). */
+  _sampleMega(x0, y0, z0) {
+    const o = this.off[F_C];
+    return this.noises[F_C].noise3D((x0 + o[0]) * MEGA_CHEESE[0] + 7.1, (y0 + o[1] * 0.001) * MEGA_CHEESE[1], (z0 + o[2]) * MEGA_CHEESE[0] - 2.9);
+  }
+
   /**
    * @param {Uint8Array} blocks
    * @param {Int16Array} carveMaxY per column (16×16)
@@ -74,9 +132,14 @@ export class NoiseCaves {
     let cheeseBlocks = 0; // cavern volume carved in this chunk (springs use it to spot big caverns)
     const gy = Math.min(Math.floor(maxHeight / V_STEP) + 2, MAX_GY - 1);
     const iy0 = Math.floor(MIN_CAVE_Y / V_STEP);
-    const grid = this.grid, stride = GX * GX * MAX_GY, pillarGrid = this.pillarGrid;
-    // Above this height the cheese threshold exceeds any noise value, so C need not be sampled there.
-    const cheeseMaxY = CHEESE_TOP_Y + 30 * (0.95 - CHEESE_THRESHOLD) / 0.45;
+    const grid = this.grid, stride = GX * GX * MAX_GY, pillarGrid = this.pillarGrid, megaGrid = this.megaGrid, megaMaskGrid = this.megaMaskGrid;
+    // Mega caves (Update #12 §5b): the region mask on the coarse grid; a chunk with any of it samples the stretched field too.
+    let megaChunk = 0;
+    for (let iz = 0; iz < GX; iz++) for (let ix = 0; ix < GX; ix++) { const m = this.megaMaskAt(wx0 + ix * H_STEP, wz0 + iz * H_STEP); megaMaskGrid[ix + iz * GX] = m; megaChunk += m; }
+    megaChunk /= GX * GX;
+    const mega = megaChunk > 0;
+    // Above this height the cheese threshold exceeds any noise value, so C need not be sampled there (mega caves reach higher).
+    const cheeseMaxY = mega ? MEGA_CAVE_TOP_Y + 30 * (0.95 - CHEESE_THRESHOLD) / 0.45 : CHEESE_TOP_Y + 30 * (0.95 - CHEESE_THRESHOLD) / 0.45;
     // Coarse samples of every field.
     for (let iz = 0; iz < GX; iz++) {
       const z = wz0 + iz * H_STEP;
@@ -91,6 +154,7 @@ export class NoiseCaves {
           const cheese = y <= cheeseMaxY + V_STEP;
           grid[F_C * stride + gi] = cheese ? this._sample(F_C, x, y, z) : -1;
           grid[F_C2 * stride + gi] = cheese ? this._sample(F_C2, x, y, z) : -1;
+          if (mega) megaGrid[gi] = cheese ? this._sampleMega(x, y, z) : -1;
         }
       }
     }
@@ -118,11 +182,18 @@ export class NoiseCaves {
             colv[cf + iy] = grid[g + b + c00] * w00 + grid[g + b + c10] * w10 + grid[g + b + c01] * w01 + grid[g + b + c11] * w11;
           }
         }
+        // Mega cave at this column: the mask (0 outside), the stretched cavern field, and a ceiling that stays 8 blocks
+        // under the surface so a chamber never opens the ground.
+        const mm = mega ? megaMaskGrid[c00] * w00 + megaMaskGrid[c10] * w10 + megaMaskGrid[c01] * w01 + megaMaskGrid[c11] * w11 : 0;
+        this.megaMask[col] = mm;
+        const megaCol = this.colv; // reuse: the stretched field goes in the pillar-free slot after the fields
+        if (mm > 0) for (let iy = iy0; iy <= gyTop; iy++) { const b = iy * GX * GX; megaCol[FIELDS * CV + iy] = megaGrid[b + c00] * w00 + megaGrid[b + c10] * w10 + megaGrid[b + c01] * w01 + megaGrid[b + c11] * w11; }
+        const megaCeiling = mm > 0 && heights ? heights[col] - 8 : top;
         for (let y = MIN_CAVE_Y; y <= top; y++) {
           const iy = Math.floor(y / V_STEP), fy = (y % V_STEP) / V_STEP, fy0 = 1 - fy;
           const floorT = Math.min(1, (y - MIN_CAVE_Y + 1) / 4); // taper toward the cave floor
           let carve = false;
-          const tS = SPAGHETTI_THRESHOLD * floorT;
+          const tS = SPAGHETTI_THRESHOLD * floorT * (1 + (y <= megaCeiling ? mm : 0)); // wide connecting tunnels inside a mega cave, only under the chamber roof
           const a = colv[F_A * CV + iy] * fy0 + colv[F_A * CV + iy + 1] * fy;
           if (a < tS && a > -tS) {
             const b = colv[F_B * CV + iy] * fy0 + colv[F_B * CV + iy + 1] * fy;
@@ -158,8 +229,22 @@ export class NoiseCaves {
               const c2 = colv[F_C2 * CV + iy] * fy0 + colv[F_C2 * CV + iy + 1] * fy;
               if (c2 > thr) cheese = true;
             }
+            // Mega cave: the vertically stretched field with a strongly lowered threshold (0.65 → about 0.2 at the core),
+            // rising only above MEGA_CAVE_TOP_Y, and never above the chamber ceiling under the surface.
+            if (!cheese && mm > 0 && y <= megaCeiling) {
+              const cm = megaCol[FIELDS * CV + iy] * fy0 + megaCol[FIELDS * CV + iy + 1] * fy;
+              const thrM = CHEESE_THRESHOLD - 0.45 * mm + Math.max(0, (y - MEGA_CAVE_TOP_Y) / 20) * 0.6 + (1 - floorT) * 0.5;
+              if (cm > thrM) cheese = true;
+            }
           }
           if (cheese && !isPillar) { if (!carve) cheeseBlocks++; carve = true; } // cheese cavern minus pillars
+          // Mega caves keep a solid roof: inside a region nothing is carved in the 8 blocks under the surface, and the
+          // worm tunnels that ran before are filled back there, so a chamber never opens the ground.
+          if (mm > 0.15 && y > megaCeiling) {
+            carve = false;
+            const ri = col + (y << 8);
+            if (blocks[ri] === B.AIR) blocks[ri] = B.STONE;
+          }
           if (carve) {
             const i = col + (y << 8);
             const id = blocks[i];
@@ -173,7 +258,7 @@ export class NoiseCaves {
         if (rangeStart >= 0) this._pillarColumn(blocks, col, rangeStart, top);
       }
     }
-    return { cheeseBlocks };
+    return { cheeseBlocks, mega: megaChunk };
   }
 
   /**

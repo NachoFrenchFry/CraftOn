@@ -90,8 +90,10 @@ export class RavineCarver {
    * Carve every ravine that crosses this chunk.
    * @param {Uint8Array} blocks
    * @param {Int16Array} heights 16×16 terrain heights (only land columns above sea level + 2 are cut)
+   * @param {Float32Array|null} [skip] per-column mask: columns above 0.15 are left alone (mega caves keep their roof, Update #12 §5b)
    */
-  carve(blocks, cx, cz, heights) {
+  carve(blocks, cx, cz, heights, skip = null) {
+    this.skip = skip;
     const minX = cx * 16, minZ = cz * 16, maxX = minX + 15, maxZ = minZ + 15;
     const active = this.activeDiscs;
     active.length = 0;
@@ -121,6 +123,7 @@ export class RavineCarver {
         if (dd >= 1) continue;
         const col = (bx - minX) + ((bz - minZ) << 4);
         if (heights[col] < RAVINE_MIN_SURFACE) continue; // never into oceans, rivers or beaches
+        if (this.skip && this.skip[col] > 0.15) continue; // a mega cave's roof stays closed
         // A U-shaped floor: full depth along the centre line, shallower toward the walls.
         const k = Math.sqrt(1 - dd);
         const yLo = Math.max(MIN_CAVE_Y, Math.floor(d.y - d.rv * (0.3 + 0.7 * k)));

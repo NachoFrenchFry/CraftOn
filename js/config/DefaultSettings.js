@@ -19,12 +19,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
   viewBobbing: 50,        // intensity 0..100 % (0 = off); 50 % is the tuned default
   showFps: false,
   // ---- Performance (Update #9 §7) ----
-  renderScale: 1.0,       // 0.25 / 0.5 / 0.75 / 1 of the device resolution, or 0 = Auto (lowers itself under the FPS target)
+  renderScale: 0,         // 0.25 / 0.5 / 0.75 / 1 of the device resolution, or 0 = Auto (lowers itself under the FPS target; the default since Update #14)
+  hiDpi: false,           // Update #14 §2d: false caps the device pixel ratio at 1 (a 4K / Retina screen renders at its CSS size); true uses the full ratio
   maxFps: 0,              // 30 / 60 / 120, 0 = unlimited
   simulationDistance: 6,  // chunks 2..8: mobs, water flow and item entities only update this far from the player
   entityDistance: 100,    // % of the render distance beyond which mobs, dropped items and other players are hidden
   particles: 'all',       // 'all' | 'decreased' | 'minimal'
-  fancyLeaves: true,      // false = fast leaves: opaque, faces between leaf blocks culled
+  fancyLeaves: false,     // false = fast leaves: opaque, faces between leaf blocks culled (the default since Update #14)
   chunkUpdates: 'normal', // 'low' | 'normal' | 'high': mesh uploads per frame
   // ---- Shaders (Update #9 §4), client-only ----
   shadersOn: false,
@@ -61,6 +62,7 @@ export const SETTING_SCHEMA = [
   { key: 'ambientVolume', label: 'Ambient Volume', type: 'range', min: 0, max: 1, step: 0.05, percent: true, section: 'audio' },
   { key: 'uiVolume', label: 'UI Volume', type: 'range', min: 0, max: 1, step: 0.05, percent: true, section: 'audio' },
   { key: 'renderScale', label: 'Render Scale', type: 'select', options: [[0.25, '25%'], [0.5, '50%'], [0.75, '75%'], [1, '100%'], [0, 'Auto']], section: 'performance' },
+  { key: 'hiDpi', label: 'HiDPI Rendering', type: 'toggle', section: 'performance' },
   { key: 'maxFps', label: 'Max FPS', type: 'select', options: [[30, '30'], [60, '60'], [120, '120'], [0, 'Unlimited']], section: 'performance' },
   { key: 'simulationDistance', label: 'Simulation Distance', type: 'range', min: 2, max: 8, step: 1, unit: ' chunks', section: 'performance' },
   { key: 'entityDistance', label: 'Entity Distance', type: 'range', min: 50, max: 100, step: 10, unit: '%', section: 'performance' },

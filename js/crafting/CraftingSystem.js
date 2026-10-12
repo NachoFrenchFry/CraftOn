@@ -38,6 +38,34 @@ export class CraftingSystem {
     return RESOLVED_RECIPES.filter((r) => r.stations.includes(station));
   }
 
+  /** Fraction of the required items the inventory holds, each material capped at its requirement (1 = craftable). */
+  completeness(recipe) {
+    let have = 0, need = 0;
+    for (const input of recipe.inputs) { need += input.count; have += Math.min(input.count, this.inventory.countOf(input.itemId)); }
+    return need > 0 ? have / need : 1;
+  }
+
+  /** At least one of the recipe's materials is in the inventory. */
+  hasAnyMaterial(recipe) { return recipe.inputs.some((i) => this.inventory.countOf(i.itemId) > 0); }
+
+  /**
+   * The recipe browser's list for a station (Update #13 §3). Creative: every recipe in data order. Survival: craftable
+   * recipes first (data order), then partly affordable ones from most to least complete (ties keep the data order);
+   * recipes with none of their materials are left out. Rows: { recipe, craftable, completeness }.
+   */
+  visibleRecipes(station, creative = false) {
+    const rows = [];
+    this.recipesFor(station).forEach((recipe, index) => {
+      const craftable = this.craftableCount(recipe) > 0;
+      const completeness = this.completeness(recipe);
+      if (!creative && !craftable && !this.hasAnyMaterial(recipe)) return;
+      rows.push({ recipe, craftable, completeness, index });
+    });
+    if (!creative) rows.sort((a, b) => (b.craftable - a.craftable) || (b.completeness - a.completeness) || (a.index - b.index));
+    for (const r of rows) delete r.index;
+    return rows;
+  }
+
   /** How many times the recipe can be made with the current inventory contents. */
   craftableCount(recipe) {
     let n = Infinity;

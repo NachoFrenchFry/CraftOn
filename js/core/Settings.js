@@ -9,6 +9,8 @@ export class Settings {
   constructor(events) {
     this.events = events;
     this.values = { ...DEFAULT_SETTINGS };
+    /** True while a benchmark runs: changes stay in memory and are never persisted (Update #14 §0). */
+    this.transient = false;
     this.load();
   }
 
@@ -27,6 +29,7 @@ export class Settings {
   }
 
   save() {
+    if (this.transient) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.values));
     } catch (e) {

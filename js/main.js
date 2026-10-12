@@ -7,6 +7,8 @@
 //   ?look=yaw,pitch with debuglog: initial look angles in degrees
 //   ?mockcloud      use the in-memory MockSupabase instead of the real project (all headless tests)
 //   ?guestlogin=<n> with mockcloud: ignore the restored session and log in as test account <n> (two-tab tests)
+//   ?bench          the built-in benchmark (Update #14 §0): seed bench1, render distance 9 (or &rd=), 1280×720, stand 10 s,
+//                   fly 45 s; prints CRAFTON_BENCH <json>, sets window.__bench and shows the report (tools/headless/bench.py)
 //
 // Startup (Update #7): the static boot screen in index.html is visible before this module runs; boot() loads
 // textures, sheets, the cloud client + session and the sounds in parallel while the step text updates, then
@@ -57,7 +59,8 @@ async function main() {
   window.crafton = game; // handy for debugging in the console
   const params = new URLSearchParams(location.search);
   game.cloudMock = params.has('mockcloud');
-  game.debuglog = params.has('debuglog');
+  const bench = params.has('bench');
+  game.debuglog = params.has('debuglog') || bench; // the benchmark also wants no performance popup and the timing reports
   const T = game.timing;
   // Page load = navigation start → this module running (HTML, CSS, import map and the whole module graph).
   T.add('page load (navigation → main.js)', performance.now(), `${performance.getEntriesByType('resource').filter((r) => /\/js\/.*\.js/.test(r.name)).length} game modules`);
@@ -86,7 +89,7 @@ async function main() {
     loggedIn = r.ok || (await game.account.signIn(name, 'guestpass1')).ok;
     if (loggedIn) game.prefetchWorlds();
   }
-  if (!loggedIn && game.cloudMock && (params.has('autoplay') || params.has('world'))) {
+  if (!loggedIn && game.cloudMock && (params.has('autoplay') || params.has('world') || bench)) {
     const r = await game.account.signUp('tester', 'testpass123', 'testpass123');
     loggedIn = r.ok || (await game.account.signIn('tester', 'testpass123')).ok;
     if (loggedIn) game.prefetchWorlds();
@@ -99,6 +102,17 @@ async function main() {
   game.state.set(loggedIn ? State.MENU : State.ACCOUNT);
   T.add('total: navigation → first screen', performance.now());
   if (params.has('atlas')) game.ui.toggleAtlasView();
+  if (bench) {
+    game.ignoreHidden = true;
+    game.settings.transient = true; // never persist the benchmark's settings
+    game.settings.set('renderDistance', Number(params.get('rd') || 9));
+    game.settings.set('renderScale', 1);
+    game.settings.set('maxFps', 0);
+    game.settings.set('shadersOn', false);
+    game.renderer.setFixedSize(1280, 720);
+    window.addEventListener('error', (e) => console.error('CRAFTON_ERROR', e.message, e.filename, e.lineno));
+    window.addEventListener('unhandledrejection', (e) => console.error('CRAFTON_REJECTION', e.reason && (e.reason.stack || e.reason)));
+  }
   if (params.has('debuglog')) {
     game.ignoreHidden = true;
     game.perfSuggestForced = params.has('perfsuggest'); // the one-time Performance mode popup is otherwise suppressed in tests
@@ -109,6 +123,7 @@ async function main() {
     window.addEventListener('error', (e) => console.error('CRAFTON_ERROR', e.message, e.filename, e.lineno));
     window.addEventListener('unhandledrejection', (e) => console.error('CRAFTON_REJECTION', e.reason && (e.reason.stack || e.reason)));
     game.events.on('state:changed', (s, prev) => console.log(`CRAFTON state ${prev} -> ${s}`));
+    game.lock.debug = true; // every lock request, promise result, lock event and Escape key with timestamps (Update #13 §1)
     T.report('boot');
     game.audio.bank.rendering?.then(() => T.report('boot'));
     const shots = (params.get('shot') || '').split(',').filter(Boolean).map(Number);
@@ -133,6 +148,14 @@ async function main() {
     }, 2000);
   }
   if (!loggedIn) return; // the account screen takes over; nothing below can run without a session
+  if (bench) {
+    const { BENCH_SEED_TEXT } = await import('./core/Benchmark.js');
+    const seedText = params.get('seed') || BENCH_SEED_TEXT;
+    const record = await game.saveManager.createWorld({ name: 'Benchmark', seed: hashSeed(seedText), seedText, gameMode: 'creative' });
+    game.bench.start();
+    game.startWorld(record.id);
+    return;
+  }
   if (params.has('world')) game.startWorld(params.get('world'));
   else if (params.has('autoplay')) {
     const seedText = params.get('seed') || '';

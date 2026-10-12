@@ -12,6 +12,7 @@ import { AccountScreen } from './AccountScreen.js';
 import { MultiplayerMenu } from './MultiplayerMenu.js';
 import { ServerSettingsMenu } from './ServerSettingsMenu.js';
 import { DeathScreen } from './DeathScreen.js';
+import { Chat } from './Chat.js';
 import { ShadersMenu } from './ShadersMenu.js';
 import { State } from '../core/GameState.js';
 
@@ -36,13 +37,17 @@ export class UIManager {
     this.serverSettings = new ServerSettingsMenu(game);
     this.pause = new PauseMenu(game);
     this.hud = new HUD(game);
+    this.chat = new Chat(game);
     this.inventory = new InventoryScreen(game);
     this.debug = new DebugOverlay(game);
     this.death = new DeathScreen(game);
     this.atlasView.addEventListener('click', () => this.toggleAtlasView());
     game.events.on('state:changed', (state) => this._onState(state));
-    game.events.on('input:pointerlock', (locked) => this._onPointerLock(locked));
-    game.events.on('input:pointerlockfailed', () => this.hud.setPointerHint(true));
+    // The lock controller says what an unlock meant (Update #13 §1): only a real Esc opens the pause menu; anything else
+    // unexpected shows the lightweight overlay, so the game can never bounce pause menu → overlay → pause menu.
+    game.events.on('lock:locked', () => this.hud.setPointerHint(false));
+    game.events.on('lock:unlocked', (reason) => this._onUnlocked(reason));
+    game.events.on('lock:failed', () => { if (game.state.is(State.PLAYING) && !this.chat.isOpen) this.hud.setPointerHint(true); });
     // Any click on a menu button plays the click sound through the button itself; hover ticks:
     document.querySelectorAll('.mc-button').forEach((b) => b.addEventListener('mouseenter', () => game.audio.playUI('hover', 0.4)));
     this._onState(game.state.current);
@@ -65,18 +70,17 @@ export class UIManager {
     if (state === State.PAUSED) this.pause.show(); else this.pause.hide();
     if (state === State.DEAD) this.death.show(this.game.health.deathCause); else this.death.hide();
     if (state !== State.INVENTORY && this.inventory.visible) this.inventory.close();
-    if (state === State.PLAYING) this.hud.setPointerHint(!this.game.input.pointerLocked);
+    if (state !== State.PLAYING && this.chat && this.chat.isOpen) this.chat.close(false);
+    if (!inWorld && this.chat) this.chat.clear();
+    if (state === State.PLAYING) this.hud.setPointerHint(!this.game.input.pointerLocked && !this.game.lock.locked);
     else this.hud.setPointerHint(false);
   }
 
-  _onPointerLock(locked) {
+  _onUnlocked(reason) {
     const game = this.game;
-    if (locked) {
-      this.hud.setPointerHint(false);
-      return;
-    }
-    if (game.state.is(State.PLAYING) && !game.expectUnlock) game.pause();
-    game.expectUnlock = false;
+    if (!game.state.is(State.PLAYING) || this.chat.isOpen) return;
+    if (reason === 'esc') game.pause();
+    else if (reason === 'unexpected') this.hud.setPointerHint(true);
   }
 
   toggleAtlasView() {
@@ -87,15 +91,16 @@ export class UIManager {
       const label = document.createElement('div');
       label.textContent = 'Texture atlas (click to close)';
       this.atlasView.append(label, this.game.atlas.buildDebugCanvas(3));
-      if (this.game.input.pointerLocked) { this.game.expectUnlock = true; this.game.input.exitPointerLock(); }
+      this.game.lock.release('atlas');
     } else if (this.game.state.is(State.PLAYING)) {
-      this.game.requestPointerLock();
+      this.game.requestPointerLock('atlas-close');
     }
   }
 
   update(dt) {
     this.shaders.update(dt);
     this.hud.update(dt);
+    this.chat.update(dt);
     this.inventory.update(dt);
     this.debug.update(dt);
   }

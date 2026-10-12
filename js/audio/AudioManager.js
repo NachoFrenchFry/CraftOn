@@ -41,6 +41,8 @@ export class AudioManager {
     this.ready = false;
     this.initStarted = false;
     this._ambientTimer = 0;
+    /** /tick (Update #12): every buffer source plays at this rate, so sped-up footage sounds normal. */
+    this.timeScale = 1;
     this._dripTimer = 20 + Math.random() * 40;
     this._enclosed = false;
     this._nearWater = false;
@@ -122,7 +124,7 @@ export class AudioManager {
     const ctx = this.ctx;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.playbackRate.value = rate ?? (0.9 + Math.random() * 0.2);
+    src.playbackRate.value = (rate ?? (0.9 + Math.random() * 0.2)) * this.timeScale;
     const gain = ctx.createGain();
     gain.gain.value = volume;
     src.connect(gain);
@@ -138,7 +140,7 @@ export class AudioManager {
     const buffer = this.bank.get(name);
     if (!buffer) return;
     this.activeVoices++;
-    const src = this.spatial.play(buffer, x, y, z, volume, rate ?? (0.9 + Math.random() * 0.2), this.buses[bus]);
+    const src = this.spatial.play(buffer, x, y, z, volume, (rate ?? (0.9 + Math.random() * 0.2)) * this.timeScale, this.buses[bus]);
     src.onended = () => { this.activeVoices--; };
   }
 
@@ -209,6 +211,7 @@ export class AudioManager {
       const src = this.ctx.createBufferSource();
       src.buffer = buffer;
       src.loop = true;
+      src.playbackRate.value = this.timeScale;
       const gain = this.ctx.createGain();
       gain.gain.setValueAtTime(0.0001, this.ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.35, this.ctx.currentTime + 1.5);
@@ -222,6 +225,13 @@ export class AudioManager {
       gain.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.5);
       setTimeout(() => { try { src.stop(); } catch (e) { /* already stopped */ } }, 2500);
     }
+  }
+
+  /** /tick: scale every sound (new ones and the running loops). 0 while frozen mutes nothing but stops the loops' motion. */
+  setTimeScale(scale) {
+    this.timeScale = Math.max(0, scale);
+    if (this.waterLoop && this.ctx) this.waterLoop.src.playbackRate.setTargetAtTime(Math.max(0.0001, this.timeScale), this.ctx.currentTime, 0.05);
+    if (this.wind && this.wind.setRate) this.wind.setRate(Math.max(0.0001, this.timeScale));
   }
 
   /** Stop ambient loops (leaving a world). */

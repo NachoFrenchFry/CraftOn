@@ -4,7 +4,7 @@
 
 import { PADDED_SIZE, PADDED_STRIDE_Y, WORLD_HEIGHT, FACE_BRIGHTNESS } from '../config/Constants.js';
 import { OPAQUE, SOLID, FACE_TILE } from '../blocks/BlockRegistry.js';
-import { TILE_UVS } from './AtlasLayout.js';
+import { TILE_UV_INSET } from './AtlasLayout.js';
 import { Direction } from '../utils/Direction.js';
 import { CORNER_POS, CORNER_UV, NB_OFF } from './FaceTables.js';
 import { isWater, isSource, isFalling, heightOf, isLava, isLavaSource, isLavaFalling } from '../world/WaterLevels.js';
@@ -43,14 +43,12 @@ function cornerHeight(padded, idx, y, cx, cz) {
 const cornerSlot = (x, z) => x + z * 2;
 
 function addQuad(pb, x, ly, z, f, tile, heights, bright, light = 240, blockLight = 0, flags = 32) {
-  const t4 = tile * 4;
-  const u0 = TILE_UVS[t4], v0 = TILE_UVS[t4 + 1], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
   const corners = CORNER_POS[f];
   for (let c = 0; c < 4; c++) {
     const cp = corners[c];
     const uv = CORNER_UV[c];
     const h = cp[1] ? heights[cornerSlot(cp[0], cp[2])] : 0;
-    pb.vertex(x + cp[0], ly + h, z + cp[2], uv[0] ? u1 : u0, uv[1] ? v1 : v0, bright, f | flags | (3 << 6), light, blockLight); // water flag (32) for the shader pipeline; lava has none
+    pb.vertex(x + cp[0], ly + h, z + cp[2], uv[0] ? 1 - TILE_UV_INSET : TILE_UV_INSET, uv[1] ? 1 - TILE_UV_INSET : TILE_UV_INSET, bright, f | flags | (3 << 6), light, blockLight, tile); // water flag (32) for the shader pipeline; lava has none
   }
   pb.quadIndices(false);
 }

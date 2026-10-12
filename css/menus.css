@@ -116,6 +116,13 @@
   border: calc(1px * var(--gui-scale)) solid #000;
   padding: calc(2px * var(--gui-scale));
 }
+/* Update #12 §6: the world list screens give the list the whole panel (the create form has its own screen). */
+.list-content { width: calc(300px * var(--gui-scale)); height: 92vh; max-height: 92vh; overflow: hidden; flex-wrap: nowrap; }
+.list-content .world-list-full { flex: 1 1 auto; min-height: calc(60px * var(--gui-scale)); max-height: none; }
+.list-content .menu-row { flex: 0 0 auto; }
+.menu-row { display: flex; gap: calc(4px * var(--gui-scale)); width: 100%; justify-content: center; flex-wrap: wrap; }
+.menu-row .mc-button { width: auto; min-width: calc(90px * var(--gui-scale)); }
+.world-entry .world-meta { white-space: normal; }
 .world-entry {
   display: flex;
   align-items: center;

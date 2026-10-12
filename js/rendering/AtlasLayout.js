@@ -72,6 +72,9 @@ export const TILE_UVS = (() => {
   return arr;
 })();
 
+/** UV inset in tile units for tile-local coordinates (Update #14 §2a: the same 1/32-texel margin TILE_UVS applies). */
+export const TILE_UV_INSET = UV_INSET_TEXELS / TILE_SIZE;
+
 /** Convenience object form. */
 export function getUV(name) {
   const i = getTileIndex(name) * 4;

@@ -6,7 +6,7 @@
 import { encodeChunk, decodeChunk } from '../core/cloud/ChunkCodec.js';
 
 /** Hosts and guests must match exactly ("Different game version"). */
-export const GAME_VERSION = '11';
+export const GAME_VERSION = '12';
 export const MAX_PLAYERS_DEFAULT = 8;
 export const MAX_PLAYERS_MIN = 2;
 export const MAX_PLAYERS_MAX = 8;
@@ -32,6 +32,8 @@ export const Msg = Object.freeze({
   BLOCKS: 'blocks', THROW: 'throw',
   JOIN: 'join', LEAVE: 'leave', INV: 'inv', BYE: 'bye', HOST_CLOSED: 'hostClosed',
   PING: 'ping', PONG: 'pong',
+  // Update #12: CHAT guest → host { text } and host → all { name, text, host } or { system, color }; TICK host → guests { rate, frozen }
+  CHAT: 'chat', TICK: 'tick',
   // state channel
   P: 'p', PS: 'ps', M: 'm',
 });

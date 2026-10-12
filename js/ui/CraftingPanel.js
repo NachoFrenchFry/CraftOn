@@ -1,7 +1,9 @@
 // CraftingPanel.js — the recipe browser inside the left inventory panel (bloxd.io style, Update #5): a
-// 6-column grid of result-icon tiles (dimmed when unaffordable) and, for the selected recipe, its name,
+// 7-column grid of result-icon tiles (dimmed when unaffordable) and, for the selected recipe, its name,
 // the material icons with have/need count badges (red when short) and a big blue craft button showing the
-// result icon and output count. Click crafts once, shift-click crafts as many as possible.
+// result icon and output count. Click crafts once, shift-click crafts as many as possible. In Survival the
+// grid lists only recipes the player can do something with (Update #13 §3): craftable ones first, then partly
+// affordable ones by completeness, rebuilt live as the inventory changes; Creative shows everything.
 
 import { ItemRegistry } from '../items/ItemRegistry.js';
 
@@ -41,9 +43,21 @@ export class CraftingPanel {
   /** Rebuild for a station ('inventory' | 'crafting_table' | 'furnace'); keeps the selection if possible. */
   setStation(station) {
     this.station = station;
-    this.grid.innerHTML = '';
+    this.listKey = null;
+    this._rebuild();
+  }
+
+  /** The rows the grid should show now. */
+  _rows() { return this.game.crafting.visibleRecipes(this.station, this.game.player.isCreative); }
+
+  /** Rebuild the tiles from the current rows; keep the selection while it is still listed, else clear the details. */
+  _rebuild() {
+    const rows = this._rows();
+    this.listKey = rows.map((r) => r.recipe.id).join(',');
+    this.grid.textContent = '';
     this.tiles = [];
-    for (const recipe of this.game.crafting.recipesFor(station)) {
+    for (const row of rows) {
+      const recipe = row.recipe;
       const tile = document.createElement('div');
       tile.className = 'slot recipe-tile';
       tile.dataset.recipe = recipe.id;
@@ -53,6 +67,12 @@ export class CraftingPanel {
       tile.appendChild(icon);
       this.grid.appendChild(tile);
       this.tiles.push({ recipe, tile });
+    }
+    if (!rows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'recipe-empty';
+      empty.textContent = this.game.player.isCreative ? 'No recipes here' : 'Gather materials to see recipes';
+      this.grid.appendChild(empty);
     }
     const keep = this.selected && this.tiles.find((t) => t.recipe.id === this.selected.id);
     this.select(keep ? keep.recipe : (this.tiles[0] ? this.tiles[0].recipe : null));
@@ -122,8 +142,12 @@ export class CraftingPanel {
     this.refresh(); // the selection stays so the button can be clicked repeatedly
   }
 
-  /** Update tile affordability, count badges and the button state. */
+  /** Update tile affordability, count badges and the button state; in Survival the list itself follows the inventory. */
   refresh() {
+    if (!this.station) return;
+    const rows = this._rows();
+    const key = rows.map((r) => r.recipe.id).join(',');
+    if (key !== this.listKey) { this._rebuild(); return; } // the order or the set changed: rebuild (select() refreshes)
     const inv = this.game.inventory;
     for (const t of this.tiles) t.tile.classList.toggle('affordable', this.game.crafting.craftableCount(t.recipe) > 0);
     if (!this.selected || !this.button) return;

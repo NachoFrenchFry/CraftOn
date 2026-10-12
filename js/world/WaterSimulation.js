@@ -4,14 +4,35 @@
 // Only scheduled blocks are ever touched, so still oceans cost nothing. The same class runs lava (Update #11)
 // with the `lava` kind: a slower tick (Game), no new sources, and the owner's rule that lava touching water
 // (any level, either way round) becomes cobblestone. Pure logic over a world interface; runs in Node for tests.
+//
+// Update #14 §1b: a tick works through its scheduled cells until a time budget (WATER_TICK_BUDGET_MS) is used up,
+// cells near the player first and otherwise oldest first; the rest waits for the next tick. Cells outside the
+// simulation distance are paused (kept, not dropped) until the player comes closer. Cells are numeric keys (no
+// strings), block reads go through a one-chunk cache, and the search for a drop is one breadth-first walk with a
+// visited set instead of a 160-call recursion. Flow is always recorded as an edit, so settled water is saved and
+// stays asleep when its chunk loads again; a chunk's cave springs are scheduled only while they can still flow
+// (open air beside the source). Block changes never re-mesh synchronously (World.setBlock marks sections dirty).
 
 import { BlockIds as B } from '../blocks/BlockIds.js';
 import { SOLID, RENDER_TYPE, RenderType } from '../blocks/BlockRegistry.js';
 import { isWater, isSource, isFalling, levelOf, flowingId, isLava, isLavaSource, isLavaFalling, lavaLevelOf, lavaFlowingId, LAVA_MAX_LEVEL, isLiquid } from './WaterLevels.js';
-import { MAX_WATER_UPDATES_PER_TICK, WATER_SLOPE_SEARCH, WATER_MAX_LEVEL } from '../config/Constants.js';
+import { MAX_WATER_UPDATES_PER_TICK, WATER_SLOPE_SEARCH, WATER_MAX_LEVEL, WATER_TICK_BUDGET_MS, WATER_NEAR_RADIUS, WORLD_HEIGHT } from '../config/Constants.js';
+import { chunkKey, blockIndex } from './ChunkCoords.js';
 
-const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+/** The four horizontal directions; pairs are opposites (i ^ 1). */
+const DX = [1, -1, 0, 0];
+const DZ = [0, 0, 1, -1];
 const NO_SLOPE = 1000;
+/** Numeric cell keys: x and z within ±2^20, y 0..255, exact in a double. */
+const KEY_OFFSET = 1 << 20;
+const KEY_SPAN = 1 << 21;
+export function packCell(x, y, z) { return ((x + KEY_OFFSET) * KEY_SPAN + (z + KEY_OFFSET)) * 256 + y; }
+export function cellX(key) { return Math.floor(key / (256 * KEY_SPAN)) - KEY_OFFSET; }
+export function cellZ(key) { return (Math.floor(key / 256) % KEY_SPAN) - KEY_OFFSET; }
+export function cellY(key) { return key % 256; }
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+/** The slope search grid: WATER_SLOPE_SEARCH steps around the cell. */
+const GRID_R = WATER_SLOPE_SEARCH, GRID_W = GRID_R * 2 + 1, GRID_CELLS = GRID_W * GRID_W;
 
 /** The two liquids: block predicates, level helpers, how far they spread and whether sources form. */
 export const LIQUID_KINDS = Object.freeze({
@@ -21,7 +42,7 @@ export const LIQUID_KINDS = Object.freeze({
 
 export class WaterSimulation {
   /**
-   * @param {{getBlock(x,y,z):number, setBlock(x,y,z,id):void, isLoadedAt(x,z):boolean}} world
+   * @param {{getBlock(x,y,z):number, setBlock(x,y,z,id):void, isLoadedAt(x,z):boolean, getChunk?(cx,cz):object}} world
    * @param {(x:number,y:number,z:number,blockId:number)=>void} [onDestroy] called before the liquid replaces a plant / torch
    * @param {typeof LIQUID_KINDS.water} [kind] water (default) or lava
    */
@@ -32,60 +53,86 @@ export class WaterSimulation {
     /** (x, y, z) called when a lava block has just turned into cobblestone (sizzle + smoke). */
     this.onConvert = null;
     this.conversions = 0;
-    /** "x,y,z" keys scheduled for the next tick. */
+    /** Cell keys scheduled for the next tick, oldest first (insertion order). */
     this.pending = new Set();
+    /** Scheduled cells outside the simulation distance: resumed when the player comes within range. */
+    this.paused = new Set();
     /** Update #9 §7: scheduled cells farther than simRadius from the player wait (simulation distance). */
     this.simCenter = null;
     this.simRadius = Infinity;
-    /** chunk "cx,cz" → Set of keys waiting for that chunk to load. */
+    this._pausedAtX = Infinity; this._pausedAtZ = Infinity;
+    /** chunk key → Set of cells waiting for that chunk to load. */
     this.deferred = new Map();
-    /** Keys whose flow comes from a generated cave spring: written without recording an edit. */
-    this.natural = new Set();
-    this.currentNatural = false;
+    /** Statistics (F3 / benchmark): updates and milliseconds of the last tick, the slowest tick, updates left waiting. */
     this.updatesLastTick = 0;
+    this.lastTickMs = 0;
+    this.maxTickMs = 0;
+    this.leftover = 0;
+    this._cc = null; this._ccx = 0; this._ccz = 0;
+    this._bfsDist = new Uint8Array(GRID_CELLS);
+    this._bfsDirs = new Uint8Array(GRID_CELLS);
+    this._bfsQueue = new Int16Array(GRID_CELLS);
   }
 
   get pendingCount() { return this.pending.size; }
+  get pausedCount() { return this.paused.size; }
 
   /** Forget every scheduled update (leaving / entering a world). */
   clear() {
     this.pending.clear();
+    this.paused.clear();
     this.deferred.clear();
-    this.natural.clear();
-    this.currentNatural = false;
-    this.updatesLastTick = 0;
+    this.updatesLastTick = 0; this.lastTickMs = 0; this.maxTickMs = 0; this.leftover = 0;
+    this._cc = null;
   }
 
-  schedule(x, y, z, natural = this.currentNatural) {
-    if (y < 0 || y > 255) return;
-    const key = x + ',' + y + ',' + z;
-    this.pending.add(key);
-    if (natural) this.natural.add(key); else this.natural.delete(key);
+  schedule(x, y, z) {
+    if (y < 0 || y >= WORLD_HEIGHT) return;
+    this.pending.add(packCell(x, y, z));
+  }
+
+  /** Block id with a one-chunk cache (the simulation reads the same chunk hundreds of times per tick). */
+  _get(x, y, z) {
+    if (y < 0 || y >= WORLD_HEIGHT) return B.AIR;
+    const w = this.world;
+    if (!w.getChunk) return w.getBlock(x, y, z);
+    const cx = x >> 4, cz = z >> 4;
+    let c = this._cc;
+    if (!c || cx !== this._ccx || cz !== this._ccz) { c = w.getChunk(cx, cz); this._cc = c; this._ccx = cx; this._ccz = cz; }
+    return c ? c.blocks[blockIndex(x & 15, y, z & 15)] : B.AIR;
   }
 
   /**
    * A block changed: the block and its six neighbours may need an update — but only the cells that hold this liquid
-   * are scheduled (a stale entry would still cost one of the MAX_WATER_UPDATES_PER_TICK slots; with two simulations
-   * sharing every block change, the slow lava tick would otherwise be starved by water's flow).
+   * are scheduled (a stale entry would still cost budget; with two simulations sharing every block change, the slow
+   * lava tick would otherwise be starved by water's flow).
    */
   onBlockChanged(x, y, z) {
-    const w = this.world, K = this.kind;
-    if (K.is(w.getBlock(x, y, z))) this.schedule(x, y, z);
-    if (K.is(w.getBlock(x + 1, y, z))) this.schedule(x + 1, y, z);
-    if (K.is(w.getBlock(x - 1, y, z))) this.schedule(x - 1, y, z);
-    if (y + 1 < 256 && K.is(w.getBlock(x, y + 1, z))) this.schedule(x, y + 1, z);
-    if (y > 0 && K.is(w.getBlock(x, y - 1, z))) this.schedule(x, y - 1, z);
-    if (K.is(w.getBlock(x, y, z + 1))) this.schedule(x, y, z + 1);
-    if (K.is(w.getBlock(x, y, z - 1))) this.schedule(x, y, z - 1);
+    this._cc = null; // chunks may have been unloaded since the last read
+    const K = this.kind;
+    if (K.is(this._get(x, y, z))) this.schedule(x, y, z);
+    if (K.is(this._get(x + 1, y, z))) this.schedule(x + 1, y, z);
+    if (K.is(this._get(x - 1, y, z))) this.schedule(x - 1, y, z);
+    if (K.is(this._get(x, y + 1, z))) this.schedule(x, y + 1, z);
+    if (K.is(this._get(x, y - 1, z))) this.schedule(x, y - 1, z);
+    if (K.is(this._get(x, y, z + 1))) this.schedule(x, y, z + 1);
+    if (K.is(this._get(x, y, z - 1))) this.schedule(x, y, z - 1);
   }
 
-  /** A chunk finished loading: resume updates that were waiting for it and start its cave springs flowing. */
+  /**
+   * A chunk finished loading: resume updates that were waiting for it, and start its cave springs flowing — only those
+   * that still can (a source with open air beside or below it); a spring whose flow is already there (saved edits) stays asleep.
+   */
   onChunkLoaded(cx, cz) {
-    const key = cx + ',' + cz;
-    const chunk = this.world.getChunk(cx, cz);
+    this._cc = null;
+    const key = chunkKey(cx, cz);
+    const chunk = this.world.getChunk ? this.world.getChunk(cx, cz) : null;
     if (this.kind.springs && chunk && chunk.springs) {
       const s = chunk.springs;
-      for (let i = 0; i + 2 < s.length; i += 3) this.schedule(cx * 16 + s[i], s[i + 1], cz * 16 + s[i + 2], true);
+      for (let i = 0; i + 2 < s.length; i += 3) {
+        const x = cx * 16 + s[i], y = s[i + 1], z = cz * 16 + s[i + 2];
+        if (this.kind.isSource(this._get(x, y, z)) && this._canSpread(x, y, z)) this.schedule(x, y, z);
+      }
     }
     const waiting = this.deferred.get(key);
     if (!waiting) return;
@@ -93,26 +140,70 @@ export class WaterSimulation {
     for (const k of waiting) this.pending.add(k);
   }
 
+  /** Something beside or below the cell is open for this liquid. */
+  _canSpread(x, y, z) {
+    if (y > 0 && this._canFlowInto(this._get(x, y - 1, z))) return true;
+    for (let i = 0; i < 4; i++) if (this._canFlowInto(this._get(x + DX[i], y, z + DZ[i]))) return true;
+    return false;
+  }
+
   setSimulationCenter(x, z) { if (!this.simCenter) this.simCenter = { x, z }; else { this.simCenter.x = x; this.simCenter.z = z; } }
 
-  /** Process one scheduled tick (call every WATER_TICK_SECONDS). */
-  tick() {
-    if (this.pending.size === 0) { this.updatesLastTick = 0; return; }
-    const batch = this.pending;
-    this.pending = new Set();
-    let n = 0;
+  /**
+   * Process one scheduled tick (call every WATER_TICK_SECONDS): the cells scheduled so far, those within WATER_NEAR_RADIUS of
+   * the player first, then the rest, each oldest first, until `budgetMs` of main-thread time is spent; what is left stays at
+   * the front of the queue for the next tick. Cells scheduled by this tick's updates run next tick.
+   */
+  tick(budgetMs = WATER_TICK_BUDGET_MS) {
+    this._cc = null;
+    const t0 = now();
     const c = this.simCenter, r = this.simRadius;
-    for (const key of batch) {
-      if (n >= MAX_WATER_UPDATES_PER_TICK) { this.pending.add(key); continue; }
-      const [x, y, z] = key.split(',').map(Number);
-      if (c && r !== Infinity && Math.hypot(x - c.x, z - c.z) > r) { this.pending.add(key); continue; } // outside the simulation distance: wait
-      if (!this.world.isLoadedAt(x, z)) { this._defer(x, z, key); continue; }
-      this.currentNatural = this.natural.delete(key);
-      this.update(x, y, z);
-      this.currentNatural = false;
+    const limited = !!c && r !== Infinity;
+    const r2 = r * r, near2 = WATER_NEAR_RADIUS * WATER_NEAR_RADIUS;
+    // Cells paused outside the simulation distance come back once the player has moved (checked every 8 blocks of movement).
+    if (this.paused.size && limited && (Math.abs(c.x - this._pausedAtX) > 8 || Math.abs(c.z - this._pausedAtZ) > 8)) {
+      this._pausedAtX = c.x; this._pausedAtZ = c.z;
+      for (const key of this.paused) {
+        const dx = cellX(key) - c.x, dz = cellZ(key) - c.z;
+        if (dx * dx + dz * dz <= r2) { this.paused.delete(key); this.pending.add(key); }
+      }
+    }
+    const pend = this.pending;
+    if (pend.size === 0) { this.updatesLastTick = 0; this.lastTickMs = 0; this.leftover = 0; return; }
+    const limit = pend.size; // keys added during this tick land after these and wait for the next one
+    let n = 0, i = 0, far = 0, stopped = false;
+    for (const key of pend) {
+      if (i++ >= limit) break;
+      if (limited) {
+        const dx = cellX(key) - c.x, dz = cellZ(key) - c.z, d2 = dx * dx + dz * dz;
+        if (d2 > r2) { pend.delete(key); this.paused.add(key); continue; } // outside the simulation distance: paused, not dropped
+        if (d2 > near2) { far++; continue; } // the second pass
+      }
+      if (n >= MAX_WATER_UPDATES_PER_TICK || ((n & 1) === 1 && now() - t0 >= budgetMs)) { stopped = true; break; }
+      pend.delete(key);
+      this._run(key);
       n++;
     }
+    if (!stopped && far > 0) {
+      i = 0;
+      for (const key of pend) { // the far cells are now the first `far` entries, still oldest first
+        if (i++ >= far) break;
+        if (n >= MAX_WATER_UPDATES_PER_TICK || ((n & 1) === 1 && now() - t0 >= budgetMs)) break;
+        pend.delete(key);
+        this._run(key);
+        n++;
+      }
+    }
+    this.leftover = pend.size;
     this.updatesLastTick = n;
+    this.lastTickMs = now() - t0;
+    if (this.lastTickMs > this.maxTickMs) this.maxTickMs = this.lastTickMs;
+  }
+
+  _run(key) {
+    const x = cellX(key), y = cellY(key), z = cellZ(key);
+    if (!this.world.isLoadedAt(x, z)) { this._defer(x, z, key); return; }
+    this.update(x, y, z);
   }
 
   _solid(id) { return SOLID[id] === 1; }
@@ -127,12 +218,11 @@ export class WaterSimulation {
 
   /** Owner's rule (Update #11): a lava block touching water on any of its six sides becomes cobblestone. Returns true when it did. */
   _quench(x, y, z) {
-    const w = this.world;
-    if (!isLava(w.getBlock(x, y, z))) return false;
-    const touching = isWater(w.getBlock(x + 1, y, z)) || isWater(w.getBlock(x - 1, y, z)) || isWater(w.getBlock(x, y, z + 1)) || isWater(w.getBlock(x, y, z - 1))
-      || isWater(w.getBlock(x, y + 1, z)) || (y > 0 && isWater(w.getBlock(x, y - 1, z)));
+    if (!isLava(this._get(x, y, z))) return false;
+    const touching = isWater(this._get(x + 1, y, z)) || isWater(this._get(x - 1, y, z)) || isWater(this._get(x, y, z + 1)) || isWater(this._get(x, y, z - 1))
+      || isWater(this._get(x, y + 1, z)) || (y > 0 && isWater(this._get(x, y - 1, z)));
     if (!touching) return false;
-    w.setBlock(x, y, z, B.COBBLESTONE, true);
+    this.world.setBlock(x, y, z, B.COBBLESTONE, true);
     this.conversions++;
     if (this.onConvert) this.onConvert(x, y, z);
     return true;
@@ -146,20 +236,21 @@ export class WaterSimulation {
 
   /** Park an update until the chunk containing (x, z) loads. */
   _defer(x, z, key) {
-    const ck = (x >> 4) + ',' + (z >> 4);
-    if (!this.deferred.has(ck)) this.deferred.set(ck, new Set());
-    this.deferred.get(ck).add(key);
+    const ck = chunkKey(x >> 4, z >> 4);
+    let set = this.deferred.get(ck);
+    if (!set) { set = new Set(); this.deferred.set(ck, set); }
+    set.add(key);
   }
 
   /**
-   * Put water at a target block. If the target's chunk isn't loaded, the *flowing* block's update is
+   * Put liquid at a target block. If the target's chunk isn't loaded, the *flowing* block's update is
    * deferred until it loads, so the flow resumes at chunk borders instead of being lost.
    */
   _set(x, y, z, id, fromKey) {
-    if (!this.world.isLoadedAt(x, z)) { if (fromKey) this._defer(x, z, fromKey); return false; }
-    const cur = this.world.getBlock(x, y, z);
+    if (!this.world.isLoadedAt(x, z)) { if (fromKey !== undefined) this._defer(x, z, fromKey); return false; }
+    const cur = this._get(x, y, z);
     if (cur !== B.AIR && !isLiquid(cur) && this.onDestroy) this.onDestroy(x, y, z, cur);
-    this.world.setBlock(x, y, z, id, !this.currentNatural);
+    this.world.setBlock(x, y, z, id, true);
     if (this.kind.name === 'water') this._quenchAround(x, y, z); else if (this._quench(x, y, z)) return false;
     return true;
   }
@@ -167,14 +258,13 @@ export class WaterSimulation {
   /** Recompute one liquid block of this kind, then let it flow. */
   update(x, y, z) {
     const K = this.kind;
-    let id = this.world.getBlock(x, y, z);
+    let id = this._get(x, y, z);
     if (!K.is(id)) return;
-    const w = this.world;
     // Lava next to water is cobblestone before anything else; water next to lava quenches it (the water stays).
     if (K.name === 'lava') { if (this._quench(x, y, z)) return; } else this._quenchAround(x, y, z);
-    const key = x + ',' + y + ',' + z;
-    const above = w.getBlock(x, y + 1, z);
-    const below = w.getBlock(x, y - 1, z);
+    const key = packCell(x, y, z);
+    const above = this._get(x, y + 1, z);
+    const below = this._get(x, y - 1, z);
 
     // 1. Level from the surroundings (sources never change on their own).
     if (!K.isSource(id)) {
@@ -182,10 +272,11 @@ export class WaterSimulation {
       if (K.is(above)) next = K.falling;
       else {
         let min = K.maxLevel + 1, sources = 0;
-        for (const [dx, dz] of DIRS) {
-          const n = w.getBlock(x + dx, y, z + dz);
+        for (let i = 0; i < 4; i++) {
+          const n = this._get(x + DX[i], y, z + DZ[i]);
           if (!K.is(n)) continue;
-          min = Math.min(min, K.levelOf(n));
+          const l = K.levelOf(n);
+          if (l < min) min = l;
           if (K.isSource(n)) sources++;
         }
         if (K.infiniteSources && sources >= 2 && (this._solid(below) || K.isSource(below))) next = K.source; // infinite source (water only)
@@ -193,7 +284,7 @@ export class WaterSimulation {
         else next = K.flowingId(min + 1);
       }
       if (next !== id) {
-        w.setBlock(x, y, z, next, !this.currentNatural);
+        this.world.setBlock(x, y, z, next, true);
         if (next === B.AIR) return;
         id = next;
       }
@@ -209,9 +300,10 @@ export class WaterSimulation {
     const next = K.levelOf(id) + 1;
     if (next > K.maxLevel) return;
     const dirs = this._flowDirections(x, y, z);
-    for (const [dx, dz] of dirs) {
-      const nx = x + dx, nz = z + dz;
-      const n = w.getBlock(nx, y, nz);
+    for (let i = 0; i < 4; i++) {
+      if (!(dirs & (1 << i))) continue;
+      const nx = x + DX[i], nz = z + DZ[i];
+      const n = this._get(nx, y, nz);
       if (this._canFlowInto(n) || (K.is(n) && !K.isSource(n) && !K.isFalling(n) && K.levelOf(n) > next)) {
         this._set(nx, y, nz, K.flowingId(next), key);
       }
@@ -221,35 +313,59 @@ export class WaterSimulation {
   /** Neighbour is passable for spreading: not solid, not the other liquid and not a source of this one. */
   _passable(id) { return !this._solid(id) && !(isLiquid(id) && !this.kind.is(id)) && !(this.kind.is(id) && this.kind.isSource(id)); }
 
-  /** Directions with the shortest path to a drop within WATER_SLOPE_SEARCH blocks (all passable ones if none). */
+  /**
+   * Directions (bitmask over DX / DZ) with the shortest path to a drop within WATER_SLOPE_SEARCH blocks; all passable
+   * ones when there is none. A neighbour with nothing solid under it is a drop at distance 0 and wins outright.
+   */
   _flowDirections(x, y, z) {
-    const w = this.world;
-    let best = NO_SLOPE;
-    const out = [];
+    let mask = 0, drops = 0;
     for (let i = 0; i < 4; i++) {
-      const [dx, dz] = DIRS[i];
-      const n = w.getBlock(x + dx, y, z + dz);
+      const n = this._get(x + DX[i], y, z + DZ[i]);
       if (!this._passable(n)) continue;
-      const belowN = w.getBlock(x + dx, y - 1, z + dz);
-      const dist = this._solid(belowN) ? this._slopeDistance(x + dx, y, z + dz, 1, i) : 0;
-      if (dist < best) { out.length = 0; best = dist; }
-      if (dist <= best) out.push(DIRS[i]);
+      if (!this._solid(this._get(x + DX[i], y - 1, z + DZ[i]))) drops |= 1 << i; else mask |= 1 << i;
     }
-    return out;
+    if (drops) return drops;
+    if (!mask) return 0;
+    return this._slopeSearch(x, y, z, mask);
   }
 
-  _slopeDistance(x, y, z, distance, fromDir) {
-    const w = this.world;
-    let best = NO_SLOPE;
+  /**
+   * One breadth-first walk over the passable cells at this height (Update #14 §1b; the old 4-way recursion visited ~160
+   * cells with ~960 block reads per call and no visited set). Every cell remembers which starting directions reach it at its
+   * shortest distance; the directions of the cells next to the nearest drop are the answer, ties included — the same result
+   * as searching each direction on its own.
+   */
+  _slopeSearch(x, y, z, firstMask) {
+    const dist = this._bfsDist, dirs = this._bfsDirs, q = this._bfsQueue;
+    dist.fill(255);
+    const C = GRID_R, W = GRID_W;
+    dist[C * W + C] = 0;
+    let head = 0, tail = 0;
     for (let i = 0; i < 4; i++) {
-      if ((i ^ 1) === fromDir) continue; // don't walk back where we came from (DIRS pairs are opposites)
-      const [dx, dz] = DIRS[i];
-      const n = w.getBlock(x + dx, y, z + dz);
-      if (!this._passable(n)) continue;
-      if (!this._solid(w.getBlock(x + dx, y - 1, z + dz))) return distance;
-      if (distance < WATER_SLOPE_SEARCH) best = Math.min(best, this._slopeDistance(x + dx, y, z + dz, distance + 1, i));
+      if (!(firstMask & (1 << i))) continue;
+      const gi = (C + DZ[i]) * W + (C + DX[i]);
+      dist[gi] = 1; dirs[gi] = 1 << i; q[tail++] = gi;
     }
-    return best;
+    let best = NO_SLOPE, mask = 0;
+    while (head < tail) {
+      const gi = q[head++];
+      const d = dist[gi];
+      if (d > best) break; // breadth-first: nothing farther can tie
+      const gx = (gi % W) - C, gz = Math.floor(gi / W) - C;
+      const wx = x + gx, wz = z + gz;
+      for (let i = 0; i < 4; i++) {
+        const nx = wx + DX[i], nz = wz + DZ[i];
+        if (!this._passable(this._get(nx, y, nz))) continue;
+        if (!this._solid(this._get(nx, y - 1, nz))) { if (d < best) { best = d; mask = 0; } mask |= dirs[gi]; continue; } // a drop beside this cell
+        if (d >= WATER_SLOPE_SEARCH) continue;
+        const ngx = gx + DX[i] + C, ngz = gz + DZ[i] + C;
+        if (ngx < 0 || ngx >= W || ngz < 0 || ngz >= W) continue;
+        const ni = ngz * W + ngx;
+        if (dist[ni] === 255) { dist[ni] = d + 1; dirs[ni] = dirs[gi]; q[tail++] = ni; }
+        else if (dist[ni] === d + 1) dirs[ni] |= dirs[gi]; // a tie: both starting directions reach it as fast
+      }
+    }
+    return best === NO_SLOPE ? firstMask : mask;
   }
 
   /**
@@ -257,17 +373,18 @@ export class WaterSimulation {
    * out: {x, y, z}
    */
   flowVector(x, y, z, out) {
-    const w = this.world, K = this.kind;
-    const id = w.getBlock(x, y, z);
+    const K = this.kind;
+    const id = this.world.getBlock(x, y, z);
     out.x = 0; out.y = 0; out.z = 0;
     if (!K.is(id)) return out;
     const decay = K.levelOf(id);
-    for (const [dx, dz] of DIRS) {
-      const n = w.getBlock(x + dx, y, z + dz);
+    for (let i = 0; i < 4; i++) {
+      const dx = DX[i], dz = DZ[i];
+      const n = this.world.getBlock(x + dx, y, z + dz);
       let k = 0;
       if (K.is(n)) k = K.levelOf(n) - decay;
       else if (!this._solid(n)) {
-        const under = w.getBlock(x + dx, y - 1, z + dz);
+        const under = this.world.getBlock(x + dx, y - 1, z + dz);
         if (K.is(under)) k = K.levelOf(under) - (decay - 8);
       }
       out.x += dx * k; out.z += dz * k;

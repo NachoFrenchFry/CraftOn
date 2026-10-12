@@ -17,6 +17,8 @@ export class MultiplayerMenu {
     const $ = (id) => document.getElementById(id);
     this.root = $('multiplayer-menu');
     this.hostRoot = $('host-menu');
+    this.hostCreateRoot = $('host-create-menu');
+    this.hostCreateError = $('host-create-error');
     this.findRoot = $('find-menu');
     this.kickedRoot = $('kicked-menu');
     this.discRoot = $('disconnected-menu');
@@ -43,6 +45,8 @@ export class MultiplayerMenu {
     click('btn-mp-find', () => this.showFind());
     click('btn-mp-back', () => { this.hideAll(); game.ui.mainMenu.show(); });
     click('btn-host-back', () => this.showMain());
+    click('btn-host-new', () => this.showHostCreate());
+    click('btn-host-create-back', () => this.showHost());
     click('btn-find-back', () => this.showMain());
     click('btn-host-create', () => this._createAndHost());
     click('btn-find-refresh', () => this._refreshLobbies(true));
@@ -67,7 +71,7 @@ export class MultiplayerMenu {
 
   /** Hide every multiplayer screen (the kick screen too unless `keepKicked`). */
   hideAll(keepKicked = false) {
-    for (const el of [this.root, this.hostRoot, this.findRoot, this.discRoot]) el.classList.add('hidden');
+    for (const el of [this.root, this.hostRoot, this.hostCreateRoot, this.findRoot, this.discRoot]) el.classList.add('hidden');
     if (!keepKicked) this.kickedRoot.classList.add('hidden');
     this._stopPolling();
     this.game.input.textInputActive = false;
@@ -82,7 +86,7 @@ export class MultiplayerMenu {
     let worlds;
     try { worlds = await this.game.takeWorldList(); } catch (e) { this.hostList.innerHTML = ''; this._setHostError("Couldn't load your worlds. Check your connection."); return; }
     this.hostList.innerHTML = '';
-    if (!worlds.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'No saved worlds yet. Create one below to host it.'; this.hostList.appendChild(empty); return; }
+    if (!worlds.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'No saved worlds yet. Use "Create New World" to make one and host it.'; this.hostList.appendChild(empty); return; }
     for (const w of worlds) {
       const row = document.createElement('div');
       row.className = 'world-entry';
@@ -98,6 +102,15 @@ export class MultiplayerMenu {
   }
 
   _setHostError(text) { this.hostError.textContent = text || ''; this.hostError.classList.toggle('hidden', !text); }
+
+  /** The create form for hosting, on its own screen (Update #12 §6); Back returns to the world picker. */
+  showHostCreate() {
+    this.hideAll();
+    this.game.ui.mainMenu.hide();
+    this.hostCreateRoot.classList.remove('hidden');
+    this.hostCreateError.textContent = ''; this.hostCreateError.classList.add('hidden');
+    this.hostName.focus();
+  }
 
   async _host(worldId) {
     if (this.busy) return;
@@ -118,8 +131,8 @@ export class MultiplayerMenu {
     this.hostCreate.disabled = true; this.hostCreate.innerHTML = '<span class="spinner"></span>Creating…';
     let record;
     try { record = await this.game.saveManager.createWorld({ name, seed, seedText, gameMode: this.hostMode.value }); }
-    catch (e) { this._setHostError("Couldn't create the world. Check your connection."); return; }
-    finally { this.hostCreate.disabled = false; this.hostCreate.textContent = 'Create New World & Host'; }
+    catch (e) { this.hostCreateError.textContent = "Couldn't create the world. Check your connection."; this.hostCreateError.classList.remove('hidden'); return; }
+    finally { this.hostCreate.disabled = false; this.hostCreate.textContent = 'Create & Host'; }
     this._host(record.id);
   }
 

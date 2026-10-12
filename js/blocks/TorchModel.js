@@ -66,7 +66,9 @@ export function torchBounds(attach = null) {
 }
 
 /** Where the flame sits (block-local): the top of the stick. */
+const tipCache = new Map();
 export function torchTip(attach = null) {
-  const p = [0.5, 11 * PX, 0.5, 0, 0];
-  return attach ? toWall(p, attach) : p;
+  let p = tipCache.get(attach);
+  if (!p) { p = [0.5, 11 * PX, 0.5, 0, 0]; if (attach) p = toWall(p, attach); tipCache.set(attach, p); } // memoized: read-only for callers (Update #14 §3)
+  return p;
 }

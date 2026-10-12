@@ -2,7 +2,7 @@
 // terrain → surface/bedrock → caves → water → ores → decorations. Deterministic per (seed, cx, cz).
 // Worker-safe; also usable on the main thread (e.g. for spawn finding).
 
-import { SEA_LEVEL, BLOCKS_PER_CHUNK, WORLD_HEIGHT, MIN_CAVE_Y, CHEESE_TOP_Y, CAVE_SPRING_MIN, CAVE_SPRING_MAX, CAVE_SPRING_CAVERN_BLOCKS, LAVA_POOL_CAVERN_BLOCKS, LAVA_POOL_MAX_Y, LAVA_POOL_MAX_CELLS, LAVA_POOL_CHANCE, DESERT_LAKE_CHANCE } from '../config/Constants.js';
+import { SEA_LEVEL, BLOCKS_PER_CHUNK, WORLD_HEIGHT, MIN_CAVE_Y, CHEESE_TOP_Y, CAVE_SPRING_MIN, CAVE_SPRING_MAX, CAVE_SPRING_CAVERN_BLOCKS, LAVA_POOL_CAVERN_BLOCKS, LAVA_POOL_MAX_Y, LAVA_POOL_MAX_CELLS, LAVA_POOL_CHANCE, LAVA_SEA_LEVEL, DESERT_LAKE_CHANCE, MEGA_CAVE_DIAMOND_FACTOR } from '../config/Constants.js';
 import { BlockIds as B } from '../blocks/BlockIds.js';
 import { TerrainShaper, createColumnSample } from './TerrainShaper.js';
 import { BiomeProvider } from './BiomeProvider.js';
@@ -42,6 +42,8 @@ export class WorldGenerator {
     this.carveMaxY = new Int16Array(256);
     this.heightMap16 = new Int16Array(256);
     this._sample = createColumnSample();
+    /** Desert lake parameters per chunk cell (Update #12). */
+    this._lakeCache = new Map();
   }
 
   /**
@@ -100,8 +102,9 @@ export class WorldGenerator {
     this.caves.carve(blocks, cx, cz, this.carveMaxY);
     const carved = this.noiseCaves.carve(blocks, cx, cz, this.carveMaxY, maxHeight, this.heightMap16, this.cliffMask);
     const cheeseBlocks = carved && carved.cheeseBlocks ? carved.cheeseBlocks : 0;
+    const mega = carved && carved.mega ? carved.mega : 0; // mega-cave region share of this chunk (Update #12 §5b)
     // Ravines: long deep cracks opening at the surface (land only; see RavineCarver.js).
-    this.ravines.carve(blocks, cx, cz, this.heightMap16);
+    this.ravines.carve(blocks, cx, cz, this.heightMap16, mega > 0 ? this.noiseCaves.megaMask : null);
     this._fixExposedSurface(blocks, biomeMap);
     this._mossyCaveWalls(blocks, cx, cz);
 
@@ -119,23 +122,55 @@ export class WorldGenerator {
       }
     }
 
-    // 5. Ores and dirt/gravel pockets, then exposed ore clusters on cave walls.
+    // 5. Ores and dirt/gravel pockets, then exposed ore clusters on cave walls (mega caves: many more diamonds).
     this.ores.generate(blocks, cx, cz, hasMountains);
-    this.ores.exposeOres(blocks, cx, cz, heightMap);
+    this.ores.exposeOres(blocks, cx, cz, heightMap, 1 + (MEGA_CAVE_DIAMOND_FACTOR - 1) * mega);
+    // Lava sea (Update #12 §5a): every cave cell at or below LAVA_SEA_LEVEL is lava — the floors of deep caverns become
+    // lakes as wide as the cavern, continuous across chunks (the neighbour fills the same level), so nothing flows.
+    const seaCells = this._lavaSea(blocks, heightMap);
     // Cave springs: single water sources in the walls of big caverns (scheduled to flow when the chunk loads).
     const springs = this._caveSprings(blocks, cx, cz, heightMap, cheeseBlocks);
-    // Lava lakes (Update #11): closed floor basins of big deep caverns.
-    let lavaPools = this._lavaPools(blocks, cx, cz, heightMap, cheeseBlocks);
+    // Lava pools (Update #11 / #12): closed floor basins of ordinary caves below LAVA_POOL_MAX_Y.
+    let lavaPools = this._lavaPools(blocks, cx, cz, heightMap, cheeseBlocks) + (seaCells > 0 ? 1 : 0);
 
     // 6. Trees, plants and other decorations.
     this.decorator.decorate(blocks, cx, cz, biomeMap, this.heightMap16);
-    // Rare desert lava lakes (after the plants, so the crater is clear of cacti and bushes).
-    lavaPools += this._desertLake(blocks, cx, cz, heightMap, biomeMap);
+    // Desert lava lakes (after the plants, so the crater is clear of cacti and bushes); they may span several chunks.
+    lavaPools += this._desertLakes(blocks, cx, cz);
 
     // 7. Safety: no air or water may touch bedrock, so bedrock is never visible from caves.
     this._sealBedrock(blocks);
 
-    return { blocks, heightMap, biomeMap, springs, lavaPools };
+    return { blocks, heightMap, biomeMap, springs, lavaPools, mega };
+  }
+
+  /**
+   * The lava sea: air at y ≤ LAVA_SEA_LEVEL (inside the cave band) becomes lava; where water lies within 3 blocks the air
+   * becomes stone instead, so lava never touches water and the sea surface stays closed. Returns the lava cells made.
+   */
+  _lavaSea(blocks, heightMap) {
+    let cells = 0;
+    for (let y = MIN_CAVE_Y; y <= LAVA_SEA_LEVEL; y++) {
+      const yb = y << 8;
+      for (let col = 0; col < 256; col++) {
+        const i = col + yb;
+        if (blocks[i] !== B.AIR || y >= heightMap[col] - 4) continue;
+        if (this._waterNear(blocks, col & 15, y, col >> 4, 3)) { blocks[i] = B.STONE; continue; }
+        blocks[i] = B.LAVA;
+        cells++;
+      }
+    }
+    return cells;
+  }
+
+  /** Any lava in the chunk within `r` blocks of (lx, y, lz) (chunk-local). */
+  _lavaNear(blocks, lx, y, lz, r) {
+    for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+      const x = lx + dx, z = lz + dz, yy = y + dy;
+      if (x < 0 || x > 15 || z < 0 || z > 15 || yy < 0 || yy > 255) continue;
+      if (isLava(blocks[x + (z << 4) + (yy << 8)])) return true;
+    }
+    return false;
   }
 
   /** Any water in the chunk within `r` blocks of (lx, y, lz) (chunk-local; the caller keeps pools off the chunk border). */
@@ -160,11 +195,11 @@ export class WorldGenerator {
     if (cheeseBlocks < LAVA_POOL_CAVERN_BLOCKS) return 0;
     const rng = chunkRandom(this.seed, cx, cz, LAVA_SALT);
     if (!rng.chance(LAVA_POOL_CHANCE)) return 0;
-    const want = 1 + rng.nextInt(2);
+    const want = 1 + rng.nextInt(3);
     let pools = 0;
     const tried = new Set();
     const stack = [];
-    for (let y = MIN_CAVE_Y + 2; y <= LAVA_POOL_MAX_Y && pools < want; y++) {
+    for (let y = LAVA_SEA_LEVEL + 1; y <= LAVA_POOL_MAX_Y && pools < want; y++) {
       const yb = y << 8;
       for (let lz = 1; lz <= 14 && pools < want; lz++) for (let lx = 1; lx <= 14 && pools < want; lx++) {
         const col = lx + (lz << 4), i = col + yb;
@@ -201,52 +236,83 @@ export class WorldGenerator {
     return pools;
   }
 
-  /** Deterministic desert lake parameters for a chunk, or null: needs the whole chunk desert and a flat centre. */
-  desertLakeParams(cx, cz, heightMap, biomeMap) {
+  /**
+   * Desert lava lakes (Update #12 §5a, resized in Update #13 §4): one candidate per chunk cell with chance
+   * DESERT_LAKE_CHANCE, 3–10 blocks across and 1–3 deep, placed anywhere in that chunk — a lake may still straddle a
+   * border, so every chunk it touches carves its own part from the same deterministic parameters. The checks use only
+   * the global terrain functions (biome and height from the shaper), never a chunk's blocks: the ground around the lake
+   * must be desert and within 4 blocks of the centre height, well above the sea. Cached per cell.
+   * @returns {{x:number, z:number, rx:number, rz:number, depth:number, h:number}|null}
+   */
+  desertLakeParams(cx, cz) {
+    const key = cx + ',' + cz;
+    if (this._lakeCache.has(key)) return this._lakeCache.get(key);
+    let lake = null;
     const rng = chunkRandom(this.seed, cx, cz, LAKE_SALT);
-    if (!rng.chance(DESERT_LAKE_CHANCE)) return null;
-    for (let col = 0; col < 256; col++) if (BIOMES[biomeMap[col]].id !== BiomeIds.DESERT) return null;
-    const ccx = 7 + rng.nextInt(2), ccz = 7 + rng.nextInt(2);
-    const rx = 2.5 + rng.next() * 2, rz = 2.5 + rng.next() * 2;   // 5–9 blocks across
-    const depth = 2 + rng.nextInt(2);                              // 2–3 deep
-    const h = heightMap[ccx + (ccz << 4)];
-    if (h <= SEA_LEVEL + 2) return null;
-    const reach = Math.ceil(Math.max(rx, rz)) + 1;
-    for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) {
-      const x = ccx + dx, z = ccz + dz;
-      if (x < 1 || x > 14 || z < 1 || z > 14) return null;
-      if (Math.abs(heightMap[x + (z << 4)] - h) > 1) return null; // not flat enough
+    if (rng.chance(DESERT_LAKE_CHANCE)) {
+      const x = cx * 16 + rng.nextInt(16), z = cz * 16 + rng.nextInt(16);
+      const rx = 1.5 + rng.next() * 3.5, rz = 1.5 + rng.next() * 3.5;    // 3–10 blocks across
+      const depth = 1 + rng.nextInt(3);                                   // 1–3 deep
+      const s = createColumnSample();
+      const h = this.shaper.heightAt(x, z);
+      let ok = h > SEA_LEVEL + 3;
+      for (let k = 0; k < 9 && ok; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const px = k === 8 ? x : x + Math.cos(a) * (rx + 3), pz = k === 8 ? z : z + Math.sin(a) * (rz + 3);
+        const smp = this.shaper.sample(px, pz, s);
+        if (this.biomes.classify(smp) !== BiomeIds.DESERT || Math.abs(smp.height - h) > 4 || smp.height <= SEA_LEVEL + 1) ok = false;
+      }
+      if (ok) lake = { x, z, rx, rz, depth, h };
     }
-    return { ccx, ccz, rx, rz, depth, h, reach };
+    if (this._lakeCache.size > 512) this._lakeCache.clear();
+    this._lakeCache.set(key, lake);
+    return lake;
+  }
+
+  /** Deterministic per-column noise for the rim (0..1), from the seed and the world column. */
+  _rimNoise(x, z, salt = 0) {
+    let h = (this.seed ^ Math.imul(x, 374761393) ^ Math.imul(z, 668265263) ^ Math.imul(salt + 1, 2246822519)) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
   }
 
   /**
-   * Rare desert lava lake (Update #11 §3e): a 5–9 block crater 2–3 deep carved into flat desert, its floor and rim
-   * made of stone so nothing can flow out, the lava surface flush with the ground. Skipped when water is anywhere
-   * near. Returns 1 when a lake was made.
+   * Carve every desert lake that reaches into this chunk: lava flush with the ground over a stone / cobblestone floor,
+   * inside a rocky rim 2–3 blocks wide (a noisy mix of about 45 % cobblestone, 40 % stone and 15 % mossy cobblestone)
+   * that goes one block deeper than the lava and blends into the sand at its outer edge. Sealed: every lava cell's
+   * neighbours at its level are rim or lava, the floor is solid.
    */
-  _desertLake(blocks, cx, cz, heightMap, biomeMap) {
-    const L = this.desertLakeParams(cx, cz, heightMap, biomeMap);
-    if (!L) return 0;
-    const { ccx, ccz, rx, rz, depth, h, reach } = L;
-    const inside = (x, z, grow) => ((x - ccx) / (rx + grow)) ** 2 + ((z - ccz) / (rz + grow)) ** 2 <= 1;
-    for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) {
-      const x = ccx + dx, z = ccz + dz;
-      if (inside(x, z, 1) && this._waterNear(blocks, x, h, z, 4)) return 0;
-    }
-    for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) {
-      const x = ccx + dx, z = ccz + dz, col = x + (z << 4);
-      if (!inside(x, z, 1)) continue;
-      const lake = inside(x, z, 0);
-      for (let y = h - depth; y <= h + 2; y++) {
-        const i = col + (y << 8);
-        if (y > h) blocks[i] = B.AIR;                                     // clear plants and cacti above the crater
-        else if (!lake || y === h - depth) blocks[i] = B.STONE;            // the rim and the floor
-        else blocks[i] = B.LAVA;
+  _desertLakes(blocks, cx, cz) {
+    let made = 0;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const L = this.desertLakeParams(cx + dx, cz + dz);
+      if (!L) continue;
+      const wx0 = cx * 16, wz0 = cz * 16;
+      if (L.x + L.rx + 4 < wx0 || L.x - L.rx - 4 > wx0 + 15 || L.z + L.rz + 4 < wz0 || L.z - L.rz - 4 > wz0 + 15) continue;
+      const inside = (x, z, grow) => ((x + 0.5 - L.x) / (L.rx + grow)) ** 2 + ((z + 0.5 - L.z) / (L.rz + grow)) ** 2 <= 1;
+      let touched = false;
+      for (let lz = 0; lz < 16; lz++) for (let lx = 0; lx < 16; lx++) {
+        const x = wx0 + lx, z = wz0 + lz;
+        const rimWidth = 2 + (this._rimNoise(x, z, 1) < 0.5 ? 1 : 0);        // 2 or 3 blocks of rim, per column
+        if (!inside(x, z, rimWidth)) continue;
+        touched = true;
+        const col = lx + (lz << 4);
+        const lake = inside(x, z, 0);
+        const outerEdge = !inside(x, z, rimWidth - 1);                        // the rim's outermost block blends into the sand
+        const pick = this._rimNoise(x, z, 2);
+        const rock = pick < 0.45 ? B.COBBLESTONE : pick < 0.85 ? B.STONE : B.MOSSY_COBBLESTONE;
+        for (let y = L.h - L.depth - 1; y <= L.h + 5; y++) {
+          if (y < 1 || y > 254) continue;
+          const i = col + (y << 8);
+          if (y > L.h) { if (blocks[i] !== B.BEDROCK) blocks[i] = B.AIR; continue; }               // clear plants, cacti and dunes above the crater
+          if (lake) { blocks[i] = y <= L.h - L.depth ? (pick < 0.6 ? B.STONE : B.COBBLESTONE) : B.LAVA; continue; } // the floor and the lava
+          // The rim: rock all the way down; at the outer edge the top layer is sand half of the time, so it fades out.
+          blocks[i] = outerEdge && y === L.h && this._rimNoise(x, z, 3) < 0.5 ? B.SAND : rock;
+        }
       }
-      if (!lake) for (let y = h + 1; y <= h + 1; y++) blocks[col + (y << 8)] = B.AIR;
+      if (touched) made++;
     }
-    return 1;
+    return made;
   }
 
   /** Any lava within `r` blocks (horizontally) of a column and above `minY`, by generating the chunks around it (spawn search, Update #11). */
@@ -295,7 +361,7 @@ export class WorldGenerator {
         if (x < 0 || x > 15 || z < 0 || z > 15 || yy < 0 || yy > 255) continue;
         if (isWater(blocks[x + (z << 4) + (yy << 8)])) { nearWater = true; break; }
       }
-      if (nearWater) continue;
+      if (nearWater || this._lavaNear(blocks, lx, y, lz, 3)) continue;
       blocks[i] = B.WATER;
       out.push(lx, y, lz);
     }

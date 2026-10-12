@@ -134,6 +134,9 @@ export class GuestClient {
     this.link.send(Msg.META, { held: s ? s.itemId : 0, armor: g.inventory.armorMaterials(), mode: g.player.gameMode });
   }
 
+  /** A chat line typed here goes to the host, which validates it and sends it to everyone (this guest included). */
+  sendChat(text) { if (this.link && this.link.open) this.link.send(Msg.CHAT, { text }); }
+
   /** Player data + inventory for the host's save (also used by the guest's "autosave"). */
   sendInventory() {
     if (!this.link || !this.link.open) return false;
@@ -154,13 +157,15 @@ export class GuestClient {
       case Msg.BLOCK_REJECT: { const p = this.pendingBlocks.get(msg.seq); this.pendingBlocks.delete(msg.seq); this._applyBlock(msg.x, msg.y, msg.z, msg.id, null, 'revert'); if (p) this._refund(p, msg.reason); return; }
       case Msg.PS: { const now = performance.now() / 1000; for (const row of msg.list) { const id = row[0]; if (id === this.userId) continue; const rp = this.remote.get(id) || this.remote.add(id, id === this.hostId && this.welcome ? this.welcome.hostName : 'player'); rp.snapshot(now, row.slice(1)); } return; }
       case Msg.M: { if (g.entities.mobs) g.entities.mobs.applySnapshot(msg.mobs, performance.now() / 1000); g.entities.applySnapshot(msg.items); return; }
-      case Msg.JOIN: { const rp = this.remote.add(msg.id, msg.name); if (msg.held !== undefined) rp.setMeta(msg); g.ui.hud.showToast(`${msg.name} joined`, false); return; }
-      case Msg.LEAVE: { const rp = this.remote.get(msg.id); if (rp) g.ui.hud.showToast(`${rp.name} left`, false); this.remote.remove(msg.id); return; }
+      case Msg.JOIN: { const rp = this.remote.add(msg.id, msg.name); if (msg.held !== undefined) rp.setMeta(msg); return; } // the host's chat line announces the join
+      case Msg.LEAVE: { this.remote.remove(msg.id); return; }
       case Msg.META: { const rp = this.remote.get(msg.id); if (rp) rp.setMeta(msg); return; }
       case Msg.MODE: { this.canChangeMode = !!msg.canChange; if (msg.mode && g.player.gameMode !== msg.mode) g.setGameMode(msg.mode, true); return; }
       case Msg.DAMAGE: g.health.damage(msg.n, { kind: 'pvp', by: msg.by }, { kx: msg.kx || 0, kz: msg.kz || 0, crit: !!msg.crit, ignoreInvuln: true }); return;
       case Msg.HURT: { const rp = this.remote.get(msg.id); if (rp) rp.hurt(!!msg.crit, msg.n | 0); return; }
-      case Msg.DEATH: if (msg.text) g.ui.hud.showToast(msg.text, false); return;
+      case Msg.DEATH: if (msg.text) g.ui.chat.system(String(msg.text).slice(0, 256), 'yellow'); return;
+      case Msg.CHAT: if (msg.system !== undefined) g.ui.chat.system(String(msg.system).slice(0, 256), msg.color === 'gray' || msg.color === 'red' ? msg.color : 'yellow'); else if (msg.name && msg.text) g.ui.chat.add({ name: String(msg.name).slice(0, 16), text: String(msg.text).slice(0, 256), host: !!msg.host }); return;
+      case Msg.TICK: g.setTickRate(Number(msg.rate) || 20, true); g.setTickFrozen(!!msg.frozen, true); return;
       case Msg.WORLD: if (g.worldMeta) { g.worldMeta.keepInventory = !!msg.keepInventory; g.worldMeta.pvp = msg.pvp !== false; } return;
       case Msg.SWING: { const rp = this.remote.get(msg.id); if (rp) rp.swing(); return; }
       case Msg.MINING: { const rp = this.remote.get(msg.id); if (rp) { if (msg.stop) rp.miningStop(); else rp.mining(msg.x, msg.y, msg.z, msg.p); } return; }

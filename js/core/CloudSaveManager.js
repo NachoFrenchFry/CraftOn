@@ -6,6 +6,28 @@
 
 import { encodeChunk, decodeChunk } from './cloud/ChunkCodec.js';
 
+/** The codec worker (Update #14 §3): chunk diffs are JSON-encoded, gzipped and base64-encoded off the main thread. */
+let codecWorker = null, codecId = 0;
+const codecPending = new Map();
+function encodeOnMainThread(entries) { return Promise.all(entries.map(async (e) => ({ key: e.key, data: await encodeChunk(e) }))); }
+export function encodeChunks(entries) {
+  if (typeof Worker === 'undefined') return encodeOnMainThread(entries);
+  if (!codecWorker) {
+    try {
+      codecWorker = new Worker(new URL('./cloud/codec.worker.js', import.meta.url), { type: 'module' });
+      codecWorker.onmessage = (ev) => { const p = codecPending.get(ev.data.id); if (!p) return; codecPending.delete(ev.data.id); if (ev.data.error) p.reject(new Error(ev.data.error)); else p.resolve(ev.data.rows); };
+      codecWorker.onerror = (ev) => { console.warn('CloudSaveManager: codec worker failed, encoding on the main thread', ev.message || ev); for (const p of codecPending.values()) p.reject(new Error('codec worker failed')); codecPending.clear(); codecWorker = null; };
+    } catch (e) { codecWorker = null; return encodeOnMainThread(entries); }
+  }
+  const id = ++codecId;
+  const copies = entries.map((e) => ({ key: e.key, indices: Uint16Array.from(e.indices), ids: Uint8Array.from(e.ids) }));
+  return new Promise((resolve, reject) => {
+    codecPending.set(id, { resolve, reject });
+    try { codecWorker.postMessage({ id, entries: copies }, copies.flatMap((c) => [c.indices.buffer, c.ids.buffer])); }
+    catch (e) { codecPending.delete(id); reject(e); }
+  }).catch(() => encodeOnMainThread(entries));
+}
+
 const UPSERT_BATCH = 50;
 const PAGE = 1000;
 /** Columns kept in the row itself; everything else in the record lives inside `data`. */
@@ -71,8 +93,8 @@ export class CloudSaveManager {
   /** entries: [{ key, indices, ids }] — compressed and upserted in batches of 50 rows. */
   async saveChunks(worldId, entries) {
     if (!entries.length) return;
-    const rows = [];
-    for (const e of entries) rows.push({ world_id: worldId, chunk_key: e.key, data: await encodeChunk(e) });
+    const encoded = await encodeChunks(entries); // compressed in the codec worker (Update #14 §3)
+    const rows = encoded.map((e) => ({ world_id: worldId, chunk_key: e.key, data: e.data }));
     for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
       check(await this.client.from('world_chunks').upsert(rows.slice(i, i + UPSERT_BATCH), { onConflict: 'world_id,chunk_key' }), 'save chunks');
     }

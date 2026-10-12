@@ -12,8 +12,15 @@ export const PX = 1.8 / 32;
  * direction the head travels during a swing — instead of the flat side.
  */
 export const TOOL_EDGE_TURN = Math.PI / 2 + 10 * Math.PI / 180; // 100°: the Update #8 edge turn plus 10° the other way (Update #9 follow-up)
-/** Euler for a tool handle group inside a swing pivot: roll first (diagonal → +Y), then the edge turn. */
-export function setToolHandleRotation(group) { group.rotation.set(0, TOOL_EDGE_TURN, Math.PI / 4, 'XYZ'); return group; }
+/**
+ * The turn actually applied about the handle: TOOL_EDGE_TURN − π (about −80°). The plain 100° turn left the sprite's
+ * back (−Z) face toward the camera, so held tools looked left-right mirrored against their hotbar icons (an axe head
+ * on the wrong side); turning 180° further about the same axis shows the front (+Z) face, so the texture reads like
+ * the icon. The sprite plane stays in the swing plane.
+ */
+export const TOOL_HANDLE_TURN = TOOL_EDGE_TURN - Math.PI;
+/** Euler for a tool handle group inside a swing pivot: roll first (diagonal → +Y), then the turn about the handle. */
+export function setToolHandleRotation(group) { group.rotation.set(0, TOOL_HANDLE_TURN, Math.PI / 4, 'XYZ'); return group; }
 
 export const COLORS = Object.freeze({
   skin: 0xc69c6d,

@@ -17,6 +17,8 @@ export class GameState {
     this.events = events;
     this.current = State.BOOT;
     this.previous = null;
+    /** Update #12 §3b: in multiplayer the pause menu is only an overlay — the world keeps running (set by Game). */
+    this.overlayPause = false;
   }
 
   is(state) { return this.current === state; }
@@ -28,7 +30,7 @@ export class GameState {
 
   /** True when physics should tick (playing, inventory open, or dead: the world goes on around the body). */
   get simulating() {
-    return this.current === State.PLAYING || this.current === State.INVENTORY || this.current === State.DEAD;
+    return this.current === State.PLAYING || this.current === State.INVENTORY || this.current === State.DEAD || (this.current === State.PAUSED && this.overlayPause);
   }
 
   set(state) {

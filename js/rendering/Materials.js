@@ -1,36 +1,99 @@
-// Materials.js — the three chunk materials (opaque, cutout, translucent) plus shared helpers.
+// Materials.js — the chunk materials (opaque, cutout, translucent, lava) plus shared helpers.
+//
+// Update #14 §2a: the chunk passes are ShaderMaterials over the texture array (one 16×16 layer per atlas tile): a
+// vertex carries tile-local coordinates that repeat with fract() across a greedy-merged quad and its tile index
+// (`tile` attribute). The look is MeshBasicMaterial's — texel × vertex colour (face shade × AO) × the voxel light
+// curve, fog, sRGB output — so nothing changes on screen. Small block models (items, the held block) keep the
+// plain atlas materials.
 
 import * as THREE from 'three';
 import { LIGHT_UNIFORMS } from './LightUniforms.js';
 import { LIGHT_CURVE_GLSL } from '../world/lighting/LightCurve.js';
 
+const CHUNK_VERTEX = `
+attribute float tile;
+attribute vec2 light;
+varying vec2 vUv;
+varying float vTile;
+varying vec3 vColor;
+varying vec2 vLight;
+#include <fog_pars_vertex>
+void main() {
+  vUv = uv;
+  vTile = tile;
+  vColor = color;
+  vLight = light / 240.0;
+  vec3 transformed = position;
+  vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+
+const CHUNK_FRAGMENT = `
+precision highp sampler2DArray;
+uniform sampler2DArray tiles;
+uniform float opacity;
+uniform float alphaTest;
+uniform float boost;
+varying vec2 vUv;
+varying float vTile;
+varying vec3 vColor;
+varying vec2 vLight;
+#include <common>
+#include <fog_pars_fragment>
+${LIGHT_CURVE_GLSL}
+void main() {
+  vec4 texel = texture(tiles, vec3(fract(vUv), vTile));
+  #ifdef CUTOUT
+  if (texel.a < alphaTest) discard;
+  #endif
+  vec3 rgb = texel.rgb * vColor * boost;
+  #ifdef VOXEL_LIGHT
+  rgb *= craftonLightRGB(vLight); // max(sky curve, warm block curve), Update #11
+  #endif
+  gl_FragColor = vec4(rgb, texel.a * opacity);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`;
+
 /**
- * Voxel lighting with shaders off (Update #10): the vertex colour keeps the baked face shade × AO and the mesher's
- * smoothed sky light arrives as the `light` attribute (0–240 = level × 16); the fragment multiplies by the
- * Minecraft-like brightness curve with the Brightness option's uniforms, so the slider applies live without re-baking.
+ * One chunk pass material over the tile array. `lit` applies the Brightness light curve (everything but lava).
+ * @param {THREE.DataArrayTexture} tileArray
  */
-function withVoxelLight(material, key) {
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, LIGHT_UNIFORMS);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 light;\nvarying vec2 vLight;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLight = light / 240.0;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vLight;' + LIGHT_CURVE_GLSL)
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= craftonLightRGB(vLight);'); // max(sky curve, warm block curve), Update #11
+export function createChunkMaterial(tileArray, key, { lit = true, cutout = false, transparent = false, opacity = 1, side = THREE.FrontSide, boost = 1 } = {}) {
+  const uniforms = {
+    ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+    tiles: { value: tileArray },
+    opacity: { value: opacity },
+    alphaTest: { value: cutout ? 0.5 : 0 },
+    boost: { value: boost },
+    ...LIGHT_UNIFORMS, // the very same uniform objects: the Brightness slider applies live
   };
-  material.customProgramCacheKey = () => 'crafton-voxel-light-' + key;
-  return material;
+  const m = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: CHUNK_VERTEX,
+    fragmentShader: CHUNK_FRAGMENT,
+    defines: { ...(cutout ? { CUTOUT: '' } : {}), ...(lit ? { VOXEL_LIGHT: '' } : {}) },
+    vertexColors: true,
+    fog: true,
+    transparent,
+    depthWrite: !transparent,
+    side,
+  });
+  m.name = key;
+  m.customProgramCacheKey = () => 'crafton-chunk-' + key;
+  return m;
 }
 
-export function createChunkMaterials(atlasTexture) {
-  const opaque = withVoxelLight(new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true, fog: true, side: THREE.FrontSide }), 'opaque');
-  const cutout = withVoxelLight(new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true, fog: true, alphaTest: 0.5, transparent: false, side: THREE.FrontSide }), 'cutout');
+/** @param {THREE.DataArrayTexture} tileArray the atlas as a texture array (TextureAtlas.arrayTexture) */
+export function createChunkMaterials(tileArray) {
+  const opaque = createChunkMaterial(tileArray, 'opaque');
+  const cutout = createChunkMaterial(tileArray, 'cutout', { cutout: true });
   // Double-sided so the water surface is drawn from underneath (looking up from under water).
-  const translucent = withVoxelLight(new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true, fog: true, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }), 'translucent');
+  const translucent = createChunkMaterial(tileArray, 'translucent', { transparent: true, opacity: 0.75, side: THREE.DoubleSide });
   // Lava (Update #11): opaque-looking, self-lit (no light curve), seen from below too.
-  const lava = new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true, fog: true, side: THREE.DoubleSide });
-  lava.name = 'lava';
+  const lava = createChunkMaterial(tileArray, 'lava', { lit: false, side: THREE.DoubleSide });
   return { opaque, cutout, translucent, lava };
 }
 

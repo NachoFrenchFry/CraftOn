@@ -177,3 +177,49 @@
 @keyframes hb-pulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.6); } }
 #hurt-overlay { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(255, 0, 0, 0) 45%, rgba(200, 0, 0, 0.55) 100%); opacity: 0; transition: opacity 0.12s; }
 #hurt-overlay.hidden { display: none; }
+
+/* ---- Chat (Update #12), after bloxd.io: top-left, one small translucent slate-blue box per message ---- */
+.chat {
+  position: absolute; left: calc(4px * var(--gui-scale)); top: calc(4px * var(--gui-scale));
+  width: 40vw; max-width: 40vw;
+  display: flex; flex-direction: column; gap: calc(2px * var(--gui-scale));
+  font-size: calc(8px * var(--gui-scale)); line-height: 1.25; z-index: 12; pointer-events: none;
+}
+.chat-messages { display: flex; flex-direction: column; align-items: flex-start; gap: calc(2px * var(--gui-scale)); max-height: 60vh; overflow: hidden; }
+.chat.open .chat-messages { overflow-y: scroll; pointer-events: auto; padding-right: calc(3px * var(--gui-scale)); scrollbar-width: thin; scrollbar-color: #5b6f85 rgba(46, 74, 107, 0.6); }
+.chat.open .chat-messages::-webkit-scrollbar { width: calc(4px * var(--gui-scale)); }
+.chat.open .chat-messages::-webkit-scrollbar-track { background: rgba(46, 74, 107, 0.6); }
+.chat.open .chat-messages::-webkit-scrollbar-thumb { background: #5b6f85; }
+.chat-line {
+  display: inline-block; max-width: 100%; box-sizing: border-box;
+  padding: calc(2px * var(--gui-scale)) calc(3px * var(--gui-scale));
+  background: rgba(46, 74, 107, 0.85); color: #fff; border-radius: calc(2px * var(--gui-scale));
+  white-space: pre-wrap; overflow-wrap: anywhere; text-shadow: var(--text-shadow); user-select: text; transition: opacity 0.2s linear;
+}
+.chat-line.hidden { display: none; }
+.chat-host { color: #ffcc33; }
+.chat-name { color: #fff; }
+.chat-system.chat-yellow { color: #ffe566; }
+.chat-system.chat-gray { color: #c8c8c8; }
+.chat-system.chat-red { color: #ff7a7a; }
+.chat-input {
+  box-sizing: border-box; width: 100%; pointer-events: auto;
+  background: rgba(46, 74, 107, 0.9); color: #fff; border: calc(1px * var(--gui-scale)) solid rgba(255, 255, 255, 0.25);
+  padding: calc(3px * var(--gui-scale)) calc(4px * var(--gui-scale)); font: inherit; outline: none; caret-color: #fff;
+}
+.chat-input.hidden { display: none; }
+/* /tick badge (Update #12): top right while the rate is not 20 */
+.tick-badge {
+  position: absolute; right: calc(6px * var(--gui-scale)); top: calc(6px * var(--gui-scale));
+  padding: calc(2px * var(--gui-scale)) calc(4px * var(--gui-scale)); background: rgba(0, 0, 0, 0.6); border: calc(1px * var(--gui-scale)) solid #ffcc55;
+  color: #ffe08a; font-size: calc(8px * var(--gui-scale)); text-shadow: var(--text-shadow); z-index: 14;
+}
+.tick-badge.hidden { display: none; }
+
+/* Update #14 §0: the F3 performance graph and the benchmark report */
+#debug-graph { display: block; margin-top: 4px; image-rendering: pixelated; }
+#bench-report {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 40;
+  max-width: 96vw; max-height: 90vh; overflow: auto; padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.85); color: #fff; font: 12px/1.4 monospace; white-space: pre; border: 1px solid #888;
+}

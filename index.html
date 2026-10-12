@@ -54,6 +54,12 @@
     <div id="lava-overlay" class="hidden"></div>
     <div id="fire-overlay" class="hidden"></div>
     <div id="fps-counter" class="hidden"></div>
+    <div id="tick-badge" class="tick-badge hidden"></div>
+    <!-- Chat (Update #12): top-left message boxes, the input bar while open -->
+    <div id="chat" class="chat">
+      <div id="chat-messages" class="chat-messages"></div>
+      <input id="chat-input" class="chat-input hidden" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Chat message">
+    </div>
     <div id="toast" class="toast hidden"></div>
   </div>
   <div id="debug-overlay" class="hidden"></div>
@@ -124,22 +130,37 @@
     </div>
   </div>
 
+  <!-- World list (Update #12 §6): only the worlds, filling the panel; "Create New World" opens its own screen -->
   <div id="world-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
-    <div class="menu-content">
+    <div class="menu-content list-content">
       <h2 class="menu-heading">Select World</h2>
       <div id="world-error" class="acct-error hidden"></div>
       <button id="btn-worlds-retry" class="mc-button small hidden" type="button">Retry</button>
-      <div id="world-list" class="world-list"></div>
+      <div id="world-list" class="world-list world-list-full"></div>
+      <div class="menu-row">
+        <button id="btn-new-world" class="mc-button">Create New World</button>
+        <button id="btn-world-back" class="mc-button">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="create-world-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h2 class="menu-heading">Create New World</h2>
+      <div id="create-error" class="acct-error hidden"></div>
       <div class="create-world">
         <label>World name <input id="world-name" type="text" maxlength="32" value="New World"></label>
         <label>Seed (blank = random) <input id="world-seed" type="text" maxlength="32" placeholder="any text or number"></label>
         <label>Game mode
           <select id="world-mode"><option value="survival">Survival</option><option value="creative">Creative</option></select>
         </label>
-        <button id="btn-create-world" class="mc-button">Create New World</button>
       </div>
-      <button id="btn-world-back" class="mc-button">Back</button>
+      <div class="menu-row">
+        <button id="btn-create-world" class="mc-button">Create</button>
+        <button id="btn-create-back" class="mc-button">Back</button>
+      </div>
     </div>
   </div>
 
@@ -159,20 +180,34 @@
 
   <div id="host-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
-    <div class="menu-content">
+    <div class="menu-content list-content">
       <h2 class="menu-heading">Host Server</h2>
       <div id="host-error" class="acct-error hidden"></div>
-      <div id="host-world-list" class="world-list"></div>
+      <div id="host-world-list" class="world-list world-list-full"></div>
       <label class="host-max">Max players <select id="host-max"></select></label>
+      <div class="menu-row">
+        <button id="btn-host-new" class="mc-button">Create New World</button>
+        <button id="btn-host-back" class="mc-button">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="host-create-menu" class="screen menu-screen hidden">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <h2 class="menu-heading">Create New World</h2>
+      <div id="host-create-error" class="acct-error hidden"></div>
       <div class="create-world">
         <label>World name <input id="host-name" type="text" maxlength="32" value="New World"></label>
         <label>Seed (blank = random) <input id="host-seed" type="text" maxlength="32" placeholder="any text or number"></label>
         <label>Game mode
           <select id="host-mode"><option value="survival">Survival</option><option value="creative">Creative</option></select>
         </label>
-        <button id="btn-host-create" class="mc-button">Create New World & Host</button>
       </div>
-      <button id="btn-host-back" class="mc-button">Back</button>
+      <div class="menu-row">
+        <button id="btn-host-create" class="mc-button">Create & Host</button>
+        <button id="btn-host-create-back" class="mc-button">Back</button>
+      </div>
     </div>
   </div>
 
