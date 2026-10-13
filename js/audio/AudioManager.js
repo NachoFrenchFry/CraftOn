@@ -1,16 +1,11 @@
 // AudioManager.js — lazy AudioContext (resumed on the first gesture), buses with settings-driven
-// volumes, the pre-rendered SoundBank, spatial playback, footsteps and ambient loops. Sounds are rendered in
-// the background from boot (OfflineAudioContext needs no gesture), most-used first; the menu never waits for
-// them and a sound whose buffer is not ready yet is skipped.
+// volumes, the SoundBank of real audio files (Update #15: audio/<category>/<sound>/N.wav through audio/manifest.json,
+// loaded in the background from boot, most-used first; the menu never waits and a sound not loaded yet is skipped),
+// spatial playback, footsteps and the ambient loops (the wind is a looping file now, nothing is synthesized at runtime).
 
 import { SoundBank } from './SoundBank.js';
 import { SpatialAudio } from './SpatialAudio.js';
-import { registerBlockSounds } from './recipes/BlockSounds.js';
-import { registerPlayerSounds } from './recipes/PlayerSounds.js';
-import { registerLavaSounds } from './recipes/LavaSounds.js';
-import { registerUISounds } from './recipes/UISounds.js';
-import { registerAmbientSounds, WindLoop } from './recipes/AmbientSounds.js';
-import { registerMobSounds } from './recipes/MobSounds.js';
+import { soundId } from './SoundIds.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { BlockIds } from '../blocks/BlockIds.js';
 import { SEA_LEVEL } from '../config/Constants.js';
@@ -18,9 +13,31 @@ import { SEA_LEVEL } from '../config/Constants.js';
 const MAX_VOICES = 24;
 const RETRIGGER_MS = 30;
 const BUS_SETTING = { blocks: 'blocksVolume', player: 'playerVolume', ambient: 'ambientVolume', ui: 'uiVolume' };
-/** Render order for the background pre-render: what plays first in a session comes first. */
-const PRERENDER_PRIORITY = ['ui.', 'player.', 'grass.', 'dirt.', 'stone.', 'wood.', 'sand.', 'gravel.', 'plant.', 'glass.', 'water.', 'wool.', 'mob.', 'ambient.'];
-const PRERENDER_SAMPLE_RATE = 48000;
+
+/** A looping buffer (the wind bed) with a smoothed level and a /tick playback rate. */
+class LoopPlayer {
+  constructor(ctx, dest) {
+    this.ctx = ctx;
+    this.gain = ctx.createGain();
+    this.gain.gain.value = 0;
+    this.gain.connect(dest);
+    this.src = null;
+    this.rate = 1;
+  }
+  get started() { return !!this.src; }
+  start(buffer) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+    src.playbackRate.value = Math.max(0.0001, this.rate);
+    src.connect(this.gain);
+    src.start();
+    this.src = src;
+  }
+  /** Smoothly move toward a target volume (0..1). */
+  setLevel(level, time) { this.gain.gain.setTargetAtTime(level, time, 1.5); }
+  setRate(rate) { this.rate = rate; if (this.src) this.src.playbackRate.setTargetAtTime(Math.max(0.0001, rate), this.ctx.currentTime, 0.05); }
+}
 
 export class AudioManager {
   /**
@@ -46,21 +63,15 @@ export class AudioManager {
     this._dripTimer = 20 + Math.random() * 40;
     this._enclosed = false;
     this._nearWater = false;
-    registerBlockSounds(this.bank);
-    registerPlayerSounds(this.bank);
-    registerUISounds(this.bank);
-    registerAmbientSounds(this.bank);
-    registerMobSounds(this.bank);
-    registerLavaSounds(this.bank);
     events.on('settings:changed', (key) => { if (key.endsWith('Volume')) this.applyVolumes(); });
     const unlock = () => this.init();
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
   }
 
-  /** Start rendering every sound in the background (small batches, yielding between them). Safe to call more than once. */
-  prerender(sampleRate = PRERENDER_SAMPLE_RATE) {
-    return this.bank.renderInBackground(sampleRate, PRERENDER_PRIORITY);
+  /** Start loading every sound file in the background (small batches, yielding between them). Safe to call more than once. */
+  prerender() {
+    return this.bank.renderInBackground();
   }
 
   /** Create the context on the first user gesture; playback starts at once with whatever sounds are rendered. */
@@ -90,10 +101,11 @@ export class AudioManager {
     this.applyVolumes();
     this.spatial = new SpatialAudio(ctx);
     this.resume();
-    this.wind = new WindLoop(ctx, this.buses.ambient);
-    this.ready = true; // sounds still rendering in the background are skipped until their buffers exist
+    this.wind = new LoopPlayer(ctx, this.buses.ambient); // starts once audio/ambient/wind is decoded (update())
+    this.wind.setRate(this.timeScale);
+    this.ready = true; // sounds still loading in the background are skipped until their buffers exist
     this.events.emit('audio:ready');
-    await this.prerender(ctx.sampleRate); // no-op when boot already started it
+    await this.prerender(); // no-op when boot already started it
   }
 
   resume() {
@@ -116,17 +128,18 @@ export class AudioManager {
     return true;
   }
 
-  /** Non-positional playback. */
+  /** Non-positional playback. `name` is a sound id ("ui/click") or the old dotted name ("ui.click"). */
   play(name, bus = 'ui', volume = 1, rate = null) {
-    if (!this._canPlay(name)) return;
-    const buffer = this.bank.get(name);
+    const id = soundId(name);
+    if (!this._canPlay(id)) return;
+    const buffer = this.bank.get(id);
     if (!buffer) return;
     const ctx = this.ctx;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = (rate ?? (0.9 + Math.random() * 0.2)) * this.timeScale;
     const gain = ctx.createGain();
-    gain.gain.value = volume;
+    gain.gain.value = volume * this.bank.volumeOf(id);
     src.connect(gain);
     gain.connect(this.buses[bus] || this.buses.ui);
     this.activeVoices++;
@@ -136,11 +149,12 @@ export class AudioManager {
 
   /** Positional playback through the blocks bus. */
   playAt(name, x, y, z, bus = 'blocks', volume = 1, rate = null) {
-    if (!this._canPlay(name)) return;
-    const buffer = this.bank.get(name);
+    const id = soundId(name);
+    if (!this._canPlay(id)) return;
+    const buffer = this.bank.get(id);
     if (!buffer) return;
     this.activeVoices++;
-    const src = this.spatial.play(buffer, x, y, z, volume, (rate ?? (0.9 + Math.random() * 0.2)) * this.timeScale, this.buses[bus]);
+    const src = this.spatial.play(buffer, x, y, z, volume * this.bank.volumeOf(id), (rate ?? (0.9 + Math.random() * 0.2)) * this.timeScale, this.buses[bus] || this.buses.blocks);
     src.onended = () => { this.activeVoices--; };
   }
 
@@ -173,6 +187,7 @@ export class AudioManager {
       this._probeSurroundings(player, world);
     }
     if (this.wind) {
+      if (!this.wind.started) { const buffer = this.bank.get('ambient/wind'); if (buffer) this.wind.start(buffer); }
       const y = player.position.y;
       let level = 0.12 + Math.max(0, (y - 100) / 120) * 0.35;
       if (this._enclosed) level *= 0.25;
@@ -206,15 +221,15 @@ export class AudioManager {
 
   _updateWaterLoop() {
     if (this._nearWater && !this.waterLoop) {
-      const buffer = this.bank.get('ambient.water');
+      const buffer = this.bank.get('ambient/water');
       if (!buffer) return;
       const src = this.ctx.createBufferSource();
       src.buffer = buffer;
       src.loop = true;
-      src.playbackRate.value = this.timeScale;
+      src.playbackRate.value = Math.max(0.0001, this.timeScale);
       const gain = this.ctx.createGain();
       gain.gain.setValueAtTime(0.0001, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.35, this.ctx.currentTime + 1.5);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, 0.35 * this.bank.volumeOf('ambient/water')), this.ctx.currentTime + 1.5);
       src.connect(gain);
       gain.connect(this.buses.ambient);
       src.start();
@@ -231,7 +246,7 @@ export class AudioManager {
   setTimeScale(scale) {
     this.timeScale = Math.max(0, scale);
     if (this.waterLoop && this.ctx) this.waterLoop.src.playbackRate.setTargetAtTime(Math.max(0.0001, this.timeScale), this.ctx.currentTime, 0.05);
-    if (this.wind && this.wind.setRate) this.wind.setRate(Math.max(0.0001, this.timeScale));
+    if (this.wind) this.wind.setRate(this.timeScale);
   }
 
   /** Stop ambient loops (leaving a world). */

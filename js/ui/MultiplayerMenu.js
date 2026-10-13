@@ -1,7 +1,8 @@
-// MultiplayerMenu.js — the Multiplayer screens (Update #8): Host Server (pick one of your cloud worlds or create
-// one, choose the player limit, play and publish the lobby), Find Server (lobbies on this Wi-Fi, auto-refreshed
-// every 3 s, plus Join by code), the "Signed in somewhere else" kick screen (Reconnect / Log out) and the
-// "The host closed the server" notice.
+// MultiplayerMenu.js — the Multiplayer screens. Since Update #15 §2 the first screen is the server list: every public
+// server online plus the private ones on this network (list_lobbies, refreshed every 3 s and with Refresh), each with
+// the world name, host, players, a LAN badge for the same network and Join; "Join by code" at the top; "Host New
+// Server" opens the host flow (Update #8: pick one of your cloud worlds or create one, choose Public / Private and the
+// player limit). Also the "Signed in somewhere else" kick screen (Reconnect / Log out) and the disconnect notice.
 
 import { State } from '../core/GameState.js';
 import { hashSeed, randomSeed } from '../utils/Random.js';
@@ -9,6 +10,7 @@ import { detectNetworkHash } from '../net/NetworkId.js';
 import { GAME_VERSION, JOIN_CODE_PATTERN, MAX_PLAYERS_MIN, MAX_PLAYERS_MAX } from '../net/Protocol.js';
 
 const FIND_REFRESH_MS = 3000;
+export const EMPTY_LIST_TEXT = 'No servers online right now. Host one!';
 
 export class MultiplayerMenu {
   /** @param {import('../core/Game.js').Game} game */
@@ -19,12 +21,12 @@ export class MultiplayerMenu {
     this.hostRoot = $('host-menu');
     this.hostCreateRoot = $('host-create-menu');
     this.hostCreateError = $('host-create-error');
-    this.findRoot = $('find-menu');
     this.kickedRoot = $('kicked-menu');
     this.discRoot = $('disconnected-menu');
     this.hostList = $('host-world-list');
     this.hostError = $('host-error');
     this.hostMax = $('host-max');
+    this.hostVisibility = $('host-visibility');
     this.hostName = $('host-name');
     this.hostSeed = $('host-seed');
     this.hostMode = $('host-mode');
@@ -39,15 +41,14 @@ export class MultiplayerMenu {
     this.findTimer = null;
     this.busy = false;
     this.lobbies = [];
+    this.lastRefresh = 0;
     for (let n = MAX_PLAYERS_MIN; n <= MAX_PLAYERS_MAX; n++) { const o = document.createElement('option'); o.value = String(n); o.textContent = String(n); if (n === MAX_PLAYERS_MAX) o.selected = true; this.hostMax.appendChild(o); }
     const click = (id, fn) => $(id).addEventListener('click', () => { game.audio.playUI('click'); fn(); });
     click('btn-mp-host', () => this.showHost());
-    click('btn-mp-find', () => this.showFind());
     click('btn-mp-back', () => { this.hideAll(); game.ui.mainMenu.show(); });
     click('btn-host-back', () => this.showMain());
     click('btn-host-new', () => this.showHostCreate());
     click('btn-host-create-back', () => this.showHost());
-    click('btn-find-back', () => this.showMain());
     click('btn-host-create', () => this._createAndHost());
     click('btn-find-refresh', () => this._refreshLobbies(true));
     click('btn-join-code', () => this._joinByCode());
@@ -63,15 +64,24 @@ export class MultiplayerMenu {
 
   // ---- screens ----
 
-  showMain() {
+  /** The server list (the first Multiplayer screen); `error` shows a message (a failed join). */
+  showMain(error = null) {
     this.hideAll();
     this.game.ui.mainMenu.hide();
     this.root.classList.remove('hidden');
+    this._setFindError(error || '');
+    this.findStatus.innerHTML = '<span class="spinner"></span>Looking for servers…';
+    this.findList.innerHTML = '';
+    this._refreshLobbies();
+    this.findTimer = setInterval(() => this._refreshLobbies(), FIND_REFRESH_MS);
   }
+
+  /** Kept for callers of the old Find screen: the list with an error line. */
+  showFind(error = null) { this.showMain(error); }
 
   /** Hide every multiplayer screen (the kick screen too unless `keepKicked`). */
   hideAll(keepKicked = false) {
-    for (const el of [this.root, this.hostRoot, this.hostCreateRoot, this.findRoot, this.discRoot]) el.classList.add('hidden');
+    for (const el of [this.root, this.hostRoot, this.hostCreateRoot, this.discRoot]) el.classList.add('hidden');
     if (!keepKicked) this.kickedRoot.classList.add('hidden');
     this._stopPolling();
     this.game.input.textInputActive = false;
@@ -112,13 +122,18 @@ export class MultiplayerMenu {
     this.hostName.focus();
   }
 
+  /** The hosting options chosen on the Host screen. */
+  hostOptions() {
+    return { maxPlayers: parseInt(this.hostMax.value, 10) || MAX_PLAYERS_MAX, visibility: this.hostVisibility.value === 'private' ? 'private' : 'public' };
+  }
+
   async _host(worldId) {
     if (this.busy) return;
     this.busy = true;
-    const max = parseInt(this.hostMax.value, 10) || MAX_PLAYERS_MAX;
+    const opts = this.hostOptions();
     this.hideAll();
     try {
-      const ok = await this.game.hostWorld(worldId, max);
+      const ok = await this.game.hostWorld(worldId, opts);
       if (!ok && !this.game.state.inWorld) { await this.showHost(); this._setHostError("Couldn't start the server."); }
     } finally { this.busy = false; }
   }
@@ -136,57 +151,63 @@ export class MultiplayerMenu {
     this._host(record.id);
   }
 
-  /** The lobby list for this network, refreshed every 3 s while the screen is open; `error` shows a message (a failed join). */
-  showFind(error = null) {
-    this.hideAll();
-    this.game.ui.mainMenu.hide();
-    this.findRoot.classList.remove('hidden');
-    this._setFindError(error || '');
-    this.findStatus.innerHTML = '<span class="spinner"></span>Searching your network…';
-    this.findList.innerHTML = '';
-    this._refreshLobbies();
-    this.findTimer = setInterval(() => this._refreshLobbies(), FIND_REFRESH_MS);
-  }
-
   _stopPolling() { if (this.findTimer) { clearInterval(this.findTimer); this.findTimer = null; } }
   _setFindError(text) { this.findError.textContent = text || ''; this.findError.classList.toggle('hidden', !text); }
 
+  /** list_lobbies: every public server plus the private ones on this network (same network first). */
   async _refreshLobbies(manual = false) {
     const g = this.game;
-    if (this.findRoot.classList.contains('hidden')) return;
-    if (manual) this.findStatus.innerHTML = '<span class="spinner"></span>Searching your network…';
+    if (this.root.classList.contains('hidden') || this.refreshing) return;
+    this.refreshing = true;
+    if (manual) this.findStatus.innerHTML = '<span class="spinner"></span>Looking for servers…';
     try {
       if (!g.networkInfo) g.networkInfo = await detectNetworkHash({ mock: g.cloudMock });
       const info = g.networkInfo;
-      if (!info.detected) { this.findStatus.textContent = "Couldn't detect your network. Ask the host for the code and use Join by code."; this.findList.innerHTML = ''; return; }
-      const res = await g.cloud.rpc('find_lobbies', { p_network_hash: info.hash });
+      const res = await g.cloud.rpc('list_lobbies', { p_network_hash: info.detected ? info.hash : null });
       if (res.error) throw new Error(res.error.message);
-      this.lobbies = res.data || [];
+      const me = g.account && g.account.session ? g.account.session.user.id : null;
+      this.lobbies = (res.data || []).filter((l) => l.host_id !== me);
+      this.lastRefresh = Date.now();
     } catch (e) {
       this.findStatus.textContent = "Couldn't reach the server. Check your connection.";
+      this.refreshing = false;
       return;
     }
+    this.refreshing = false;
+    if (this.root.classList.contains('hidden')) return;
     this._renderLobbies();
   }
 
   _renderLobbies() {
     const list = this.lobbies;
+    const g = this.game;
     this.findList.innerHTML = '';
-    if (!list.length) { this.findStatus.textContent = 'No servers found on your network.'; return; }
-    this.findStatus.textContent = `${list.length} server${list.length === 1 ? '' : 's'} on your network`;
+    if (!list.length) {
+      this.findStatus.textContent = g.networkInfo && !g.networkInfo.detected ? "Couldn't detect your network: private servers on it are not listed." : '';
+      const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = EMPTY_LIST_TEXT;
+      this.findList.appendChild(empty);
+      return;
+    }
+    const lan = list.filter((l) => l.same_network).length;
+    this.findStatus.textContent = `${list.length} server${list.length === 1 ? '' : 's'} online` + (lan ? ` · ${lan} on your network` : '');
     for (const l of list) {
       const row = document.createElement('div');
       row.className = 'world-entry lobby-entry';
       row.dataset.lobby = l.id;
       const info = document.createElement('div'); info.className = 'world-info';
-      const name = document.createElement('div'); name.className = 'world-name'; name.textContent = l.world_name;
+      const name = document.createElement('div'); name.className = 'world-name';
+      const title = document.createElement('span'); title.textContent = l.world_name; name.appendChild(title);
+      if (l.same_network) { const badge = document.createElement('span'); badge.className = 'lobby-badge'; badge.textContent = 'LAN'; badge.title = 'On your network'; name.appendChild(badge); }
       const meta = document.createElement('div'); meta.className = 'world-meta';
       const mismatch = l.game_version !== GAME_VERSION;
       const full = l.player_count >= l.max_players;
-      meta.textContent = `${l.host_name} · ${l.player_count}/${l.max_players} players` + (mismatch ? ' · Different game version' : full ? ' · Full' : '');
+      meta.textContent = `${l.host_name} · ${l.player_count}/${l.max_players} players`;
+      if (mismatch || full) { const note = document.createElement('span'); note.className = 'lobby-note'; note.textContent = mismatch ? ' · Different version' : ' · Full'; meta.appendChild(note); }
+      if (mismatch) row.classList.add('unavailable');
       info.append(name, meta);
       const join = document.createElement('button'); join.className = 'mc-button small'; join.textContent = 'Join';
       join.disabled = mismatch || full;
+      join.title = mismatch ? 'Different version' : full ? 'The server is full' : '';
       join.addEventListener('click', () => { this.game.audio.playUI('click'); this._join(l); });
       row.append(info, join);
       this.findList.appendChild(row);

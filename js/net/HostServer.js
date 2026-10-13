@@ -5,9 +5,13 @@
 // one player), and time. Each player owns their own movement (light sanity checks) and inventory; guests' player
 // data is stored in the host's world save under `guests[userId]`. Snapshots of every player go out at 20 Hz and
 // of mobs / items at 12 Hz on the unreliable state channel; everything else on the reliable channel.
+// Update #15: the lobby is Public (listed for everyone) or Private (same network or by code), every link uses the
+// STUN + TURN servers from IceServers.js, and the host can Kick or Ban players (bans live in the world save as
+// meta.bans[userId]; a banned account is refused at the signaling step, before any WebRTC negotiation).
 // Never uses Supabase Realtime.
 
 import { PeerLink } from './PeerLink.js';
+import { getIceServers } from './IceServers.js';
 import { playerBlocksAt, playerHeightForPose, mobBlocksAt } from '../player/PlacementRules.js';
 import { pvpDamage, PVP_REACH, PVP_REACH_SLACK, deathMessage } from '../player/Damage.js';
 import { cleanChatText } from '../ui/Chat.js';
@@ -18,9 +22,9 @@ const CHAT_WINDOW_MS = 5000;
 import { attackDamage } from '../items/Tools.js';
 import { ARMOR_POINTS } from '../items/ItemDefinitions.js';
 import { Signaling } from './Signaling.js';
-import { detectNetworkHash, networkHash } from './NetworkId.js';
+import { detectNetworkHash } from './NetworkId.js';
 import { RemotePlayerManager } from './RemotePlayer.js';
-import { Msg, RejectReason, GAME_VERSION, MAX_PLAYERS_DEFAULT, PLAYER_SNAPSHOT_HZ, MOB_SNAPSHOT_HZ, encodePlayerState, decodePlayerState, encodeChunkBatches, makeJoinCode, Pose } from './Protocol.js';
+import { Msg, RejectReason, GAME_VERSION, MAX_PLAYERS_DEFAULT, VISIBILITIES, PLAYER_SNAPSHOT_HZ, MOB_SNAPSHOT_HZ, encodePlayerState, decodePlayerState, encodeChunkBatches, makeJoinCode, Pose } from './Protocol.js';
 import { BlockRegistry, BREAK_TIME, SOLID } from '../blocks/BlockRegistry.js';
 import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
@@ -38,11 +42,14 @@ const MODES = ['survival', 'creative', 'spectator'];
 export class HostServer {
   /**
    * @param {import('../core/Game.js').Game} game
-   * @param {{ maxPlayers?: number }} [opts]
+   * @param {{ maxPlayers?: number, visibility?: 'public'|'private' }} [opts]
    */
   constructor(game, opts = {}) {
     this.game = game;
     this.maxPlayers = Math.max(2, Math.min(8, opts.maxPlayers || MAX_PLAYERS_DEFAULT));
+    this.visibility = VISIBILITIES.includes(opts.visibility) ? opts.visibility : 'public';
+    /** { iceServers, turn, note } from the last getIceServers() (F3 shows whether a relay is available). */
+    this.ice = null;
     this.isHost = true;
     this.userId = game.account.session.user.id;
     this.name = game.account.username || 'host';
@@ -74,11 +81,11 @@ export class HostServer {
     const g = this.game;
     const net = await detectNetworkHash({ mock: g.cloudMock });
     this.networkDetected = net.detected;
-    // Without a detectable public address the lobby still exists for Join by code, under a hash nobody shares.
-    const hash = net.hash || await networkHash('unknown:' + this.userId);
+    this.ice = await getIceServers(g.cloud, { mock: g.cloudMock }); // fetched now; without a relay the game quietly stays STUN-only
+    // Without a detectable public address the lobby's network_hash is null: a Private lobby is then reachable by code only.
     const res = await g.cloud.from('lobbies').upsert({
-      world_name: String(this.worldName || 'World').slice(0, 32), network_hash: hash, join_code: this.joinCode,
-      player_count: 1, max_players: this.maxPlayers, game_version: GAME_VERSION,
+      world_name: String(this.worldName || 'World').slice(0, 32), network_hash: net.hash || null, join_code: this.joinCode,
+      player_count: 1, max_players: this.maxPlayers, game_version: GAME_VERSION, visibility: this.visibility,
     }, { onConflict: 'host_id' }).select('id, join_code').single();
     if (res.error) throw new Error('publish lobby: ' + (res.error.message || res.error));
     this.lobby = res.data;
@@ -153,6 +160,11 @@ export class HostServer {
     const userId = row.from_user;
     if (row.created_at && Date.now() - Date.parse(row.created_at) > 20000) return; // a guest that gave up long ago
     const attempt = (row.payload && row.payload.attempt) || null;
+    if (this.isBanned(userId)) { // refused before any negotiation: the guest's wait ends with the reason
+      console.info(`CraftOn net: refusing a banned account ${userId.slice(0, 8)}`);
+      await this.signaling.send(this.lobby.id, userId, 'reject', { reason: RejectReason.BANNED, attempt });
+      return;
+    }
     const stale = this.pending.get(userId);
     if (stale) {
       // The same offer seen twice (polling races) is already being answered. A *new* attempt from a guest whose
@@ -162,10 +174,12 @@ export class HostServer {
       try { stale.link && stale.link.close(); } catch (e) { /* ignore */ }
       this.pending.delete(userId);
     }
-    const peer = { userId, name: null, link: null, ready: false, state: null, stateTime: 0, mode: 'survival', held: 0, armor: null, remote: null, lastHit: 0, lastHurt: 0, health: 100, since: performance.now(), attempt };
+    const peer = { userId, name: null, link: null, ready: false, state: null, stateTime: 0, mode: 'survival', held: 0, armor: null, remote: null, lastHit: 0, lastHurt: 0, health: 100, since: performance.now(), attempt, kicked: null };
     this.pending.set(userId, peer);
+    const ice = await getIceServers(this.game.cloud, { mock: this.game.cloudMock }); // cached; refreshed before the credentials expire
+    this.ice = ice;
     peer.link = new PeerLink({
-      iceServers: [],
+      iceServers: ice.iceServers,
       onMessage: (msg, channel) => this._onMessage(peer, msg, channel),
       onClose: (reason) => this._peerClosed(peer, reason),
     });
@@ -200,6 +214,7 @@ export class HostServer {
   async _hello(peer, msg) {
     const reject = (reason) => { peer.link.send(Msg.REJECT, { reason }); setTimeout(() => peer.link.close(), 300); this.pending.delete(peer.userId); };
     if (msg.version !== GAME_VERSION) return reject(RejectReason.VERSION);
+    if (this.isBanned(msg.userId) || this.isBanned(peer.userId)) return reject(RejectReason.BANNED);
     if (this.peers.size + 1 >= this.maxPlayers) return reject(RejectReason.FULL);
     if (msg.userId === this.userId || this.peers.has(msg.userId) || msg.userId !== peer.userId) return reject(RejectReason.DUPLICATE);
     peer.name = String(msg.name || 'player').slice(0, 16);
@@ -468,16 +483,62 @@ export class HostServer {
     return meta.guests[userId];
   }
 
-  /** Everyone the server knows for the Server Settings screen: connected players first, then saved guests. */
+  /**
+   * Everyone the server knows for the Server Settings screen: connected players first (with their ping and connection
+   * type), then saved guests, then banned accounts that never played here. `banned` marks accounts in meta.bans.
+   */
   guestRows() {
     const meta = this.game.worldMeta;
+    const bans = this.bans;
     const rows = [], seen = new Set();
-    for (const p of this.peers.values()) { seen.add(p.userId); rows.push({ userId: p.userId, name: p.name, mode: p.mode, canChangeMode: !!p.canChangeMode, online: true }); }
+    for (const p of this.peers.values()) { seen.add(p.userId); rows.push({ userId: p.userId, name: p.name, mode: p.mode, canChangeMode: !!p.canChangeMode, online: true, ping: Math.round(p.link.rtt), connection: p.link.connectionType, banned: !!bans[p.userId] }); }
     for (const [id, gst] of Object.entries(meta ? meta.guests : {})) {
       if (seen.has(id)) continue;
-      rows.push({ userId: id, name: gst.name || id.slice(0, 8), mode: MODES.includes(gst.mode) ? gst.mode : this.defaultMode, canChangeMode: !!gst.canChangeMode, online: false });
+      seen.add(id);
+      rows.push({ userId: id, name: gst.name || id.slice(0, 8), mode: MODES.includes(gst.mode) ? gst.mode : this.defaultMode, canChangeMode: !!gst.canChangeMode, online: false, ping: null, connection: null, banned: !!bans[id] });
+    }
+    for (const [id, b] of Object.entries(bans)) {
+      if (seen.has(id)) continue;
+      rows.push({ userId: id, name: (b && b.name) || id.slice(0, 8), mode: this.defaultMode, canChangeMode: false, online: false, ping: null, connection: null, banned: true });
     }
     return rows;
+  }
+
+  // ---- Kick and Ban (Update #15 §2) ----
+
+  /** userId → { name, at } in the world save (created on first use). */
+  get bans() { const meta = this.game.worldMeta; if (!meta) return {}; if (!meta.bans || typeof meta.bans !== 'object') meta.bans = {}; return meta.bans; }
+  isBanned(userId) { return !!(userId && Object.prototype.hasOwnProperty.call(this.bans, userId)); }
+
+  /** Disconnect a connected player with a reason it will see; returns false when nobody by that id is connected. */
+  kick(userId, reason = RejectReason.KICKED) {
+    const peer = this.peers.get(userId);
+    if (!peer) return false;
+    peer.kicked = reason;
+    peer.link.send(Msg.KICK, { reason });
+    setTimeout(() => this._peerClosed(peer, reason === RejectReason.BANNED ? 'banned' : 'kicked'), 300); // the message gets out first
+    return true;
+  }
+
+  /** Ban an account for this world (saved with it) and kick it if it is connected. */
+  ban(userId, name = null) {
+    if (!userId || userId === this.userId) return false;
+    const peer = this.peers.get(userId);
+    const meta = this.game.worldMeta;
+    const known = (meta && meta.guests && meta.guests[userId] && meta.guests[userId].name) || null;
+    this.bans[userId] = { name: String(name || (peer && peer.name) || known || userId.slice(0, 8)).slice(0, 16), at: Date.now() };
+    this.game.session.changedSinceSave = true;
+    if (peer) this.kick(userId, RejectReason.BANNED);
+    this.game.events.emit('net:changed');
+    return true;
+  }
+
+  unban(userId) {
+    if (!this.isBanned(userId)) return false;
+    delete this.bans[userId];
+    this.game.session.changedSinceSave = true;
+    this.game.events.emit('net:changed');
+    return true;
   }
 
   /** Host sets a guest's mode (saved; a connected guest switches at once and everyone sees the new mode). */
@@ -511,7 +572,7 @@ export class HostServer {
     if (!wasIn) return;
     if (peer.remote) { this.remote.remove(peer.userId); peer.remote = null; }
     this.broadcast(Msg.LEAVE, { id: peer.userId });
-    if (this.running) this.game.systemChat(`${peer.name || 'A player'} left the game`, 'yellow');
+    if (this.running) this.game.systemChat(`${peer.name || 'A player'} ${peer.kicked === RejectReason.BANNED ? 'was banned from the server' : peer.kicked ? 'was kicked from the server' : 'left the game'}`, 'yellow');
     this._heartbeat();
   }
 

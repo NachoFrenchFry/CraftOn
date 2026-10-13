@@ -70,6 +70,20 @@ export class DebugOverlay {
     el.style.display = text ? '' : 'none';
   }
 
+  /** Update #15 §3: how each connection travels (LAN / Direct / Relay (TURN)) and its ping; empty in single player. */
+  _networkLine() {
+    const net = this.game.net;
+    if (!net) return '';
+    const relay = net.ice ? (net.ice.turn ? 'TURN ok' : 'STUN only') : 'ICE pending';
+    if (net.isHost) {
+      const peers = [...net.peers.values()].map((p) => `${p.name || p.userId.slice(0, 6)}: ${p.link.connectionType || 'connecting'} ${Math.round(p.link.rtt)} ms`);
+      return `Network: hosting (${net.visibility}, ${relay}) · ${net.playerCount}/${net.maxPlayers} players${peers.length ? ' · ' + peers.join(' · ') : ''}`;
+    }
+    const rp = this.game.remotePlayers.get(net.hostId);
+    const interp = rp && rp.interp ? ` · interp ${Math.round(rp.interp.delay * 1000)} ms (jitter ${Math.round(rp.interp.jitter * 1000)} ms)` : '';
+    return `Network: guest of ${net.welcome ? net.welcome.hostName : 'host'} (${relay}) · ${net.link && net.link.connectionType || 'connecting'} · ping ${net.link ? Math.round(net.link.rtt) : 0} ms${interp}`;
+  }
+
   refresh() {
     const g = this.game;
     const p = g.player;
@@ -93,6 +107,7 @@ export class DebugOverlay {
     this._set(i++, t && t.hit ? `Target: ${BlockRegistry.nameOf(t.blockId)} at ${t.blockPos.x} ${t.blockPos.y} ${t.blockPos.z}` : 'Target: none');
     this._set(i++, `Mode: ${p.gameMode}  ${p.flying ? 'flying ' : ''}${p.sprinting ? 'sprinting ' : ''}${p.sneaking ? 'sneaking ' : ''}${p.inWater ? 'in water ' : ''}${p.onGround ? 'on ground' : 'airborne'}   swimming: ${p.swimming}${p.crawling ? ' (crawling)' : ''}`);
     this._set(i++, `Perspective: ${['first person', 'third person (back)', 'third person (front)'][g.cameraController.perspective]}   Items: ${g.entities.items.length}   Armor: ${g.inventory.armorPoints()}`);
+    this._set(i++, this._networkLine());
     const rs = g.settings.get('renderScale');
     this._set(i++, `Render scale: ${Math.round(g.renderer.renderScale * 100)}%${rs === 0 ? ' (auto)' : ''}   FPS cap: ${g.loop.maxFps > 0 ? g.loop.maxFps : 'unlimited'}   Sim distance: ${g.settings.get('simulationDistance')} chunks   Shaders: ${g.settings.get('shadersOn') ? g.settings.get('shaderPreset') : 'off'}`);
     const pr = g.profiler;

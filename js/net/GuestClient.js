@@ -3,9 +3,11 @@
 // items, players) and then play: the guest simulates its own movement and predicts its own block changes
 // (sending requests the host validates; a rejection reverts the block), asks the host to pick up items and to
 // hurt mobs, mirrors every host broadcast (blocks, water, mobs, items, other players), and sends its player
-// data and inventory to the host for saving. Never uses Supabase Realtime.
+// data and inventory to the host for saving. Since Update #15 the link uses STUN + TURN (IceServers.js), so hosts on
+// other networks are reachable too; a KICK from the host ends the session with the host's reason. Never uses Supabase Realtime.
 
 import { PeerLink } from './PeerLink.js';
+import { getIceServers } from './IceServers.js';
 import { ItemStack } from '../items/ItemStack.js';
 import { Signaling } from './Signaling.js';
 import { Msg, RejectReason, GAME_VERSION, PLAYER_SNAPSHOT_HZ, JOIN_TIMEOUT_MS, encodePlayerState, decodeChunkRow } from './Protocol.js';
@@ -14,10 +16,10 @@ import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
 
 const INV_SYNC_SECONDS = 2;
 
-/** Toast per host rejection reason; unlisted reasons (stale request, rule) stay silent. */
-/** Time allowed for the ICE connection and the WELCOME once the host's answer arrived. */
-const CONNECT_TIMEOUT_MS = 15000;
+/** Time allowed for the ICE connection and the WELCOME once the host's answer arrived (a relay can take a few seconds). */
+const CONNECT_TIMEOUT_MS = JOIN_TIMEOUT_MS;
 
+/** Toast per host rejection reason; unlisted reasons (stale request, rule) stay silent. */
 const REJECT_TEXT = Object.freeze({ far: 'Too far away', entity: 'Something is in the way' });
 
 export class GuestClient {
@@ -32,6 +34,10 @@ export class GuestClient {
     this.lobby = null;
     this.hostId = null;
     this.welcome = null;
+    /** { iceServers, turn, note } used for this link (F3). */
+    this.ice = null;
+    /** The host's reason when it kicked or banned us (Update #15). */
+    this.kickReason = null;
     /** Whether the host lets this guest change its own game mode (Update #9 §1; the host decides). */
     this.canChangeMode = false;
     this.healthDirty = false; this.healthTimer = 0;
@@ -64,8 +70,10 @@ export class GuestClient {
     const remaining = () => Math.max(500, timeoutMs - (Date.now() - started));
     const welcomePromise = new Promise((resolve, reject) => { this._welcomeDone = { resolve, reject }; });
     this._chunksPromise = new Promise((resolve) => { this._chunksDone = resolve; });
+    const g = this.game;
+    this.ice = await getIceServers(g.cloud, { mock: g.cloudMock }); // without a relay the link quietly uses STUN only
     this.link = new PeerLink({
-      iceServers: [],
+      iceServers: this.ice.iceServers,
       onMessage: (msg, channel) => this._onMessage(msg, channel),
       onOpen: () => { this.connected = true; this.link.send(Msg.HELLO, { userId: this.userId, name: this.name, version: GAME_VERSION, instanceId: this.game.sessionGuard ? this.game.sessionGuard.instanceId : '' }); },
       onClose: (reason) => this._closed(reason),
@@ -79,7 +87,7 @@ export class GuestClient {
     if (row.kind === 'reject') { this.close(false); throw new Error(row.payload && row.payload.reason ? row.payload.reason : 'The host rejected the connection.'); }
     await this.link.acceptAnswer(row.payload.sdp);
     // The answer is here: the ICE connection gets its own budget (the signaling may have used most of the first one).
-    const timer = setTimeout(() => { if (!this.connected) this._welcomeDone.reject(new Error("Couldn't connect to the host. Some networks (school, office or guest Wi-Fi) block devices from talking to each other.")); }, Math.max(remaining(), CONNECT_TIMEOUT_MS));
+    const timer = setTimeout(() => { if (!this.connected) this._welcomeDone.reject(new Error(RejectReason.UNREACHABLE)); }, Math.max(remaining(), CONNECT_TIMEOUT_MS));
     try {
       const welcome = await welcomePromise;
       clearTimeout(timer);
@@ -177,6 +185,7 @@ export class GuestClient {
       case Msg.ITEM_REMOVE: g.entities.removeById(msg.id); return;
       case Msg.ITEM_GRANT: { const left = g.inventory.addItem(msg.item, msg.n); if (left < msg.n) g.events.emit('item:pickup', msg.item, msg.n - left); return; }
       case Msg.HOST_CLOSED: this._closed('host closed'); return;
+      case Msg.KICK: this.kickReason = msg.reason === RejectReason.BANNED ? RejectReason.BANNED : RejectReason.KICKED; this._closed(this.kickReason === RejectReason.BANNED ? 'banned' : 'kicked'); return;
       default: return;
     }
   }
@@ -230,7 +239,7 @@ export class GuestClient {
     console.info(`CraftOn net: connection to the host ended (${reason})`);
     this.closed = true;
     this.connected = false;
-    if (this._welcomeDone) this._welcomeDone.reject(new Error(reason === 'host closed' ? RejectReason.CLOSED : 'Connection lost.'));
+    if (this._welcomeDone) this._welcomeDone.reject(new Error(reason === 'host closed' ? RejectReason.CLOSED : this.kickReason || 'Connection lost.'));
     if (this.onHostClosed) this.onHostClosed(reason);
   }
 

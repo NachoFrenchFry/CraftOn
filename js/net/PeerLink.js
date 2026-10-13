@@ -2,14 +2,44 @@
 // (local description resolved only once ICE gathering completed), two data channels ("reliable": ordered,
 // retransmitted — world data, block changes, events; "state": unordered, maxRetransmits 0 — frequent
 // snapshots), a ping every PING_SECONDS with a PEER_TIMEOUT_SECONDS timeout, and close detection. It knows
-// nothing about how peers were found (LAN lobbies today, online later): `iceServers` is a parameter, [] for
-// LAN-only (host / mDNS candidates only).
+// nothing about how peers were found: `iceServers` is a parameter (STUN + TURN from IceServers.js since Update #15,
+// [] for a LAN-only link with host / mDNS candidates only). `connectionType` says how the selected candidate pair
+// travels — "LAN" (both ends private addresses), "Direct" (STUN-punched) or "Relay (TURN)" — from getStats(), refreshed
+// with every ping, for F3 and the host's player list.
 
 import { Msg, PING_SECONDS, PEER_TIMEOUT_SECONDS, encode, decode } from './Protocol.js';
 
-const GATHER_TIMEOUT_MS = 3000;
+/** Non-trickle ICE: the offer / answer carries every candidate gathered within this long (relay allocations take a moment). */
+const GATHER_TIMEOUT_MS = 4000;
 /** Non-trickle ICE: once at least one candidate is in and none arrived for this long, the description is sent as is. */
 const GATHER_QUIET_MS = 400;
+
+/** Private (RFC 1918 / link-local / ULA) or mDNS addresses mean the same LAN. */
+export function isPrivateAddress(addr) {
+  if (!addr) return false;
+  const a = String(addr).toLowerCase();
+  if (a.endsWith('.local')) return true;
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(a);
+  if (v4) {
+    const [x, y] = [Number(v4[1]), Number(v4[2])];
+    return x === 10 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 169 && y === 254) || x === 127;
+  }
+  return a.startsWith('fc') || a.startsWith('fd') || a.startsWith('fe80') || a === '::1';
+}
+
+/**
+ * 'Relay (TURN)' when either side is a relay candidate; 'LAN' when both ends talk through host candidates (two
+ * interfaces that reach each other directly, so the same network — also with public IPv6 addresses) or both
+ * addresses are private / mDNS; else 'Direct' (server-reflexive: punched through NAT).
+ */
+export function classifyPair(local, remote) {
+  if (!local || !remote) return null;
+  if (local.candidateType === 'relay' || remote.candidateType === 'relay') return 'Relay (TURN)';
+  const la = local.address || local.ip, ra = remote.address || remote.ip;
+  if (local.candidateType === 'host' && remote.candidateType === 'host') return 'LAN';
+  if (la && ra && isPrivateAddress(la) && isPrivateAddress(ra)) return 'LAN';
+  return 'Direct';
+}
 
 export class PeerLink {
   /**
@@ -25,6 +55,11 @@ export class PeerLink {
     this.open = false;
     this.closed = false;
     this.rtt = 0;
+    /** 'LAN' | 'Direct' | 'Relay (TURN)' | null while unknown (Update #15). */
+    this.connectionType = null;
+    /** The selected pair as "type address" strings (diagnostics). */
+    this.lastPair = null;
+    this._statsBusy = false;
     this.lastPong = performance.now();
     this._pingTimer = null;
     this._pingN = 0;
@@ -115,6 +150,27 @@ export class PeerLink {
     if (!this.open) return;
     if (performance.now() - this.lastPong > PEER_TIMEOUT_SECONDS * 1000) { this._closed('timeout'); return; }
     this.send(Msg.PING, { n: performance.now() });
+    this.refreshConnectionType();
+  }
+
+  /** Classify the selected candidate pair (sets `connectionType`; resolves with it). */
+  async refreshConnectionType() {
+    if (this._statsBusy || this.closed) return this.connectionType;
+    this._statsBusy = true;
+    try {
+      const stats = await this.pc.getStats();
+      const byId = new Map(); stats.forEach((r) => byId.set(r.id, r));
+      let pair = null;
+      stats.forEach((r) => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = byId.get(r.selectedCandidatePairId) || pair; });
+      if (!pair) stats.forEach((r) => { if (r.type === 'candidate-pair' && r.state === 'succeeded' && (r.nominated || r.selected)) pair = pair || r; });
+      if (pair) {
+        const l = byId.get(pair.localCandidateId), r = byId.get(pair.remoteCandidateId);
+        const type = classifyPair(l, r);
+        if (type) { this.connectionType = type; this.lastPair = { local: l && `${l.candidateType} ${l.address || l.ip || '?'}`, remote: r && `${r.candidateType} ${r.address || r.ip || '?'}` }; }
+      }
+    } catch (e) { /* stats unavailable: keep the last value */ }
+    finally { this._statsBusy = false; }
+    return this.connectionType;
   }
 
   /** Send a JSON message on the reliable channel (or `channel = 'state'` for snapshots). Returns false when not open. */

@@ -3,9 +3,10 @@
 // session and the worlds, like the real client, and every query re-reads the shared tables first, so two tabs
 // of the same browser see each other's rows (the headless host / guest and kick tests). Row Level Security is
 // imitated per table: worlds, chunks and active_sessions are owner-only; lobbies are owner-only except through
-// the find_lobbies / find_lobby_by_code RPCs; signals are visible to their sender and recipient and can only
-// be inserted toward or from a lobby's host. The headless tests use only this; they never reach the real
-// project.
+// the list_lobbies / find_lobbies / find_lobby_by_code RPCs; signals are visible to their sender and recipient and can only
+// be inserted toward or from a lobby's host. The Edge Function `turn-credentials` (Update #15 §3) is imitated by
+// `functions.invoke`, which answers with fake TURN servers on a reserved `.invalid` host (nothing is contacted). The
+// headless tests use only this; they never reach the real project.
 
 const STORAGE_KEY = 'crafton.mockcloud.v1';
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
@@ -91,7 +92,10 @@ class Query {
         if (this.table === 'lobbies') {
           row.host_id = uid; row.id = row.id || uuid(); row.created_at = row.created_at || now();
           if (!row.world_name || row.world_name.length > 32) return { data: null, error: { message: 'world_name length', status: 400 } };
-          if (!row.network_hash || row.network_hash.length < 16 || row.network_hash.length > 128) return { data: null, error: { message: 'network_hash length', status: 400 } };
+          if (row.network_hash != null && (row.network_hash.length < 16 || row.network_hash.length > 128)) return { data: null, error: { message: 'network_hash length', status: 400 } };
+          if (row.network_hash === undefined) row.network_hash = null;
+          row.visibility = row.visibility ?? 'public';
+          if (!['public', 'private'].includes(row.visibility)) return { data: null, error: { message: 'new row for relation "lobbies" violates check constraint "lobbies_visibility_check"', status: 400 } };
           if (!JOIN_CODE.test(row.join_code || '')) return { data: null, error: { message: 'join_code format', status: 400 } };
           if (state.lobbies.some((l) => l.join_code === row.join_code && l.host_id !== uid)) return { data: null, error: { message: 'duplicate key value violates unique constraint "lobbies_join_code_key"', status: 409 } };
           row.player_count = row.player_count ?? 1; row.max_players = row.max_players ?? 8; row.game_version = row.game_version ?? '';
@@ -131,6 +135,10 @@ class Query {
 
 export class MockSupabase {
   constructor() {
+    /** Tests: every Edge Function call; `turnFails` makes turn-credentials answer 404 (not deployed) and `turnEmpty` { iceServers: [] } (no provider). */
+    this.functionCalls = [];
+    this.turnFails = false;
+    this.turnEmpty = false;
     this.state = loadState();
     this.listeners = new Set();
     this.offline = false;          // tests can flip this to simulate "can't reach the server"
@@ -179,9 +187,45 @@ export class MockSupabase {
       return { id: l.id, host_id: l.host_id, host_name: prof ? prof.username : 'host', world_name: l.world_name, player_count: l.player_count, max_players: l.max_players, game_version: l.game_version };
     };
     const fresh = (l) => Date.now() - Date.parse(l.updated_at) < LOBBY_FRESH_MS;
-    if (name === 'find_lobbies') return { data: this.state.lobbies.filter((l) => l.network_hash === args.p_network_hash && fresh(l)).map(lobbyRow), error: null };
+    if (name === 'list_lobbies') {
+      // public_servers.sql: every fresh public lobby plus the private ones on the caller's network, same network first.
+      const hash = args.p_network_hash || null;
+      const same = (l) => !!hash && l.network_hash === hash;
+      const rows = this.state.lobbies.filter((l) => fresh(l) && ((l.visibility || 'public') === 'public' || same(l)))
+        .sort((a, b) => (same(b) - same(a)) || (Date.parse(b.updated_at) - Date.parse(a.updated_at)))
+        .map((l) => ({ ...lobbyRow(l), same_network: same(l) }));
+      return { data: rows, error: null };
+    }
+    if (name === 'find_lobbies') return { data: this.state.lobbies.filter((l) => l.network_hash != null && l.network_hash === args.p_network_hash && fresh(l)).map(lobbyRow), error: null };
     if (name === 'find_lobby_by_code') return { data: this.state.lobbies.filter((l) => l.join_code === String(args.p_code || '').toUpperCase() && fresh(l)).map(lobbyRow), error: null };
     return { data: null, error: { message: `function ${name} does not exist`, status: 404 } };
+  }
+
+  /** Edge Functions (Update #15 §3): `turn-credentials` answers like the real one, with servers on a reserved host. */
+  get functions() {
+    const mock = this;
+    return {
+      async invoke(name, opts = {}) {
+        if (mock.offline) return { data: null, error: { message: 'Failed to send a request to the Edge Function', name: 'FunctionsFetchError' } };
+        mock.functionCalls.push({ name, at: Date.now(), method: (opts && opts.method) || 'POST' });
+        if (!mock.state.session) return { data: null, error: { message: 'Invalid JWT', name: 'FunctionsHttpError', status: 401 } };
+        if (name !== 'turn-credentials') return { data: null, error: { message: `Function ${name} not found`, name: 'FunctionsHttpError', status: 404 } };
+        if (mock.turnFails) return { data: null, error: { message: 'Requested function was not found', name: 'FunctionsHttpError', context: { status: 404 } } };
+        const ttl = 7200;
+        if (mock.turnEmpty) return { data: { iceServers: [], ttl, provider: null }, error: null };
+        return {
+          data: {
+            iceServers: [
+              { urls: ['stun:stun.mockcloud.invalid:3478'] },
+              { urls: ['turn:turn.mockcloud.invalid:3478?transport=udp', 'turn:turn.mockcloud.invalid:3478?transport=tcp', 'turns:turn.mockcloud.invalid:5349?transport=tcp'], username: 'mock-' + Math.floor(Date.now() / 1000 + ttl), credential: 'mock-credential' },
+            ],
+            ttl,
+            provider: 'mock',
+          },
+          error: null,
+        };
+      },
+    };
   }
 
   /** Re-read the shared tables another tab may have changed (this tab keeps its own session). */

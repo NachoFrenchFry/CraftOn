@@ -6,7 +6,7 @@
 import { encodeChunk, decodeChunk } from '../core/cloud/ChunkCodec.js';
 
 /** Hosts and guests must match exactly ("Different game version"). */
-export const GAME_VERSION = '12';
+export const GAME_VERSION = '15';
 export const MAX_PLAYERS_DEFAULT = 8;
 export const MAX_PLAYERS_MIN = 2;
 export const MAX_PLAYERS_MAX = 8;
@@ -14,11 +14,17 @@ export const CHUNK_BATCH = 20;
 /** Rates (Hz) and delays (s). */
 export const PLAYER_SNAPSHOT_HZ = 20;
 export const MOB_SNAPSHOT_HZ = 12;
+/** Interpolation buffer (Update #15 §3): INTERP_DELAY on a steady link, up to INTERP_DELAY_MAX when the arrivals jitter. */
 export const INTERP_DELAY = 0.1;
+export const INTERP_DELAY_MAX = 0.25;
 export const EXTRAPOLATE_MAX = 0.2;
 export const PING_SECONDS = 2;
-export const PEER_TIMEOUT_SECONDS = 6;
-export const JOIN_TIMEOUT_MS = 15000;
+/** No pong for this long closes the link (Update #15: 15 s — a guest generating its spawn chunks or a relayed link with a hiccup must not drop). */
+export const PEER_TIMEOUT_SECONDS = 15;
+/** Join: the host's answer and then the ICE connection each get this long (Update #15: relays can take a while). */
+export const JOIN_TIMEOUT_MS = 20000;
+/** Lobby visibility (Update #15 §2): public lobbies are listed for everyone, private ones only on the host's network or by code. */
+export const VISIBILITIES = Object.freeze(['public', 'private']);
 
 export const Msg = Object.freeze({
   HELLO: 'hello', REJECT: 'reject', WELCOME: 'welcome', CHUNKS: 'chunks',
@@ -32,6 +38,8 @@ export const Msg = Object.freeze({
   BLOCKS: 'blocks', THROW: 'throw',
   JOIN: 'join', LEAVE: 'leave', INV: 'inv', BYE: 'bye', HOST_CLOSED: 'hostClosed',
   PING: 'ping', PONG: 'pong',
+  // Update #15 §2: KICK host → guest { reason } right before the host closes the link (kicked or banned)
+  KICK: 'kick',
   // Update #12: CHAT guest → host { text } and host → all { name, text, host } or { system, color }; TICK host → guests { rate, frozen }
   CHAT: 'chat', TICK: 'tick',
   // state channel
@@ -43,6 +51,9 @@ export const RejectReason = Object.freeze({
   VERSION: 'Different game version.',
   DUPLICATE: 'That account is already in this world.',
   CLOSED: 'The host closed the server.',
+  BANNED: 'You are banned from this server.',
+  KICKED: 'You were kicked from the server.',
+  UNREACHABLE: "Couldn't connect. The host's network may be blocking connections.",
 });
 
 /** Pose bits in player snapshots. */

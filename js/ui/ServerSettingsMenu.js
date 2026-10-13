@@ -2,6 +2,8 @@
 // hosting (in single player the same screen is "World Settings" with only the world toggles: PvP, keep inventory): the default game mode for new players, the host's own mode, and per player a mode selector plus a
 // "Can change own game mode" toggle (off by default). Everything is saved in the host's world
 // (meta.defaultGameMode, meta.guests[id].mode / canChangeMode) and applied to connected guests at once.
+// Update #15 §2: connected rows show the connection type and ping, every row has Kick (online) and Ban / Unban
+// (bans are saved in the world as meta.bans); the list refreshes every 2 s while open for the pings.
 const MODES = ['survival', 'creative', 'spectator'];
 const cap = (m) => m.charAt(0).toUpperCase() + m.slice(1);
 
@@ -18,6 +20,7 @@ export class ServerSettingsMenu {
     this.keepInv = document.getElementById('srv-keep-inv');
     this.hostOnly = [...this.root.querySelectorAll('.srv-host-only')];
     this.onDone = null;
+    this.timer = null;
     // World settings (Update #9 §8): PvP (hosting only) and keep inventory, saved in the world, sent to guests.
     this.pvp.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('pvp', this.pvp.checked); });
     this.keepInv.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('keepInventory', this.keepInv.checked); });
@@ -30,11 +33,13 @@ export class ServerSettingsMenu {
 
   get visible() { return !this.root.classList.contains('hidden'); }
 
-  open(onDone) { this.onDone = onDone; this.refresh(); this.root.classList.remove('hidden'); }
+  open(onDone) { this.onDone = onDone; this.refresh(); this.root.classList.remove('hidden'); this._startTimer(); }
   /** Done: back to whoever opened the screen (the pause menu). */
-  close() { this.root.classList.add('hidden'); const cb = this.onDone; this.onDone = null; if (cb) cb(); }
+  close() { this.root.classList.add('hidden'); this._stopTimer(); const cb = this.onDone; this.onDone = null; if (cb) cb(); }
   /** Hidden by a state change (the game resumed): no callback. */
-  hide() { this.root.classList.add('hidden'); this.onDone = null; }
+  hide() { this.root.classList.add('hidden'); this._stopTimer(); this.onDone = null; }
+  _startTimer() { this._stopTimer(); this.timer = setInterval(() => { if (this.visible && !this.root.contains(document.activeElement)) this.refresh(); }, 2000); }
+  _stopTimer() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
 
   _setWorld(key, value) {
     const g = this.game;
@@ -59,9 +64,17 @@ export class ServerSettingsMenu {
     if (!rows.length) { const e = document.createElement('div'); e.className = 'srv-empty'; e.textContent = 'No one has joined yet.'; this.list.appendChild(e); return; }
     for (const r of rows) {
       const row = document.createElement('div');
-      row.className = 'srv-row' + (r.online ? ' online' : '');
+      row.className = 'srv-row' + (r.online ? ' online' : '') + (r.banned ? ' banned' : '');
       row.dataset.userId = r.userId;
-      const name = document.createElement('span'); name.className = 'srv-name'; name.textContent = r.name + (r.online ? '' : ' (offline)'); row.appendChild(name);
+      const name = document.createElement('span'); name.className = 'srv-name'; name.textContent = r.name + (r.banned ? ' (banned)' : r.online ? '' : ' (offline)'); row.appendChild(name);
+      if (r.online) { const netEl = document.createElement("span"); netEl.className = "srv-net"; netEl.textContent = `${r.connection || "connecting"} · ${r.ping} ms`; row.appendChild(netEl); }
+      if (r.banned) {
+        const unban = document.createElement('button'); unban.className = 'mc-button tiny srv-unban'; unban.textContent = 'Unban';
+        unban.addEventListener('click', () => { this.game.audio.playUI('click'); net.unban(r.userId); this.refresh(); });
+        row.appendChild(unban);
+        this.list.appendChild(row);
+        continue;
+      }
       const sel = document.createElement('select'); sel.className = 'srv-mode';
       for (const m of MODES) { const o = document.createElement('option'); o.value = m; o.textContent = cap(m); sel.appendChild(o); }
       sel.value = r.mode;
@@ -72,6 +85,14 @@ export class ServerSettingsMenu {
       cb.addEventListener('change', () => { this.game.audio.playUI('click'); net.setGuestCanChange(r.userId, cb.checked); });
       lab.appendChild(cb); lab.appendChild(document.createTextNode(' Can change own game mode'));
       row.appendChild(lab);
+      if (r.online) {
+        const kick = document.createElement('button'); kick.className = 'mc-button tiny srv-kick'; kick.textContent = 'Kick';
+        kick.addEventListener('click', () => { this.game.audio.playUI('click'); net.kick(r.userId); this.refresh(); });
+        row.appendChild(kick);
+      }
+      const ban = document.createElement('button'); ban.className = 'mc-button tiny danger srv-ban'; ban.textContent = 'Ban';
+      ban.addEventListener('click', () => { this.game.audio.playUI('click'); net.ban(r.userId, r.name); this.refresh(); });
+      row.appendChild(ban);
       this.list.appendChild(row);
     }
   }

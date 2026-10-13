@@ -46,7 +46,7 @@ import { applyBrightness, lightColor } from '../rendering/LightUniforms.js';
 import { TorchEffects } from '../rendering/TorchEffects.js';
 import { getTileIndex } from '../rendering/AtlasLayout.js';
 import { CHUNK_SIZE } from '../config/Constants.js';
-import { MAX_PLAYERS_DEFAULT } from '../net/Protocol.js';
+import { MAX_PLAYERS_DEFAULT, RejectReason } from '../net/Protocol.js';
 import { chunkKeyString } from '../world/ChunkCoords.js';
 import { intersectsSolid } from '../entities/EntityPhysics.js';
 import { SPECTATOR_SPEED_MIN, SPECTATOR_SPEED_MAX, SPECTATOR_SPEED_STEP } from '../config/Constants.js';
@@ -375,17 +375,18 @@ export class Game {
   /** True while this tab is a guest on someone else's server. */
   get isGuest() { return !!(this.net && !this.net.isHost); }
 
-  /** Load one of my worlds and host it (Multiplayer → Host Server). */
-  async hostWorld(worldId, maxPlayers = MAX_PLAYERS_DEFAULT) {
+  /** Load one of my worlds and host it (Multiplayer → Host New Server). `opts`: { maxPlayers, visibility } or just the player limit. */
+  async hostWorld(worldId, opts = MAX_PLAYERS_DEFAULT) {
     const ok = await this.startWorld(worldId);
     if (!ok) return false;
-    return this.startHosting(maxPlayers);
+    return this.startHosting(opts);
   }
 
-  /** Publish the lobby for the world being played; the host plays on as a normal player. */
-  async startHosting(maxPlayers = MAX_PLAYERS_DEFAULT) {
+  /** Publish the lobby for the world being played; the host plays on as a normal player. `opts`: { maxPlayers, visibility } or the player limit. */
+  async startHosting(opts = MAX_PLAYERS_DEFAULT) {
     if (this.net || !this.state.inWorld || this.session.remote) return false;
-    const host = new HostServer(this, { maxPlayers });
+    const options = typeof opts === 'number' ? { maxPlayers: opts } : { ...(opts || {}) };
+    const host = new HostServer(this, options);
     try { await host.start(); } catch (e) {
       console.warn('Game: hosting failed', e);
       this.ui.hud.showToast("Couldn't publish the server. Check your connection.", false);
@@ -393,8 +394,8 @@ export class Game {
     }
     this.net = host;
     this.loop.setHiddenTicker(document.hidden);
-    this.ui.hud.showToast(`Hosting · code ${host.joinCode} · keep this tab visible while hosting`, false);
-    this.systemChat(`Hosting · join code ${host.joinCode}`, 'gray', false);
+    this.ui.hud.showToast(`Hosting (${host.visibility}) · code ${host.joinCode} · keep this tab visible while hosting`, false);
+    this.systemChat(`Hosting a ${host.visibility} server · join code ${host.joinCode}`, 'gray', false);
     this.ui.pause.refresh();
     this._netChanged();
     return true;
@@ -450,7 +451,11 @@ export class Game {
 
   _connectionLost(reason) {
     if (!this.net || this.net.isHost) return;
-    this.leaveServer(reason === 'host closed' ? 'The host closed the server' : 'The connection to the host was lost');
+    const text = reason === 'host closed' ? 'The host closed the server'
+      : reason === 'kicked' ? RejectReason.KICKED
+        : reason === 'banned' ? RejectReason.BANNED
+          : 'The connection to the host was lost';
+    this.leaveServer(text);
   }
 
   _dropNet() {

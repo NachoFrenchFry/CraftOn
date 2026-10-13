@@ -1,0 +1,623 @@
+{
+ "sounds": {
+  "ambient/cave": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "ambient/drip": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "ambient/water": {
+   "files": [
+    "1.wav"
+   ],
+   "loop": true,
+   "volume": 1.0
+  },
+  "ambient/wind": {
+   "files": [
+    "1.wav"
+   ],
+   "loop": true,
+   "volume": 1.0
+  },
+  "breaking/dirt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "breaking/glass": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "breaking/grass": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "breaking/plant": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "breaking/sand": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "breaking/snow": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "breaking/stone": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "breaking/water": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "breaking/wood": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "items/bucket_empty": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "items/bucket_fill": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "items/drop": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "items/pickup": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "liquids/lava_pop": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "liquids/lava_sizzle": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/dirt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/glass": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/grass": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/plant": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/sand": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/snow": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/stone": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/water": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mining/wood": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/cow/ambient": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/cow/death": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/cow/hurt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/pig/ambient": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/pig/death": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/pig/hurt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/sheep/ambient": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/sheep/death": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "mobs/sheep/hurt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/dirt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/glass": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/grass": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/plant": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/sand": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/snow": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/stone": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/water": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "placing/wood": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/burn": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/crit": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/death": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/eat": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/eat_done": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/equip_metal": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/equip_wood": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/hurt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/jump": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/land": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/splash": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "player/swim": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "ui/click": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "ui/craft": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "ui/hover": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "ui/inventory_close": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "ui/inventory_open": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "ui/smelt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/dirt": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/glass": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/grass": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/plant": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/sand": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/snow": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/stone": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/water": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  },
+  "walking/wood": {
+   "files": [
+    "1.wav",
+    "2.wav",
+    "3.wav",
+    "4.wav"
+   ],
+   "volume": 1.0
+  }
+ },
+ "version": 1
+}

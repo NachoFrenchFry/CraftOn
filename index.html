@@ -164,17 +164,23 @@
     </div>
   </div>
 
-  <!-- ===================== MULTIPLAYER (Update #8) ===================== -->
+  <!-- ===================== MULTIPLAYER (Update #8; the server list since Update #15) ===================== -->
   <div id="multiplayer-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
-    <div class="menu-content">
+    <div class="menu-content list-content">
       <h2 class="menu-heading">Multiplayer</h2>
-      <div class="menu-buttons">
-        <button id="btn-mp-host" class="mc-button">Host Server</button>
-        <button id="btn-mp-find" class="mc-button">Find Server</button>
+      <div class="join-code-row">
+        <input id="join-code" type="text" maxlength="6" placeholder="Join code (ABC123)" autocomplete="off" spellcheck="false">
+        <button id="btn-join-code" class="mc-button small">Join by code</button>
       </div>
-      <div class="menu-note">LAN only: players on the same Wi-Fi join each other directly. Some networks (school, office or guest Wi-Fi) block devices from talking to each other.</div>
-      <button id="btn-mp-back" class="mc-button">Back</button>
+      <div id="find-error" class="acct-error hidden"></div>
+      <div id="find-status" class="find-status">Looking for servers…</div>
+      <div id="find-list" class="world-list world-list-full server-list"></div>
+      <div class="menu-row">
+        <button id="btn-find-refresh" class="mc-button">Refresh</button>
+        <button id="btn-mp-host" class="mc-button">Host New Server</button>
+        <button id="btn-mp-back" class="mc-button">Back</button>
+      </div>
     </div>
   </div>
 
@@ -184,6 +190,7 @@
       <h2 class="menu-heading">Host Server</h2>
       <div id="host-error" class="acct-error hidden"></div>
       <div id="host-world-list" class="world-list world-list-full"></div>
+      <label class="host-max">Visibility <select id="host-visibility"><option value="public">Public (listed for everyone)</option><option value="private">Private (same network or join code)</option></select></label>
       <label class="host-max">Max players <select id="host-max"></select></label>
       <div class="menu-row">
         <button id="btn-host-new" class="mc-button">Create New World</button>
@@ -208,22 +215,6 @@
         <button id="btn-host-create" class="mc-button">Create & Host</button>
         <button id="btn-host-create-back" class="mc-button">Back</button>
       </div>
-    </div>
-  </div>
-
-  <div id="find-menu" class="screen menu-screen hidden">
-    <div class="menu-bg"></div>
-    <div class="menu-content">
-      <h2 class="menu-heading">Find Server</h2>
-      <div id="find-status" class="find-status">Searching your network…</div>
-      <div id="find-list" class="world-list"></div>
-      <button id="btn-find-refresh" class="mc-button small">Refresh</button>
-      <div class="create-world">
-        <label>Join by code <input id="join-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false"></label>
-        <button id="btn-join-code" class="mc-button">Join by code</button>
-      </div>
-      <div id="find-error" class="acct-error hidden"></div>
-      <button id="btn-find-back" class="mc-button">Back</button>
     </div>
   </div>
 

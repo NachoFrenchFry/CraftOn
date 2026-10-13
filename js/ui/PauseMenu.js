@@ -41,7 +41,7 @@ export class PauseMenu {
     const net = g.net;
     const hosting = !!(net && net.isHost);
     this.hostingLine.classList.toggle('hidden', !hosting);
-    if (hosting) this.hostingLine.textContent = `Hosting: ${net.worldName} · Code ${net.joinCode} · ${net.playerCount}/${net.maxPlayers} players` + (net.networkDetected ? '' : " · Couldn't detect your network (Join by code only)") + ' · keep this tab visible';
+    if (hosting) this.hostingLine.textContent = `Hosting: ${net.worldName} · ${net.visibility === 'private' ? 'Private' : 'Public'} · Code ${net.joinCode} · ${net.playerCount}/${net.maxPlayers} players` + (net.networkDetected ? '' : " · Couldn't detect your network (Join by code only)") + ' · keep this tab visible';
     this.stopHostingButton.classList.toggle('hidden', !hosting);
     this.serverSettingsButton.classList.toggle('hidden', g.isGuest); // host: Server Settings; single player: World Settings
     this.serverSettingsButton.textContent = hosting ? 'Server Settings…' : 'World Settings…';
