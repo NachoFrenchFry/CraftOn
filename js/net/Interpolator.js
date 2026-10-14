@@ -1,7 +1,7 @@
 // Interpolator.js — a small buffer of timed snapshots rendered `delay` behind the newest one, so remote
 // players and mobs move smoothly between 20 Hz / 12 Hz updates, and extrapolated with the last velocity for up
 // to EXTRAPOLATE_MAX when a packet is late. Angles are interpolated the short way round. The delay adapts to the
-// link (Update #15 §3): INTERP_DELAY (100 ms) when snapshots arrive evenly, growing toward INTERP_DELAY_MAX (250 ms)
+// link: INTERP_DELAY (100 ms) when snapshots arrive evenly, growing toward INTERP_DELAY_MAX (250 ms)
 // with the measured arrival jitter (relayed connections across the internet), and shrinking again slowly. Pure.
 
 import { INTERP_DELAY, INTERP_DELAY_MAX, EXTRAPOLATE_MAX } from './Protocol.js';

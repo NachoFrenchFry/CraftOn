@@ -1,8 +1,8 @@
 // ChunkMeshManager.js — owns the THREE meshes of the loaded chunks: uploads worker results, performs the
-// synchronous re-mesh of a player's own edit, marks sections dirty for everything else (Update #14 §1a) and
+// synchronous re-mesh of a player's own edit, marks sections dirty for everything else and
 // disposes geometry when chunks unload.
 //
-// Update #14 §2b: one mesh per chunk per render pass (opaque, cutout, translucent, lava) instead of one per
+// one mesh per chunk per render pass (opaque, cutout, translucent, lava) instead of one per
 // 16×16×16 section: a chunk's pass geometry is the concatenation of its sections' buffers, in section order, and
 // the manager keeps every section's vertex / index range, so a single section edit rewrites one chunk pass
 // (copying the untouched sections from the old buffers) and the visibility walk (Visibility.js) draws just the
@@ -45,15 +45,16 @@ export class ChunkMeshManager {
     this.world = world;
     this.settings = settings;
     this.materials = createChunkMaterials(atlas.arrayTexture);
-    /** The plain set; `materials` points at the shader pipeline's lit set while shaders are on (Update #9 §4). */
+    /** The plain set; `materials` points at the shader pipeline's lit set while shaders are on. */
     this.baseMaterials = this.materials;
+    this.litDepth = null;
     this.lit = false;
     /** packed chunk key → ChunkEntry */
     this.entries = new Map();
     this.scratchPadded = allocPadded();
     this.builders = new MeshBuilders();
     this.meshCount = 0;
-    /** Chunk keys with `remeshMask` bits set since the last frame (Update #14 §1a); ChunkManager drains it. */
+    /** Chunk keys with `remeshMask` bits set since the last frame; ChunkManager drains it. */
     this.dirtyChunks = new Set();
     /** Culling statistics for F3 (Visibility.js writes them). */
     this.stats = { sections: 0, visible: 0, chunksVisible: 0 };
@@ -62,7 +63,7 @@ export class ChunkMeshManager {
   }
 
   get useAO() { return this.settings.get('smoothLighting'); }
-  /** Fast leaves (Update #9 §7): opaque leaf blocks with the faces between them culled. */
+  /** Fast leaves: opaque leaf blocks with the faces between them culled. */
   get fastLeaves() { return !this.settings.get('fancyLeaves'); }
 
   _entry(cx, cz, create) {
@@ -145,7 +146,7 @@ export class ChunkMeshManager {
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3, true));
     geom.setAttribute('extra', new THREE.BufferAttribute(extra, 1)); // packed face / flags / AO byte (shader pipeline)
     geom.setAttribute('light', new THREE.BufferAttribute(light, 2)); // smoothed (sky, block) light ×16 (Updates #10 / #11)
-    geom.setAttribute('tile', new THREE.BufferAttribute(tiles, 1)); // texture array layer (Update #14)
+    geom.setAttribute('tile', new THREE.BufferAttribute(tiles, 1)); // texture array layer
     geom.setIndex(new THREE.BufferAttribute(indices, 1));
     const y0 = lo * SECTION_SIZE, y1 = (hi + 1) * SECTION_SIZE;
     geom.boundingBox = new THREE.Box3(new THREE.Vector3(0, y0, 0), new THREE.Vector3(CHUNK_SIZE, y1, CHUNK_SIZE));
@@ -156,6 +157,7 @@ export class ChunkMeshManager {
     mesh.updateMatrix();
     mesh.frustumCulled = true;
     mesh.castShadow = this.lit; mesh.receiveShadow = this.lit;
+    if (this.litDepth) mesh.customDepthMaterial = this.litDepth[name];
     mesh.name = 'section';
     this.scene.add(mesh);
     this.meshCount++;
@@ -166,8 +168,14 @@ export class ChunkMeshManager {
   setLitMaterials(lit) {
     this.lit = !!lit;
     this.materials = lit || this.baseMaterials;
+    this.litDepth = lit && lit.depth ? lit.depth : null; // the shadow depth pass per pass (waving + tile-array alpha test)
     for (const entry of this.entries.values()) {
-      for (const name of PASS_NAMES) { const m = entry.meshes[name]; if (m) { m.material = this.materials[name]; m.castShadow = this.lit; m.receiveShadow = this.lit; } }
+      for (const name of PASS_NAMES) {
+        const m = entry.meshes[name];
+        if (!m) continue;
+        m.material = this.materials[name]; m.castShadow = this.lit; m.receiveShadow = this.lit;
+        if (this.litDepth) m.customDepthMaterial = this.litDepth[name]; else delete m.customDepthMaterial;
+      }
     }
   }
 
@@ -185,17 +193,17 @@ export class ChunkMeshManager {
 
   /**
    * Apply a worker result ({ sections: [{sy, opaque, cutout, translucent, lava, visMask}] }) for the sections in `sectionMask`,
-   * rebuilding each chunk pass once. A section edited since the job was posted (`versions` = the per-section counters at post
+   * rebuilding each chunk pass once. A section edited since the job was posted (`revisions` = the per-section counters at post
    * time) and not flagged dirty again was re-meshed synchronously meanwhile: its fresh mesh is kept. Returns the mask skipped.
    */
-  applyChunkResult(cx, cz, result, sectionMask, versions = null) {
+  applyChunkResult(cx, cz, result, sectionMask, revisions = null) {
     const entry = this._entry(cx, cz, true);
     const chunk = this.world.getChunk(cx, cz);
     let skipped = 0;
     for (let sy = 0; sy < SECTION_COUNT; sy++) {
       const bit = 1 << sy;
       if (!(sectionMask & bit)) continue;
-      if (versions && chunk && chunk.sectionVersions[sy] !== versions[sy] && !(chunk.remeshMask & bit)) skipped |= bit;
+      if (revisions && chunk && chunk.sectionRevisions[sy] !== revisions[sy] && !(chunk.remeshMask & bit)) skipped |= bit;
     }
     const bySy = new Array(SECTION_COUNT).fill(null);
     for (const s of result.sections) { bySy[s.sy] = s; if (chunk && !(skipped & (1 << s.sy)) && s.visMask !== undefined) chunk.visMask[s.sy] = s.visMask; }
@@ -256,14 +264,14 @@ export class ChunkMeshManager {
   }
 
   /**
-   * Called by World.setBlock for every block change (Update #14 §1a). The edited section is re-meshed at once only for the
+   * Called by World.setBlock for every block change. The edited section is re-meshed at once only for the
    * player's own edits (`immediate`); otherwise it is marked dirty. Neighbouring sections are marked only when the block sits on
    * their border (face culling, ambient occlusion and smooth lighting read one block across).
    */
   onBlockChanged(x, y, z, immediate = false) {
     const cx = x >> 4, cz = z >> 4, sy = y >> 4;
     const lx = x & 15, ly = y & 15, lz = z & 15;
-    // A player's own edit re-meshes its section and the sections sharing the block's faces at once (as before Update #14), so
+    // A player's own edit re-meshes its section and the sections sharing the block's faces at once (as before), so
     // a glass or ice block placed against its twin across a border never shows the inner face for a frame; the diagonal
     // neighbours (ambient occlusion at the corners) and every simulation change go through the dirty set.
     const now = immediate ? (ccx, ccz, ssy) => { if (!this.remeshSectionNow(ccx, ccz, ssy)) this.markDirty(ccx, ccz, ssy); } : (ccx, ccz, ssy) => this.markDirty(ccx, ccz, ssy);
@@ -301,7 +309,7 @@ export class ChunkMeshManager {
     return entry ? entry.ranges[name][sy * R + 1] / 4 : 0;
   }
 
-  /** Bytes held by every chunk geometry (attributes + indices): the benchmark's geometry memory figure (Update #14 §0). */
+  /** Bytes held by every chunk geometry (attributes + indices): the benchmark's geometry memory figure. */
   geometryBytes() {
     let bytes = 0;
     for (const entry of this.entries.values()) {
@@ -327,7 +335,7 @@ export class ChunkMeshManager {
   invalidateAll() {
     for (const chunk of this.world.chunks.values()) {
       chunk.meshed = false;
-      chunk.version++;
+      chunk.revision++;
     }
   }
 }

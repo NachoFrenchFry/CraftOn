@@ -1,4 +1,4 @@
-// Account.js — username + password accounts on top of Supabase Auth (Update #6). Usernames map to a hidden
+// Account.js — username + password accounts on top of Supabase Auth. Usernames map to a hidden
 // placeholder email (see SupabaseConfig.js); the player never sees it. Errors are turned into friendly
 // messages. The session is kept by supabase-js (or the mock), so reloads stay logged in.
 

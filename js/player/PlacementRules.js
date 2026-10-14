@@ -1,5 +1,5 @@
 // PlacementRules.js — "is something standing there?" checks shared by the local placement code, the guest's
-// prediction and the host's validation (Update #9 §2a): a solid block never goes into any player's or mob's
+// prediction and the host's validation: a solid block never goes into any player's or mob's
 // hitbox. Both sides run the same check, so a guest almost never has a placement rejected for this reason and
 // keeps the item either way (GuestClient refunds rejected placements).
 import { AABB } from '../utils/AABB.js';

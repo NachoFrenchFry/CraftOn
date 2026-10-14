@@ -22,21 +22,21 @@ export class Chunk {
     /** Bitmask of sections whose mesh is stale. */
     this.dirtySections = 0;
     /** Incremented on every edit (the generation / light jobs and tools compare it). */
-    this.version = 0;
-    /** Per-section edit counters (Update #14 §1a): a mesh job remembers them, so a section edited (and re-meshed at once) while
+    this.revision = 0;
+    /** Per-section edit counters: a mesh job remembers them, so a section edited (and re-meshed at once) while
      * the job ran keeps its fresh mesh instead of the job's stale one. */
-    this.sectionVersions = new Uint32Array(SECTION_COUNT);
+    this.sectionRevisions = new Uint32Array(SECTION_COUNT);
     /** Bumped only when a torch is placed or removed (the torch-effects cache rescans on this, not on every edit). */
-    this.torchVersion = 0;
+    this.torchRevision = 0;
     /** Block edits made while this chunk's initial light job was in flight: replayed through the updater when the light lands. */
     this.pendingLightEdits = null;
-    /** Per section (Update #14 §2c): which of its 6 faces connect through non-opaque blocks, as a 15-bit pair mask; all set = open. */
+    /** Per section: which of its 6 faces connect through non-opaque blocks, as a 15-bit pair mask; all set = open. */
     this.visMask = new Uint16Array(SECTION_COUNT).fill(0x7fff);
     /** True once a mesh has been built for the current version. */
     this.meshed = false;
     this.meshing = false;
     this.meshRequested = false;
-    /** Sky / block light (Update #10): padded 18×18×256 bytes (LightStorage.js), computed in a worker before meshing; null until then. */
+    /** Sky / block light: padded 18×18×256 bytes (LightStorage.js), computed in a worker before meshing; null until then. */
     this.light = null;
     this.lit = false;
     this.lighting = false;
@@ -61,9 +61,9 @@ export class Chunk {
     if (old === 0) this.sectionCounts[sy]++;
     if (id === 0) this.sectionCounts[sy]--;
     this.dirtySections |= 1 << sy;
-    this.version++;
-    this.sectionVersions[sy]++;
-    if (RENDER_TYPE[old] === RenderType.TORCH || RENDER_TYPE[id] === RenderType.TORCH) this.torchVersion++;
+    this.revision++;
+    this.sectionRevisions[sy]++;
+    if (RENDER_TYPE[old] === RenderType.TORCH || RENDER_TYPE[id] === RenderType.TORCH) this.torchRevision++;
     return old;
   }
 

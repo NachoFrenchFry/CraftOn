@@ -1,5 +1,5 @@
 /* base.css — reset, full-window layout, the pixel font, pixelated rendering, CSS variables.
-   Every piece of text uses font/Minecraft.ttf (Update #9): it is drawn on an 8 px grid, so sizes are whole
+   Every piece of text uses font/Minecraft.ttf: it is drawn on an 8 px grid, so sizes are whole
    multiples of 8 px times --gui-scale and font smoothing is off, which keeps it crisp at every scale. */
 @font-face { font-family: 'CraftOnFont'; src: url('../font/Minecraft.ttf') format('truetype'); font-display: block; }
 
@@ -47,7 +47,7 @@ html, body {
 .hidden { display: none !important; }
 
 canvas, img, .icon { image-rendering: pixelated; image-rendering: crisp-edges; }
-#game-canvas { image-rendering: pixelated; } /* the render-scale upscale stays blocky (Update #9 §7) */
+#game-canvas { image-rendering: pixelated; } /* the render-scale upscale stays blocky */
 
 .screen {
   position: fixed;

@@ -1,15 +1,15 @@
 // GameState.js — the high level state machine: BOOT / ACCOUNT / MENU / LOADING / PLAYING / PAUSED / INVENTORY / KICKED.
 
 export const State = Object.freeze({
-  BOOT: 'BOOT',         // the boot screen while textures, sounds and the session load (Update #7)
+  BOOT: 'BOOT', // the boot screen while textures, sounds and the session load
   ACCOUNT: 'ACCOUNT',   // log in / create account (before the main menu)
-  KICKED: 'KICKED',     // "Signed in somewhere else" (Update #8): the account was claimed by another tab / device
+  KICKED: 'KICKED', // "Signed in somewhere else": the account was claimed by another tab / device
   MENU: 'MENU',
   LOADING: 'LOADING',
   PLAYING: 'PLAYING',
   PAUSED: 'PAUSED',
   INVENTORY: 'INVENTORY',
-  DEAD: 'DEAD',           // the "You died!" screen (Update #9 §8): the world keeps running, the player waits to respawn
+  DEAD: 'DEAD', // the "You died!" screen: the world keeps running, the player waits to respawn
 });
 
 export class GameState {
@@ -17,7 +17,7 @@ export class GameState {
     this.events = events;
     this.current = State.BOOT;
     this.previous = null;
-    /** Update #12 §3b: in multiplayer the pause menu is only an overlay — the world keeps running (set by Game). */
+    /** in multiplayer the pause menu is only an overlay — the world keeps running (set by Game). */
     this.overlayPause = false;
   }
 

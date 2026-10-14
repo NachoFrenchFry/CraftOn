@@ -1,4 +1,4 @@
-// ArmorModel.js — builds the textured 3D armor layer (Update #7): inflated boxes with Minecraft box-UV nets
+// ArmorModel.js — builds the textured 3D armor layer: inflated boxes with Minecraft box-UV nets
 // from ArmorParts.js, hung on the body pivots so they animate with the player, alpha-tested Lambert materials
 // (the same shading as the body) textured from textures/entity/armor/<material>_layer_N.png. Also the
 // first-person sleeve + gauntlet boxes on the arm.

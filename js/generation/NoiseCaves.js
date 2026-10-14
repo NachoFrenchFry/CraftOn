@@ -25,11 +25,11 @@ const CHEESE = [1 / 96, 1 / 56];
 const PILLAR_SCALE = 1 / 14; // 2D: pillars run straight from the cavern floor to its ceiling
 const FIELDS = 7; // A, B, A2, B2, N, C, C2
 const F_A = 0, F_B = 1, F_A2 = 2, F_B2 = 3, F_N = 4, F_C = 5, F_C2 = 6;
-/** Mega caves (Update #12 §5b): the cavern field stretched vertically, sampled only inside a region. */
+/** Mega caves: the cavern field stretched vertically, sampled only inside a region. */
 const MEGA_CHEESE = [1 / 110, 1 / 190];
 const MEGA_SALT = 0x3e9a;
 const MEGA_WOBBLE_SCALE = 1 / 140;
-/** Tunnel and noodle caves stop here; above it only the cliff field (A2) is sampled, so tall peaks stay cheap (Update #8). */
+/** Tunnel and noodle caves stop here; above it only the cliff field (A2) is sampled, so tall peaks stay cheap. */
 export const CAVE_TOP_Y = 150;
 
 export class NoiseCaves {
@@ -59,7 +59,7 @@ export class NoiseCaves {
   }
 
   /**
-   * Mega-cave region of a MEGA_CAVE_CELL × MEGA_CAVE_CELL block cell (Update #12 §5b): one centre per cell, kept 400
+   * Mega-cave region of a MEGA_CAVE_CELL × MEGA_CAVE_CELL block cell: one centre per cell, kept 400
    * blocks from the cell edge, radius 200–320 blocks, so regions sit 1500–3000 blocks apart. Deterministic per seed.
    * @returns {{cx:number, cz:number, r:number}} centre and radius in blocks
    */
@@ -125,7 +125,7 @@ export class NoiseCaves {
    * @param {Int16Array} carveMaxY per column (16×16)
    * @param {number} maxHeight highest terrain in the chunk
    * @param {Int16Array} [heights] 16×16 terrain heights (for the cliff notches)
-   * @param {Uint8Array} [cliffMask] 16×16: 1 where steep high mountain faces may get overhangs / notches (Update #8)
+   * @param {Uint8Array} [cliffMask] 16×16: 1 where steep high mountain faces may get overhangs / notches
    */
   carve(blocks, cx, cz, carveMaxY, maxHeight, heights = null, cliffMask = null) {
     const wx0 = cx * 16, wz0 = cz * 16;
@@ -133,7 +133,7 @@ export class NoiseCaves {
     const gy = Math.min(Math.floor(maxHeight / V_STEP) + 2, MAX_GY - 1);
     const iy0 = Math.floor(MIN_CAVE_Y / V_STEP);
     const grid = this.grid, stride = GX * GX * MAX_GY, pillarGrid = this.pillarGrid, megaGrid = this.megaGrid, megaMaskGrid = this.megaMaskGrid;
-    // Mega caves (Update #12 §5b): the region mask on the coarse grid; a chunk with any of it samples the stretched field too.
+    // Mega caves: the region mask on the coarse grid; a chunk with any of it samples the stretched field too.
     let megaChunk = 0;
     for (let iz = 0; iz < GX; iz++) for (let ix = 0; ix < GX; ix++) { const m = this.megaMaskAt(wx0 + ix * H_STEP, wz0 + iz * H_STEP); megaMaskGrid[ix + iz * GX] = m; megaChunk += m; }
     megaChunk /= GX * GX;

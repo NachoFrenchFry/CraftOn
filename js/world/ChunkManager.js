@@ -21,7 +21,7 @@ export class ChunkManager {
     this.world = world;
     this.meshManager = meshManager;
     this.settings = settings;
-    // Workers (Update #14 §3): one pool of chunk workers (generation, the initial light pass and meshing in one script) with up
+    // Workers: one pool of chunk workers (generation, the initial light pass and meshing in one script) with up
     // to hardwareConcurrency − 1 workers, at most 6, so a 4-core laptop runs 3 and an 8-core desktop 6; every job goes to the
     // idlest worker. `genPool` / `meshPool` are the same pool (kept as names for the dispatch caps and the overlay).
     const cores = navigator.hardwareConcurrency || 4;
@@ -34,7 +34,7 @@ export class ChunkManager {
     this.meshCheck = new Set();
     this.meshInFlight = new Set();
     this.meshResults = [];
-    /** Voxel lighting (Update #10): chunks waiting for their worker light pass, jobs in flight, results to apply. */
+    /** Voxel lighting: chunks waiting for their worker light pass, jobs in flight, results to apply. */
     this.lightCheck = new Set();
     this.lightInFlight = new Set();
     this.lightResults = [];
@@ -46,7 +46,7 @@ export class ChunkManager {
     this.centerCZ = null;
     this.generation = 0; // bumped on clear() so stale worker replies are ignored
     this.queuesDirty = true;
-    /** Chunks integrated this frame whose 'chunk:loaded' fan-out (springs, mobs) still has to run: drained within the budget (Update #14 §1d). */
+    /** Chunks integrated this frame whose 'chunk:loaded' fan-out (springs, mobs) still has to run: drained within the budget. */
     this.loadedQueue = [];
     this._candidates = [];
     /** Worker timing accumulators (for the debug overlay). */
@@ -55,7 +55,7 @@ export class ChunkManager {
   }
 
   get renderDistance() { return this.settings.get('renderDistance'); }
-  /** [mesh uploads per frame, integration budget ms] for the Chunk Updates setting (Update #9 §7). */
+  /** [mesh uploads per frame, integration budget ms] for the Chunk Updates setting. */
   get uploadBudget() { const v = this.settings.get('chunkUpdates'); return v === 'low' ? [2, 2] : v === 'high' ? [MAX_MESH_UPLOADS_PER_FRAME * 2 + 2, INTEGRATION_BUDGET_MS * 2] : [MAX_MESH_UPLOADS_PER_FRAME, INTEGRATION_BUDGET_MS]; }
   /** Generation radius: covers every neighbour (diagonals included) of every chunk in the render circle. */
   get genRadius() { return this.renderDistance + GENERATION_MARGIN; }
@@ -105,7 +105,7 @@ export class ChunkManager {
       if (!chunk) continue;
       chunk.recountSections();
       chunk.lit = false; chunk.light = null; chunk.lighting = false; chunk.lightDirty = 0; chunk.remeshMask = 0;
-      chunk.meshed = false; chunk.version++;
+      chunk.meshed = false; chunk.revision++;
       this.lightCheck.add(chunkKey(cx, cz)); this.meshCheck.add(chunkKey(cx, cz));
     }
   }
@@ -145,7 +145,7 @@ export class ChunkManager {
     if (pr) pr.end('meshing');
   }
 
-  /** Sections marked dirty by block changes since the last frame (Update #14 §1a): queue their chunks for a partial worker job. */
+  /** Sections marked dirty by block changes since the last frame: queue their chunks for a partial worker job. */
   _queueDirtyRemeshes() {
     const dirty = this.meshManager.dirtyChunks;
     if (!dirty.size) return;
@@ -188,7 +188,7 @@ export class ChunkManager {
         if (n) { const copy = n.blocks.slice(); grid.push(copy); tops.push(chunkTop(n)); transfer.push(copy.buffer); } else { grid.push(null); tops.push(0); }
       }
       const gen = this.generation;
-      this.pool.post({ type: 'light', cx: chunk.cx, cz: chunk.cz, grid, tops, version: chunk.version }, transfer).then((r) => {
+      this.pool.post({ type: 'light', cx: chunk.cx, cz: chunk.cz, grid, tops, revision: chunk.revision }, transfer).then((r) => {
         if (gen !== this.generation) return;
         this.lightTiming.total += r.ms || 0; this.lightTiming.count++;
         if (r.phases) for (const k of Object.keys(this.lightPhases)) this.lightPhases[k] += r.phases[k] || 0;
@@ -282,7 +282,7 @@ export class ChunkManager {
       if (!chunk) continue;
       chunk.meshing = false;
       if (pr) pr.begin('meshing');
-      this.meshManager.applyChunkResult(r.cx, r.cz, r, r.sectionMask, r.versions);
+      this.meshManager.applyChunkResult(r.cx, r.cz, r, r.sectionMask, r.revisions);
       if (pr) pr.end('meshing');
       chunk.meshed = true;
       if (chunk.remeshMask) this.meshCheck.add(key); // sections edited while the job ran: the next (partial) job
@@ -301,7 +301,7 @@ export class ChunkManager {
       chunk.state = ChunkState.GENERATED;
       this.world.edits.applyTo(chunk);
       chunk.recountSections();
-      chunk.version = 0;
+      chunk.revision = 0;
       this.world.chunks.set(key, chunk);
       this.lightCheck.add(key);
       this.meshCheck.add(key);
@@ -313,7 +313,7 @@ export class ChunkManager {
       }
     }
     // The 'chunk:loaded' fan-out (cave springs, stowed mobs, the first mob group) counts against the same budget; what does not
-    // fit waits for the next frame (Update #14 §1d).
+    // fit waits for the next frame.
     while (this.loadedQueue.length && performance.now() - start < budgetMs) {
       const key = this.loadedQueue.shift();
       if (!this.world.chunks.has(key)) continue;
@@ -335,7 +335,7 @@ export class ChunkManager {
     const ao = this.settings.get('smoothLighting');
     const fastLeaves = !this.settings.get('fancyLeaves');
     // Eligible chunks: those without any mesh yet first (a chunk refreshed every tick by nearby water must never starve one
-    // that has never been drawn), then nearest the player first (Update #14 §1a).
+    // that has never been drawn), then nearest the player first.
     const cand = this._candidates;
     cand.length = 0;
     for (const key of this.meshCheck) {
@@ -364,13 +364,13 @@ export class ChunkManager {
       const padded = allocPadded();
       buildPaddedChunk(this.world, chunk.cx, chunk.cz, padded);
       const light = chunk.light.slice();
-      const versions = Array.from(chunk.sectionVersions);
-      const msg = { type: 'mesh', cx: chunk.cx, cz: chunk.cz, padded, light, sectionMask, ao, fastLeaves, version: chunk.version };
+      const revisions = Array.from(chunk.sectionRevisions);
+      const msg = { type: 'mesh', cx: chunk.cx, cz: chunk.cz, padded, light, sectionMask, ao, fastLeaves, revision: chunk.revision };
       const gen = this.generation;
       this.pool.post(msg, [padded.buffer, light.buffer]).then((r) => {
         if (gen !== this.generation) return;
         this.meshTiming.total += r.ms || 0; this.meshTiming.count++;
-        r.versions = versions;
+        r.revisions = revisions;
         this.meshResults.push(r);
       });
     }

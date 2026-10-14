@@ -1,8 +1,8 @@
-// CraftingPanel.js — the recipe browser inside the left inventory panel (bloxd.io style, Update #5): a
+// CraftingPanel.js — the recipe browser inside the left inventory panel (bloxd.io style): a
 // 7-column grid of result-icon tiles (dimmed when unaffordable) and, for the selected recipe, its name,
 // the material icons with have/need count badges (red when short) and a big blue craft button showing the
 // result icon and output count. Click crafts once, shift-click crafts as many as possible. In Survival the
-// grid lists only recipes the player can do something with (Update #13 §3): craftable ones first, then partly
+// grid lists only recipes the player can do something with: craftable ones first, then partly
 // affordable ones by completeness, rebuilt live as the inventory changes; Creative shows everything.
 
 import { ItemRegistry } from '../items/ItemRegistry.js';

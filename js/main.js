@@ -7,10 +7,10 @@
 //   ?look=yaw,pitch with debuglog: initial look angles in degrees
 //   ?mockcloud      use the in-memory MockSupabase instead of the real project (all headless tests)
 //   ?guestlogin=<n> with mockcloud: ignore the restored session and log in as test account <n> (two-tab tests)
-//   ?bench          the built-in benchmark (Update #14 §0): seed bench1, render distance 9 (or &rd=), 1280×720, stand 10 s,
+// ?bench the built-in benchmark: seed bench1, render distance 9 (or &rd=), 1280×720, stand 10 s,
 //                   fly 45 s; prints CRAFTON_BENCH <json>, sets window.__bench and shows the report (tools/headless/bench.py)
 //
-// Startup (Update #7): the static boot screen in index.html is visible before this module runs; boot() loads
+// Startup: the static boot screen in index.html is visible before this module runs; boot() loads
 // textures, sheets, the cloud client + session and the sounds in parallel while the step text updates, then
 // the account screen or the main menu replaces it.
 
@@ -18,7 +18,7 @@ import { Game } from './core/Game.js';
 import { State } from './core/GameState.js';
 import { hashSeed, randomSeed } from './utils/Random.js';
 
-/** Worlds used to live in IndexedDB (database "crafton"); since Update #6 they live in the cloud. Delete the old store once. */
+/** Worlds used to live in IndexedDB (database "crafton"); they live in the cloud. Delete the old store once. */
 function deleteOldLocalWorlds() {
   const FLAG = 'crafton.localWorldsDeleted.v1';
   try {
@@ -77,7 +77,7 @@ async function main() {
     return;
   }
   if (!game.cloudMock) { const sb = resourceMs('supabase-js'); if (sb !== null) T.add('supabase-js import (fetch)', sb); }
-  // Accounts (Update #6): a persisted session skips the account screen; tests with the mock log in a
+  // Accounts: a persisted session skips the account screen; tests with the mock log in a
   // throwaway account automatically so ?autoplay / ?world keep working.
   boot.setStep('Signing in…', 0.75);
   let loggedIn = await game.sessionTask;
@@ -123,7 +123,7 @@ async function main() {
     window.addEventListener('error', (e) => console.error('CRAFTON_ERROR', e.message, e.filename, e.lineno));
     window.addEventListener('unhandledrejection', (e) => console.error('CRAFTON_REJECTION', e.reason && (e.reason.stack || e.reason)));
     game.events.on('state:changed', (s, prev) => console.log(`CRAFTON state ${prev} -> ${s}`));
-    game.lock.debug = true; // every lock request, promise result, lock event and Escape key with timestamps (Update #13 §1)
+    game.lock.debug = true; // every lock request, promise result, lock event and Escape key with timestamps
     T.report('boot');
     game.audio.bank.rendering?.then(() => T.report('boot'));
     const shots = (params.get('shot') || '').split(',').filter(Boolean).map(Number);

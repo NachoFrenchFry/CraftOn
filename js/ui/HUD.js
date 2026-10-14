@@ -1,4 +1,4 @@
-// HUD.js — crosshair, hotbar container, the health bar (Update #9 §8), item-name popup, pointer hint, the
+// HUD.js — crosshair, hotbar container, the health bar, item-name popup, pointer hint, the
 // underwater tint and the red hurt vignette.
 
 import { Hotbar } from './Hotbar.js';
@@ -69,7 +69,7 @@ export class HUD {
 
   setHotbarVisible(v) { if (v !== this._hotbarShown) { this._hotbarShown = v; this.hotbar.root.classList.toggle('hidden', !v); } }
 
-  /** /tick (Update #12): the top-right badge while the rate is not 20 or time is frozen. */
+  /** /tick: the top-right badge while the rate is not 20 or time is frozen. */
   setTickBadge(tick) {
     if (!this.tickBadge) return;
     const normal = tick.rate === 20 && !tick.frozen;
@@ -152,7 +152,7 @@ export class HUD {
       this._underwaterShown = uw;
       this.underwater.classList.toggle('hidden', !uw);
     }
-    // Update #11: orange inside lava; flames on the screen edges while on fire (first person only; third person shows the particles).
+    // orange inside lava; flames on the screen edges while on fire (first person only; third person shows the particles).
     const lv = !!this.game.player.headInLava;
     if (lv !== this._lavaShown) { this._lavaShown = lv; this.lavaOverlay.classList.toggle('hidden', !lv); }
     const fire = !!this.game.player.onFire && !this.game.player.dead && this.game.cameraController.isFirstPerson;

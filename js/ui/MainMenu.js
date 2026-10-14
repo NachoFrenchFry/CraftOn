@@ -11,7 +11,7 @@ export class MainMenu {
     this.game = game;
     this.root = document.getElementById('main-menu');
     this.worldRoot = document.getElementById('world-menu');
-    /** The "Create New World" form on its own screen (Update #12 §6). */
+    /** The "Create New World" form on its own screen. */
     this.createRoot = document.getElementById('create-world-menu');
     this.createError = document.getElementById('create-error');
     this.worldList = document.getElementById('world-list');

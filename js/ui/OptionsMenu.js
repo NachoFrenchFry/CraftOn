@@ -26,7 +26,7 @@ export class OptionsMenu {
     });
   }
 
-  /** The Performance mode preset (Update #9 §7): half render scale, short distances, fast leaves, no AO, no shaders. */
+  /** The Performance mode preset: half render scale, short distances, fast leaves, no AO, no shaders. */
   applyPerformanceMode() {
     this.settings.applyPreset(PERFORMANCE_MODE);
     this.refresh();

@@ -65,8 +65,8 @@ export class CameraController {
     const targetBob = bobbing ? clamp(p.horizontalSpeed / WALK_SPEED, 0, 1.0) : 0;
     this.bobFactor = damp(this.bobFactor, targetBob, 10, dt);
     this.handBobFactor = this.bobFactor * this.bobIntensity;
-    this.bobPhase = p.walkDistance * BOB_PHASE_PER_BLOCK; // slower cycle (Update #8): each step reads as a step
-    // Hurt tilt (Update #9 §8): a quick roll away from the hit that eases back.
+    this.bobPhase = p.walkDistance * BOB_PHASE_PER_BLOCK; // slower cycle: each step reads as a step
+    // Hurt tilt: a quick roll away from the hit that eases back.
     this.hurtTilt = damp(this.hurtTilt, 0, 7, dt);
     const hurtRoll = Math.sin(Math.min(1, this.hurtTilt) * Math.PI) * 0.14 * this.hurtSide;
 

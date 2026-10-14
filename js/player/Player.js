@@ -21,7 +21,7 @@ export class Player {
     this.flying = false;
     this.inWater = false;
     this.headInWater = false;
-    /** Lava (Update #11): feet or body in lava, eyes in lava, seconds left on fire. */
+    /** Lava: feet or body in lava, eyes in lava, seconds left on fire. */
     this.inLava = false;
     this.headInLava = false;
     this.fireTimer = 0;
@@ -50,7 +50,7 @@ export class Player {
     this.horizontalSpeed = 0;
     this.fallStartY = null;
     this.lastLandingFall = 0;
-    /** Health (Update #9 §8): 100 max, saved with the player; `dead` while the death screen shows. */
+    /** Health: 100 max, saved with the player; `dead` while the death screen shows. */
     this.maxHealth = 100;
     this.health = 100;
     this.dead = false;

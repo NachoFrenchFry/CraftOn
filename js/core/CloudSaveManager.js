@@ -1,4 +1,4 @@
-// CloudSaveManager.js — worlds in Supabase (Update #6), replacing the IndexedDB SaveManager with the same
+// CloudSaveManager.js — worlds in Supabase, replacing the IndexedDB SaveManager with the same
 // public API: listWorlds / createWorld / getWorld / saveWorld / saveChunks / loadChunks / deleteWorld.
 // `worlds.data` holds the player, inventory, dropped items, mobs, seedText and the rest of the world
 // record; `world_chunks` holds one gzip+base64 edit diff per changed chunk (see cloud/ChunkCodec.js).
@@ -6,7 +6,7 @@
 
 import { encodeChunk, decodeChunk } from './cloud/ChunkCodec.js';
 
-/** The codec worker (Update #14 §3): chunk diffs are JSON-encoded, gzipped and base64-encoded off the main thread. */
+/** The codec worker: chunk diffs are JSON-encoded, gzipped and base64-encoded off the main thread. */
 let codecWorker = null, codecId = 0;
 const codecPending = new Map();
 function encodeOnMainThread(entries) { return Promise.all(entries.map(async (e) => ({ key: e.key, data: await encodeChunk(e) }))); }
@@ -93,7 +93,7 @@ export class CloudSaveManager {
   /** entries: [{ key, indices, ids }] — compressed and upserted in batches of 50 rows. */
   async saveChunks(worldId, entries) {
     if (!entries.length) return;
-    const encoded = await encodeChunks(entries); // compressed in the codec worker (Update #14 §3)
+    const encoded = await encodeChunks(entries); // compressed in the codec worker
     const rows = encoded.map((e) => ({ world_id: worldId, chunk_key: e.key, data: e.data }));
     for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
       check(await this.client.from('world_chunks').upsert(rows.slice(i, i + UPSERT_BATCH), { onConflict: 'world_id,chunk_key' }), 'save chunks');

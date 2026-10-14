@@ -1,5 +1,5 @@
 // EntityManager.js — owns item entities: spawning, physics ticks, pickup, merging, rendering. In multiplayer
-// (Update #8) every item has an id; the host spawns / removes items and tells everyone (onSpawn / onRemove
+// every item has an id; the host spawns / removes items and tells everyone (onSpawn / onRemove
 // hooks), while a guest (`remote`) mirrors them, asks the host to pick up items (item:pickupRequest) and
 // throws through the host (throwHook).
 
@@ -44,12 +44,12 @@ export class EntityManager {
     this.byId = new Map();
     /** Guest of a LAN server: items are host-authoritative. */
     this.remote = false;
-    /** Update #9 §7: items farther than this do not update (simulation distance) / are hidden (entity distance). */
+    /** items farther than this do not update (simulation distance) / are hidden (entity distance). */
     this.simDistanceBlocks = Infinity;
     this.entityDistanceBlocks = Infinity;
-    /** (x, y, z) → brightness factor of the sky light there (Update #10), set by Game. */
+    /** (x, y, z) → brightness factor of the sky light there, set by Game. */
     this.lightAt = null;
-    /** (x, y, z) an item burned in lava (Update #11): Game plays the sizzle. */
+    /** (x, y, z) an item burned in lava: Game plays the sizzle. */
     this.onBurn = null;
     /** Host hooks (set by HostServer): broadcast spawns and removals. */
     this.onSpawn = null;

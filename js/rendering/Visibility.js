@@ -1,4 +1,4 @@
-// Visibility.js — cave culling (Update #14 §2c), Minecraft's visibility graph: every meshed section knows which pairs
+// Visibility.js — cave culling, Minecraft's visibility graph: every meshed section knows which pairs
 // of its six faces connect through non-opaque blocks (ChunkMesher.computeVisMask, stored on the chunk). Each frame a
 // breadth-first walk starts at the camera's section and crosses only connected faces, never back towards the camera
 // and never outside the view frustum or the render-distance circle. Sections the walk does not reach are not drawn:
@@ -40,12 +40,12 @@ export class ChunkVisibility {
   }
 
   /**
-   * Faces of the camera's section reachable from the camera's cell through non-opaque blocks (Update #14 §2c): a player in a
+   * Faces of the camera's section reachable from the camera's cell through non-opaque blocks: a player in a
    * sealed room sees nothing of the caves around it, even when another pocket of the same section opens to the outside. All
    * six faces when the camera sits inside a solid block (noclip, the third-person camera in a wall).
    */
   _startFaces(chunk, sy, lx, ly, lz) {
-    const key = `${chunk.cx},${chunk.cz},${sy},${lx},${ly},${lz},${chunk.version}`;
+    const key = `${chunk.cx},${chunk.cz},${sy},${lx},${ly},${lz},${chunk.revision}`;
     if (key === this._pocketKey) return this._pocketFaces;
     this._pocketKey = key;
     const blocks = chunk.blocks, y0 = sy * SECTION_SIZE;

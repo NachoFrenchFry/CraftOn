@@ -9,7 +9,7 @@ export function isWater(id) {
   return id === B.WATER || (id >= B.FLOWING_WATER_1 && id <= B.FALLING_WATER);
 }
 
-// ---- Lava (Update #11): the same shape with 3 flowing levels ----
+// ---- Lava: the same shape with 3 flowing levels ----
 export const LAVA_MAX_LEVEL = 3;
 export function isLava(id) { return id === B.LAVA || (id >= B.FLOWING_LAVA_1 && id <= B.FALLING_LAVA); }
 export function isLavaSource(id) { return id === B.LAVA; }

@@ -44,7 +44,7 @@ export class TextureAtlas {
   constructor() {
     this.canvas = null;
     this.texture = null;
-    /** The tiles as a DataArrayTexture (Update #14 §2a), built with the atlas. */
+    /** The tiles as a DataArrayTexture, built with the atlas. */
     this.arrayTexture = null;
     /** name → 16×16 canvas (used by icons, particles, debug view) */
     this.tiles = new Map();
@@ -109,8 +109,20 @@ export class TextureAtlas {
     return this;
   }
 
+  /** Ice is an opaque block: its tile is forced fully opaque (any alpha in the file would demote it to a cutout). */
+  _forceOpaque(name) {
+    const tile = this.tiles.get(name);
+    if (!tile) return;
+    const ctx = tile.getContext('2d');
+    const img = ctx.getImageData(0, 0, TILE_SIZE, TILE_SIZE), d = img.data;
+    let changed = false;
+    for (let i = 3; i < d.length; i += 4) if (d[i] !== 255) { d[i] = 255; changed = true; }
+    if (changed) ctx.putImageData(img, 0, 0);
+  }
+
   /** Derived tiles (DERIVED_TEXTURES): 'leaves_fast' is the leaves tile with every transparent texel filled by the average leaf colour, a little darker. */
   _deriveTiles() {
+    this._forceOpaque('ice');
     const src = this.tiles.get('leaves');
     const out = document.createElement('canvas'); out.width = TILE_SIZE; out.height = TILE_SIZE;
     const ctx = out.getContext('2d');
@@ -148,7 +160,7 @@ export class TextureAtlas {
   }
 
   /**
-   * The same tiles as a texture array (Update #14 §2a): one 16×16 RGBA layer per tile, rows bottom-up so v = 0 is the bottom
+   * The same tiles as a texture array: one 16×16 RGBA layer per tile, rows bottom-up so v = 0 is the bottom
    * of the image like the flipped canvas atlas. Nearest filtering, no mipmaps: pixel-identical to the atlas.
    */
   _composeArray() {

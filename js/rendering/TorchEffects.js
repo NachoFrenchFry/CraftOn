@@ -1,4 +1,4 @@
-// TorchEffects.js — flame and smoke particles over every torch near the player (Update #11). Torch positions are
+// TorchEffects.js — flame and smoke particles over every torch near the player. Torch positions are
 // read from the block arrays of the chunks around the player (cached per chunk version, so a chunk is rescanned
 // only after an edit); a torch within TORCH_EFFECT_RANGE blocks sheds a small flame fleck about once a second and a
 // wisp of smoke now and then, scaled by the Particles setting.
@@ -8,8 +8,7 @@ import { torchTip } from '../blocks/TorchModel.js';
 import { chunkKey, blockIndex } from '../world/ChunkCoords.js';
 
 export const TORCH_EFFECT_RANGE = 28;
-const FLAME_RATE = 1.6;   // flames per second per torch (at the 'all' setting)
-const SMOKE_RATE = 0.35;
+const SMOKE_RATE = 0.5;   // smoke puffs per second per torch (at the 'all' setting)
 
 export class TorchEffects {
   /**
@@ -31,7 +30,7 @@ export class TorchEffects {
   torchesOf(chunk) {
     const key = chunkKey(chunk.cx, chunk.cz);
     let e = this.cache.get(key);
-    if (e && e.version === chunk.torchVersion) return e.list;
+    if (e && e.revision === chunk.torchRevision) return e.list;
     const list = [];
     const b = chunk.blocks;
     for (let sy = 0; sy < 16; sy++) {
@@ -41,7 +40,7 @@ export class TorchEffects {
         if (RENDER_TYPE[id] === RenderType.TORCH) list.push(chunk.cx * CHUNK_SIZE + (col & 15), y, chunk.cz * CHUNK_SIZE + (col >> 4), id);
       }
     }
-    if (!e) { e = { version: chunk.torchVersion, list }; this.cache.set(key, e); } else { e.version = chunk.torchVersion; e.list = list; }
+    if (!e) { e = { revision: chunk.torchRevision, list }; this.cache.set(key, e); } else { e.revision = chunk.torchRevision; e.list = list; }
     // Forget chunks that are gone.
     if (this.cache.size > 64) for (const k of this.cache.keys()) if (!this.world.chunks.has(k)) this.cache.delete(k);
     return list;
@@ -63,8 +62,7 @@ export class TorchEffects {
         if (Math.abs(x - px) > TORCH_EFFECT_RANGE || Math.abs(z - pz) > TORCH_EFFECT_RANGE || Math.abs(y - py) > TORCH_EFFECT_RANGE) continue;
         count++;
         const tip = torchTip(BlockRegistry.attachOf(list[i + 3]));
-        if (Math.random() < dt * FLAME_RATE * scale) this.particles.spawnFlame(x + tip[0], y + tip[1], z + tip[2], 1, 0.03, 0.45);
-        if (Math.random() < dt * SMOKE_RATE * scale) this.particles.spawnSmoke(x + tip[0], y + tip[1] + 0.1, z + tip[2], 1, 0.7);
+        if (Math.random() < dt * SMOKE_RATE * scale) this.particles.spawnSmoke(x + tip[0], y + tip[1] + 0.1, z + tip[2], 1, 0.7); // a little grey smoke only, gated by the Particles setting
       }
     }
     this.count = count;

@@ -16,9 +16,9 @@ export class World {
     this.seed = 0;
     /** Set by ChunkMeshManager so edits can remesh instantly. */
     this.meshManager = null;
-    /** Set by ChunkManager: incremental voxel lighting (Update #10). */
+    /** Set by ChunkManager: incremental voxel lighting. */
     this.lightUpdater = null;
-    /** Set by Game (Update #14 §0): the mesh and light managers time their main-thread work with it. */
+    /** Set by Game: the mesh and light managers time their main-thread work with it. */
     this.profiler = null;
   }
 
@@ -57,7 +57,7 @@ export class World {
   /**
    * Set a block. Records the edit (for saving), marks the affected mesh sections dirty (re-meshed in the worker pool within the
    * frame budget) and queues the light change, then emits 'block:changed' (x, y, z, {old, id}). A player's own edit passes
-   * `immediate = true` (Update #14 §1a): its section is re-meshed synchronously with a slice of light work first, so feedback
+   * `immediate = true`: its section is re-meshed synchronously with a slice of light work first, so feedback
    * stays instant; water, lava, light, multiplayer and generation changes never re-mesh on the main thread.
    */
   setBlock(x, y, z, id, record = true, immediate = false) {
@@ -86,7 +86,7 @@ export class World {
 
   getSkyLightAt(x, y, z) { return this.getSkyLight(Math.floor(x), Math.floor(y), Math.floor(z)); }
 
-  /** Block light 0–15 (torches, lava; Update #11) at integer world coordinates; 0 where nothing is lit yet. */
+  /** Block light 0–15 (torches, lava) at integer world coordinates; 0 where nothing is lit yet. */
   getBlockLight(x, y, z) {
     if (y < 0 || y >= WORLD_HEIGHT) return 0;
     const chunk = this.chunks.get(chunkKey(x >> 4, z >> 4));

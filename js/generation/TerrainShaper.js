@@ -1,5 +1,5 @@
 // TerrainShaper.js — the height function: continentalness, erosion, ridged hills, a dedicated peaks layer
-// (Update #8: sharp ridged ranges up to y ~220 where the land is continental and unerod­ed, gated by a slow
+// (sharp ridged ranges up to y ~220 where the land is continental and unerod­ed, gated by a slow
 // "range" field so ranges are rarer than plains), wide valleys between high ground that drop toward sea level
 // with a river in their deepest band, and detail noise, combined with piecewise-linear splines. Also samples
 // temperature / humidity for biome selection. Pure & deterministic per (seed, x, z). Worker-safe.

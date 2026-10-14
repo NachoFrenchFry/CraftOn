@@ -1,6 +1,6 @@
 // Materials.js — the chunk materials (opaque, cutout, translucent, lava) plus shared helpers.
 //
-// Update #14 §2a: the chunk passes are ShaderMaterials over the texture array (one 16×16 layer per atlas tile): a
+// the chunk passes are ShaderMaterials over the texture array (one 16×16 layer per atlas tile): a
 // vertex carries tile-local coordinates that repeat with fract() across a greedy-merged quad and its tile index
 // (`tile` attribute). The look is MeshBasicMaterial's — texel × vertex colour (face shade × AO) × the voxel light
 // curve, fog, sRGB output — so nothing changes on screen. Small block models (items, the held block) keep the
@@ -49,7 +49,7 @@ void main() {
   #endif
   vec3 rgb = texel.rgb * vColor * boost;
   #ifdef VOXEL_LIGHT
-  rgb *= craftonLightRGB(vLight); // max(sky curve, warm block curve), Update #11
+  rgb *= craftonLightRGB(vLight); // max(sky curve, warm block curve)
   #endif
   gl_FragColor = vec4(rgb, texel.a * opacity);
   #include <tonemapping_fragment>
@@ -92,7 +92,7 @@ export function createChunkMaterials(tileArray) {
   const cutout = createChunkMaterial(tileArray, 'cutout', { cutout: true });
   // Double-sided so the water surface is drawn from underneath (looking up from under water).
   const translucent = createChunkMaterial(tileArray, 'translucent', { transparent: true, opacity: 0.75, side: THREE.DoubleSide });
-  // Lava (Update #11): opaque-looking, self-lit (no light curve), seen from below too.
+  // Lava: opaque-looking, self-lit (no light curve), seen from below too.
   const lava = createChunkMaterial(tileArray, 'lava', { lit: false, side: THREE.DoubleSide });
   return { opaque, cutout, translucent, lava };
 }

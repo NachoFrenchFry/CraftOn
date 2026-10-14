@@ -36,12 +36,12 @@ export class Mob {
     this.aiTimer = this.rng.next() * C.MOB_AI_INTERVAL;
     this.onGround = false;
     this.inWater = false;
-    /** Lava (Update #11): in lava, the lava damage tick, seconds left burning, the fire damage tick. */
+    /** Lava: in lava, the lava damage tick, seconds left burning, the fire damage tick. */
     this.inLava = false;
     this.lavaTimer = 0;
     this.fireTimer = 0;
     this.burnTick = 0;
-    /** Fall damage (Update #12 §5d): where the fall began, and the last landing's distance for MobManager. */
+    /** Fall damage: where the fall began, and the last landing's distance for MobManager. */
     this.fallStartY = null;
     this.lastFall = 0;
     this.justLanded = false;
@@ -162,7 +162,7 @@ export class Mob {
   _dropAhead(world, dirX, dirZ) {
     const ax = Math.floor(this.position.x + dirX * 0.8), az = Math.floor(this.position.z + dirZ * 0.8);
     const y0 = Math.floor(this.position.y);
-    // Lava ahead (at foot level or in the drop below) counts as a cliff: mobs avoid it (Update #11).
+    // Lava ahead (at foot level or in the drop below) counts as a cliff: mobs avoid it.
     for (let dy = -1; dy <= C.MOB_MAX_DROP; dy++) { const id = world.getBlock(ax, y0 - dy, az); if (isLava(id)) return true; if (dy >= 0 && isSolidAt(world, ax, y0 - 1 - dy, az)) return false; }
     return true;
   }
@@ -200,10 +200,10 @@ export class Mob {
       this.headYaw += angleDelta(target, this.headYaw) * (1 - Math.exp(-6 * dt));
       head.rotation.y = clamp(angleDelta(this.headYaw, this.yaw), -1.2, 1.2);
     }
-    // Hurt flash, then the voxel light at the mob (Update #10): a cow in a cave is darker too.
+    // Hurt flash, then the voxel light at the mob: a cow in a cave is darker too.
     if (this.flashTimer > 0) this.flashTimer -= dt;
     const base = this.flashTimer > 0 ? HURT_RED : WHITE;
-    // Material colours are written only when the light or the flash changed (Update #14 §3).
+    // Material colours are written only when the light or the flash changed.
     if (base !== this._lastBase || !sameLight(light, this._lastLight)) {
       this._lastBase = base; this._lastLight = copyLight(light, this._lastLight);
       for (const m of this.model.materials) multiplyLight(m.color.copy(base), light); // a factor or [r, g, b] (sky + warm block light)

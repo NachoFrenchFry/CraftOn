@@ -1,4 +1,4 @@
-// PerformanceMonitor.js — frame-rate watcher (Update #9 §7 / §4): the Auto render scale (steps down while the FPS
+// PerformanceMonitor.js — frame-rate watcher: the Auto render scale (steps down while the FPS
 // stays under the target, back up when there is headroom), the one-time "Performance mode" suggestion on a weak
 // device (few CPU cores, or under 30 fps in the first 15 s of play) and the one-time shader tip (under about
 // 30 fps for 10 s after enabling shaders). Suppressed under ?debuglog unless ?perfsuggest is set, so the headless

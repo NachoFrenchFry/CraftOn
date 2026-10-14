@@ -42,7 +42,7 @@ export class WorldGenerator {
     this.carveMaxY = new Int16Array(256);
     this.heightMap16 = new Int16Array(256);
     this._sample = createColumnSample();
-    /** Desert lake parameters per chunk cell (Update #12). */
+    /** Desert lake parameters per chunk cell. */
     this._lakeCache = new Map();
   }
 
@@ -93,7 +93,7 @@ export class WorldGenerator {
         this.heightMap16[col] = heights[hi];
         heightMap[col] = heights[hi];
         biomeMap[col] = biomeIds[hi];
-        // Steep high mountain faces get overhangs and notches from the coarse 3D noise (Update #8).
+        // Steep high mountain faces get overhangs and notches from the coarse 3D noise.
         const h = heights[hi];
         const dh = Math.max(Math.abs(h - heights[hi - 1]), Math.abs(h - heights[hi + 1]), Math.abs(h - heights[hi - HM_SIZE]), Math.abs(h - heights[hi + HM_SIZE]));
         this.cliffMask[col] = biomeIds[hi] === BiomeIds.MOUNTAINS && h >= 100 && dh >= 4 ? 1 : 0;
@@ -102,7 +102,7 @@ export class WorldGenerator {
     this.caves.carve(blocks, cx, cz, this.carveMaxY);
     const carved = this.noiseCaves.carve(blocks, cx, cz, this.carveMaxY, maxHeight, this.heightMap16, this.cliffMask);
     const cheeseBlocks = carved && carved.cheeseBlocks ? carved.cheeseBlocks : 0;
-    const mega = carved && carved.mega ? carved.mega : 0; // mega-cave region share of this chunk (Update #12 §5b)
+    const mega = carved && carved.mega ? carved.mega : 0; // mega-cave region share of this chunk
     // Ravines: long deep cracks opening at the surface (land only; see RavineCarver.js).
     this.ravines.carve(blocks, cx, cz, this.heightMap16, mega > 0 ? this.noiseCaves.megaMask : null);
     this._fixExposedSurface(blocks, biomeMap);
@@ -125,12 +125,12 @@ export class WorldGenerator {
     // 5. Ores and dirt/gravel pockets, then exposed ore clusters on cave walls (mega caves: many more diamonds).
     this.ores.generate(blocks, cx, cz, hasMountains);
     this.ores.exposeOres(blocks, cx, cz, heightMap, 1 + (MEGA_CAVE_DIAMOND_FACTOR - 1) * mega);
-    // Lava sea (Update #12 §5a): every cave cell at or below LAVA_SEA_LEVEL is lava — the floors of deep caverns become
+    // Lava sea: every cave cell at or below LAVA_SEA_LEVEL is lava — the floors of deep caverns become
     // lakes as wide as the cavern, continuous across chunks (the neighbour fills the same level), so nothing flows.
     const seaCells = this._lavaSea(blocks, heightMap);
     // Cave springs: single water sources in the walls of big caverns (scheduled to flow when the chunk loads).
     const springs = this._caveSprings(blocks, cx, cz, heightMap, cheeseBlocks);
-    // Lava pools (Update #11 / #12): closed floor basins of ordinary caves below LAVA_POOL_MAX_Y.
+    // Lava pools: closed floor basins of ordinary caves below LAVA_POOL_MAX_Y.
     let lavaPools = this._lavaPools(blocks, cx, cz, heightMap, cheeseBlocks) + (seaCells > 0 ? 1 : 0);
 
     // 6. Trees, plants and other decorations.
@@ -184,7 +184,7 @@ export class WorldGenerator {
   }
 
   /**
-   * Lava pools (Update #11 §3e): in a chunk with a big cheese cavern, every cave-floor cell below LAVA_POOL_MAX_Y is a
+   * Lava pools: in a chunk with a big cheese cavern, every cave-floor cell below LAVA_POOL_MAX_Y is a
    * candidate; a deterministic flood fill at its level collects the basin. A basin qualifies only when every cell
    * reached is air standing on a solid block (no step down anywhere, so nothing can pour out), the fill stays inside
    * lx / lz 1..14 (every horizontal neighbour at that level is solid and inside this chunk), it holds 3 to
@@ -237,7 +237,7 @@ export class WorldGenerator {
   }
 
   /**
-   * Desert lava lakes (Update #12 §5a, resized in Update #13 §4): one candidate per chunk cell with chance
+   * Desert lava lakes (resized): one candidate per chunk cell with chance
    * DESERT_LAKE_CHANCE, 3–10 blocks across and 1–3 deep, placed anywhere in that chunk — a lake may still straddle a
    * border, so every chunk it touches carves its own part from the same deterministic parameters. The checks use only
    * the global terrain functions (biome and height from the shaper), never a chunk's blocks: the ground around the lake
@@ -315,7 +315,7 @@ export class WorldGenerator {
     return made;
   }
 
-  /** Any lava within `r` blocks (horizontally) of a column and above `minY`, by generating the chunks around it (spawn search, Update #11). */
+  /** Any lava within `r` blocks (horizontally) of a column and above `minY`, by generating the chunks around it (spawn search). */
   lavaNear(x, z, r = 16, minY = 0) {
     const cache = new Map();
     for (let cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) for (let cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++) {

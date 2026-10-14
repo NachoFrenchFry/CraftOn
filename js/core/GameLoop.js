@@ -1,4 +1,4 @@
-// GameLoop.js — requestAnimationFrame driver with a fixed 60 Hz physics accumulator. Update #12: the one place where
+// GameLoop.js — requestAnimationFrame driver with a fixed 60 Hz physics accumulator, the one place where
 // game time is scaled (/tick): the frame's real dt × timeScale feeds the accumulator and is handed to everything that
 // animates as `gameDt`; `realDt` goes to the UI, autosave and networking. While game time does not advance (paused,
 // /tick freeze, no world) the accumulator stays at 0 and the render gets alpha = 1, so nothing swings between two old
@@ -27,12 +27,12 @@ export class GameLoop {
     this.lastGameDt = 0;
     this.lastSteps = 0;
     this.lastIntervalMs = 0;
-    /** Called after every frame with (intervalMs, cpuMs) — the profiler / benchmark hook (Update #14). */
+    /** Called after every frame with (intervalMs, cpuMs) — the profiler / benchmark hook. */
     this.onFrameEnd = null;
     this.lastTime = 0;
     this.frameId = 0;
     this.fps = 0;
-    /** Frame cap (Update #9 §7): 0 = unlimited; otherwise frames closer together than 1 / maxFps are skipped. */
+    /** Frame cap: 0 = unlimited; otherwise frames closer together than 1 / maxFps are skipped. */
     this.maxFps = 0;
     this._fpsFrames = 0;
     this._fpsTime = 0;
@@ -47,7 +47,7 @@ export class GameLoop {
   }
 
   /**
-   * Keep simulating in a hidden tab (hosting a LAN server, Update #8): browsers throttle page timers in the
+   * Keep simulating in a hidden tab (hosting a LAN server): browsers throttle page timers in the
    * background, so a tiny worker posts the ticks instead. Turned off again when the tab becomes visible.
    */
   setHiddenTicker(enabled) {
@@ -108,7 +108,7 @@ export class GameLoop {
     if (this.maxFps > 0 && !this.workerMode && now - this.lastTime < 1000 / this.maxFps - 1) { this._schedule(); return; } // FPS cap
     this._schedule();
     let dt = (now - this.lastTime) / 1000;
-    this.lastIntervalMs = now - this.lastTime; // unclamped, for the profiler / benchmark (Update #14)
+    this.lastIntervalMs = now - this.lastTime; // unclamped, for the profiler / benchmark
     this.lastTime = now;
     if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
     if (dt < 0) dt = 0;

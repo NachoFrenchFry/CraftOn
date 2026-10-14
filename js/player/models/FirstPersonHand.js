@@ -1,8 +1,8 @@
 // FirstPersonHand.js — the first-person arm and held block rendered in an overlay scene: forward swing
 // (toward the crosshair), equip dip, view bobbing, look sway that trails the turn, idle breathing, and the
-// worn chestplate sleeve / gauntlet as real inflated, textured boxes on the arm (Update #7). Tools are
+// worn chestplate sleeve / gauntlet as real inflated, textured boxes on the arm. Tools are
 // gripped at the bottom of the handle and swing around that grip, so the head arcs forward and down onto
-// the crosshair (Update #6).
+// the crosshair.
 
 import * as THREE from 'three';
 import { createPart, COLORS, createModelLights, setToolHandleRotation, tintModelLight } from './ModelParts.js';
@@ -57,7 +57,7 @@ export class FirstPersonHand {
     // Tools sit inside a pivot placed at the grip (the sprite's bottom-left corner): the mesh is offset by
     // half its size so rotating the pivot swings the head around the wrist. Inside the pivot a handle group
     // rolls the sprite 45° (handle up) and turns it 90° about the handle so the point / edge leads the
-    // swing (Update #8). Two markers give the grip and head positions to the headless check.
+    // swing. Two markers give the grip and head positions to the headless check.
     this.toolPivot = new THREE.Group();
     this.blockGroup.add(this.toolPivot);
     this.toolHandle = setToolHandleRotation(new THREE.Group());
@@ -69,7 +69,7 @@ export class FirstPersonHand {
     this.heldBlockId = -1;
 
     this.swingProgress = 1;
-    /** Eating progress 0..1 (Update #9 §8): the food bobs toward the mouth. */
+    /** Eating progress 0..1: the food bobs toward the mouth. */
     this.eating = 0;
     this.equipProgress = 1;
     this.pendingBlockId = 0;
@@ -103,7 +103,7 @@ export class FirstPersonHand {
     const item = itemId ? ItemRegistry.get(itemId) : null;
     this.heldIsTool = !!(item && item.tool);
     if (item) {
-      const asBlock = item.isBlock && !BlockRegistry.isTorch(item.blockId); // torches are held as their item sprite (Update #11)
+      const asBlock = item.isBlock && !BlockRegistry.isTorch(item.blockId); // torches are held as their item sprite
       const size = asBlock ? 0.3 : 0.5;
       const geom = asBlock ? createBlockGeometry(item.blockId, size) : createItemSpriteGeometry(this.atlas, item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture, size);
       this.blockMesh = new THREE.Mesh(geom, this.blockMaterial);
@@ -124,7 +124,7 @@ export class FirstPersonHand {
 
   swing() { this.swingProgress = 0; }
 
-  /** Brightness factor of the sky light at the player's eyes (Update #10). */
+  /** Brightness factor of the sky light at the player's eyes. */
   setLight(factor) {
     if (sameLight(factor, this._lightFactor) && this._litBlock === this.blockMesh) return;
     this._lightFactor = copyLight(factor, this._lightFactor); this._litBlock = this.blockMesh;

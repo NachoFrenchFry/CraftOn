@@ -14,7 +14,7 @@ export const ORE_TABLE = [
   { block: B.DIRT, minY: 1, maxY: 250, count: 6, sizeMin: 20, sizeMax: 32, pocket: true },
   { block: B.GRAVEL, minY: 1, maxY: 250, count: 4, sizeMin: 20, sizeMax: 32, pocket: true },
   { block: B.COAL_ORE, minY: 5, maxY: 128, count: 20, sizeMin: 8, sizeMax: 16 },
-  { block: B.GOLD_ORE, minY: 5, maxY: 80, count: 14, sizeMin: 4, sizeMax: 9 }, // Update #12 §5c: gold is the weaker tier, so it is the commoner metal
+  { block: B.GOLD_ORE, minY: 5, maxY: 80, count: 14, sizeMin: 4, sizeMax: 9 }, // gold is the weaker tier, so it is the commoner metal
   { block: B.IRON_ORE, minY: 5, maxY: 64, count: 10, sizeMin: 4, sizeMax: 9 },
   { block: B.DIAMOND_ORE, minY: 5, maxY: 16, count: 2, sizeMin: 3, sizeMax: 6 },
 ];
@@ -64,7 +64,7 @@ export class OreGenerator {
    * start a small cluster, so walking through caverns shows coal / iron on the walls and, deeper down,
    * gold and the occasional diamond. Deterministic per chunk.
    * @param {Uint8Array} heightMap terrain height per column (16×16)
-   * @param {number} [diamondFactor] multiplies the exposed-diamond chance below y 40 (mega caves, Update #12 §5b)
+   * @param {number} [diamondFactor] multiplies the exposed-diamond chance below y 40 (mega caves)
    */
   exposeOres(blocks, cx, cz, heightMap, diamondFactor = 1) {
     const rng = chunkRandom(this.seed, cx, cz, EXPOSED_SALT);

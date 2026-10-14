@@ -1,11 +1,11 @@
-// HostServer.js — the host's game tab is the server (Update #8): it publishes a lobby row (plain REST), answers
+// HostServer.js — the host's game tab is the server: it publishes a lobby row (plain REST), answers
 // WebRTC offers found by polling the signals table, and runs the authoritative world for every guest: blocks
 // (guest requests are validated — reach, game mode, block rules — then broadcast, or rejected so the guest
 // reverts), the water simulation, mobs (AI, health, death, drops), dropped items and pickups (granted to exactly
 // one player), and time. Each player owns their own movement (light sanity checks) and inventory; guests' player
 // data is stored in the host's world save under `guests[userId]`. Snapshots of every player go out at 20 Hz and
 // of mobs / items at 12 Hz on the unreliable state channel; everything else on the reliable channel.
-// Update #15: the lobby is Public (listed for everyone) or Private (same network or by code), every link uses the
+// the lobby is Public (listed for everyone) or Private (same network or by code), every link uses the
 // STUN + TURN servers from IceServers.js, and the host can Kick or Ban players (bans live in the world save as
 // meta.bans[userId]; a banned account is refused at the signaling step, before any WebRTC negotiation).
 // Never uses Supabase Realtime.
@@ -16,7 +16,7 @@ import { playerBlocksAt, playerHeightForPose, mobBlocksAt } from '../player/Plac
 import { pvpDamage, PVP_REACH, PVP_REACH_SLACK, deathMessage } from '../player/Damage.js';
 import { cleanChatText } from '../ui/Chat.js';
 
-/** Chat rate limit per guest (Update #12): at most this many messages per window. */
+/** Chat rate limit per guest: at most this many messages per window. */
 const CHAT_LIMIT = 5;
 const CHAT_WINDOW_MS = 5000;
 import { attackDamage } from '../items/Tools.js';
@@ -24,7 +24,7 @@ import { ARMOR_POINTS } from '../items/ItemDefinitions.js';
 import { Signaling } from './Signaling.js';
 import { detectNetworkHash } from './NetworkId.js';
 import { RemotePlayerManager } from './RemotePlayer.js';
-import { Msg, RejectReason, GAME_VERSION, MAX_PLAYERS_DEFAULT, VISIBILITIES, PLAYER_SNAPSHOT_HZ, MOB_SNAPSHOT_HZ, encodePlayerState, decodePlayerState, encodeChunkBatches, makeJoinCode, Pose } from './Protocol.js';
+import { Msg, RejectReason, MAX_PLAYERS_DEFAULT, VISIBILITIES, PLAYER_SNAPSHOT_HZ, MOB_SNAPSHOT_HZ, encodePlayerState, decodePlayerState, encodeChunkBatches, makeJoinCode, Pose } from './Protocol.js';
 import { BlockRegistry, BREAK_TIME, SOLID } from '../blocks/BlockRegistry.js';
 import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
@@ -35,6 +35,10 @@ import { ITEM_HALF } from '../entities/ItemEntity.js';
 const LOBBY_HEARTBEAT_MS = 10000;
 const OFFER_POLL_MS = 1000;
 const MAX_MOVE_PER_SNAPSHOT = 40;   // blocks: anything faster is treated as a glitch and ignored
+/** After this many ignored snapshots in a row the player is snapped back to the last accepted position (never left desynced). */
+const MAX_REJECTED_SNAPSHOTS = 3;
+/** After a host-side respawn, snapshots that still carry the guest's DEAD bit are ignored for this long (they were sent before SPAWN_AT arrived). */
+const RESPAWN_GRACE_SECONDS = 3;
 const CHUNK_SEND_HIGH_WATER = 1 << 20;
 
 const MODES = ['survival', 'creative', 'spectator'];
@@ -85,7 +89,7 @@ export class HostServer {
     // Without a detectable public address the lobby's network_hash is null: a Private lobby is then reachable by code only.
     const res = await g.cloud.from('lobbies').upsert({
       world_name: String(this.worldName || 'World').slice(0, 32), network_hash: net.hash || null, join_code: this.joinCode,
-      player_count: 1, max_players: this.maxPlayers, game_version: GAME_VERSION, visibility: this.visibility,
+      player_count: 1, max_players: this.maxPlayers, visibility: this.visibility,
     }, { onConflict: 'host_id' }).select('id, join_code').single();
     if (res.error) throw new Error('publish lobby: ' + (res.error.message || res.error));
     this.lobby = res.data;
@@ -174,7 +178,7 @@ export class HostServer {
       try { stale.link && stale.link.close(); } catch (e) { /* ignore */ }
       this.pending.delete(userId);
     }
-    const peer = { userId, name: null, link: null, ready: false, state: null, stateTime: 0, mode: 'survival', held: 0, armor: null, remote: null, lastHit: 0, lastHurt: 0, health: 100, since: performance.now(), attempt, kicked: null };
+    const peer = { userId, name: null, link: null, ready: false, state: null, stateTime: 0, mode: 'survival', held: 0, armor: null, remote: null, lastHit: 0, lastHurt: 0, health: 100, since: performance.now(), attempt, kicked: null, dead: false, rejected: 0 };
     this.pending.set(userId, peer);
     const ice = await getIceServers(this.game.cloud, { mock: this.game.cloudMock }); // cached; refreshed before the credentials expire
     this.ice = ice;
@@ -189,6 +193,7 @@ export class HostServer {
   }
 
   _onMessage(peer, msg, channel) {
+    if (!msg || typeof msg.t !== 'string') return; // malformed: ignored
     switch (msg.t) {
       case Msg.HELLO: return this._hello(peer, msg);
       case Msg.P: return this._playerState(peer, msg);
@@ -204,6 +209,7 @@ export class HostServer {
       case Msg.HIT: return this._hit(peer, msg);
       case Msg.HEALTH: return this._health(peer, msg);
       case Msg.DEATH: return this._death(peer, msg);
+      case Msg.RESPAWN: return this._respawn(peer, msg);
       case Msg.CHAT: return this._chat(peer, msg);
       case Msg.TICK: return; // only the host sets the rate
       case Msg.BYE: return this._peerClosed(peer, 'left');
@@ -213,7 +219,7 @@ export class HostServer {
 
   async _hello(peer, msg) {
     const reject = (reason) => { peer.link.send(Msg.REJECT, { reason }); setTimeout(() => peer.link.close(), 300); this.pending.delete(peer.userId); };
-    if (msg.version !== GAME_VERSION) return reject(RejectReason.VERSION);
+    if (typeof msg.userId !== 'string' || !msg.userId) return reject(RejectReason.DUPLICATE);
     if (this.isBanned(msg.userId) || this.isBanned(peer.userId)) return reject(RejectReason.BANNED);
     if (this.peers.size + 1 >= this.maxPlayers) return reject(RejectReason.FULL);
     if (msg.userId === this.userId || this.peers.has(msg.userId) || msg.userId !== peer.userId) return reject(RejectReason.DUPLICATE);
@@ -225,7 +231,7 @@ export class HostServer {
     const g = this.game;
     const meta = g.worldMeta;
     const saved = meta.guests[peer.userId] || null;
-    // Game mode permissions (Update #9 §1): a returning guest gets its saved mode, a new one the default mode;
+    // Game mode permissions: a returning guest gets its saved mode, a new one the default mode;
     // "Can change own game mode" is off unless the host turned it on in Server Settings.
     const row = this._guestRow(peer.userId);
     row.name = peer.name;
@@ -235,7 +241,7 @@ export class HostServer {
     const players = [this._playerRow(this.userId, this.name, encodePlayerState(g.player), this._ownMeta())];
     for (const other of this.peers.values()) if (other !== peer && other.state) players.push(this._playerRow(other.userId, other.name, other.state, { held: other.held, armor: other.armor, mode: other.mode }));
     peer.link.send(Msg.WELCOME, {
-      seed: g.world.seed, worldName: meta.name, gameMode: meta.gameMode, version: GAME_VERSION, hostId: this.userId, hostName: this.name,
+      seed: g.world.seed, worldName: meta.name, gameMode: meta.gameMode, hostId: this.userId, hostName: this.name,
       tick: { rate: g.tick.rate, frozen: g.tick.frozen },
       spawn: { x: g.player.spawn.x, y: g.player.spawn.y, z: g.player.spawn.z },
       you: { player: saved ? saved.player : null, inventory: saved ? saved.inventory : null, mode: peer.mode, canChangeMode: peer.canChangeMode },
@@ -258,15 +264,67 @@ export class HostServer {
     if (!peer.ready || !Array.isArray(msg.s)) return;
     const s = msg.s;
     const now = performance.now() / 1000;
-    // Light sanity checks: no teleports, no flying in Survival.
+    // Light sanity checks: no teleports (a legitimate jump — respawn, the void, a teleport — goes through RESPAWN /
+    // SPAWN_AT and resets the baseline), no flying in Survival. A player whose snapshots keep failing is snapped back
+    // to the last accepted position instead of being ignored forever.
     if (peer.state) {
       const d = Math.hypot(s[0] - peer.state[0], s[1] - peer.state[1], s[2] - peer.state[2]);
-      if (d > MAX_MOVE_PER_SNAPSHOT) return;
+      if (d > MAX_MOVE_PER_SNAPSHOT) { if (++peer.rejected >= MAX_REJECTED_SNAPSHOTS) this._correct(peer); return; }
     }
+    peer.rejected = 0;
     if (peer.mode === 'survival' && (s[8] & Pose.FLYING)) s[8] &= ~Pose.FLYING;
+    // The guest's own DEAD bit counts (its DEATH may still be in flight), except right after the host respawned it: a
+    // snapshot sent before the guest saw SPAWN_AT still carries the bit and must not kill it again.
+    if ((s[8] & Pose.DEAD) && now - (peer.respawnedAt || -Infinity) > RESPAWN_GRACE_SECONDS) peer.dead = true;
+    if (peer.dead) s[8] |= Pose.DEAD; else s[8] &= ~Pose.DEAD; // only the host's respawn clears it
     peer.state = s;
     peer.stateTime = now;
     if (peer.remote) peer.remote.snapshot(now, s);
+  }
+
+  /** Snap a player back to its last accepted position (its snapshots kept jumping too far). */
+  _correct(peer) {
+    peer.rejected = 0;
+    const s = peer.state;
+    console.info(`CraftOn net: correcting ${peer.name || peer.userId} back to ${s[0].toFixed(1)}, ${s[1].toFixed(1)}, ${s[2].toFixed(1)}`);
+    peer.link.send(Msg.SPAWN_AT, { x: s[0], y: s[1], z: s[2], reason: 'correction' });
+  }
+
+  /** Reset the movement baseline to a position the host ordered (respawn, void, teleport): the next snapshot is accepted from there. */
+  _setBaseline(peer, x, y, z) {
+    const old = peer.state, now = performance.now() / 1000;
+    peer.state = [x, y, z, 0, 0, 0, old ? old[6] : 0, old ? old[7] : 0, ((old ? old[8] : 0) & ~Pose.DEAD) | (peer.dead ? Pose.DEAD : 0)];
+    peer.stateTime = now;
+    peer.rejected = 0;
+    if (peer.remote) { peer.remote.interp.reset(); peer.remote.snapshot(now, peer.state); }
+  }
+
+  /** Where a guest respawns: its saved spawn point when it has one, else the world spawn. */
+  _spawnFor(peer) {
+    const saved = this.game.worldMeta && this.game.worldMeta.guests && this.game.worldMeta.guests[peer.userId];
+    const pl = saved && saved.player;
+    if (pl && typeof pl.spawnX === 'number') return { x: pl.spawnX, y: pl.spawnY, z: pl.spawnZ };
+    const sp = this.game.player.spawn;
+    return { x: sp.x, y: sp.y, z: sp.z };
+  }
+
+  /** A guest asks to respawn (or fell into the void in Creative): the host places it and resets the baseline. */
+  _respawn(peer, msg) {
+    if (!peer.ready) return;
+    const reason = msg && msg.reason === 'void' ? 'void' : 'respawn';
+    const sp = this._spawnFor(peer);
+    if (reason === 'respawn') { peer.dead = false; peer.health = 100; peer.respawnedAt = performance.now() / 1000; this._guestRow(peer.userId).health = 100; }
+    this._setBaseline(peer, sp.x, sp.y, sp.z);
+    peer.link.send(Msg.SPAWN_AT, { x: sp.x, y: sp.y, z: sp.z, reason });
+  }
+
+  /** Move a connected player (a future /tp): the baseline follows, so the jump is never rejected. */
+  movePeer(userId, x, y, z) {
+    const peer = this.peers.get(userId);
+    if (!peer) return false;
+    this._setBaseline(peer, x, y, z);
+    peer.link.send(Msg.SPAWN_AT, { x, y, z, reason: 'teleport' });
+    return true;
   }
 
   _blockRequest(peer, msg) {
@@ -274,7 +332,7 @@ export class HostServer {
     const { x, y, z, id, seq } = msg;
     // `reason` names the real reasons ('far', 'entity'); a stale or malformed request rejects silently.
     const reject = (reason = null) => peer.link.send(Msg.BLOCK_REJECT, { seq, x, y, z, id: g.world.getBlock(x, y, z), reason });
-    if (!peer.state || !Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z) || !Number.isInteger(id)) return reject();
+    if (!peer.state || peer.dead || !Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z) || !Number.isInteger(id)) return reject();
     const dist = Math.hypot(x + 0.5 - peer.state[0], y + 0.5 - (peer.state[1] + 1.6), z + 0.5 - peer.state[2]);
     if (dist > REACH_CREATIVE + 2.5) return reject('far');
     if (!g.world.isLoadedAt(x, z)) return reject();
@@ -286,7 +344,7 @@ export class HostServer {
     } else {
       if (!BlockRegistry.get(id)) return reject();
       if (!BlockRegistry.isReplaceable(cur)) return reject();
-      if (!isSupported(g.world, x, y, z, id)) return reject(); // plants need ground, torches a full opaque cube below / behind (Update #11)
+      if (!isSupported(g.world, x, y, z, id)) return reject(); // plants need ground, torches a full opaque cube below / behind
       if (BlockRegistry.isTorch(id) && (isLiquid(cur) || y <= 0)) return reject();
       // Never inside anyone: the host, any other player (raw snapshots) or a mob.
       if (SOLID[id] === 1 && (g.player.aabb.intersectsBox(x, y, z, x + 1, y + 1, z + 1) || this._playerBlocksAt(x, y, z, peer) || mobBlocksAt(g.entities.mobs.mobs, x, y, z))) return reject('entity');
@@ -314,13 +372,13 @@ export class HostServer {
   _playerBlocksAt(x, y, z) {
     for (const other of this.peers.values()) {
       const s = other.state;
-      if (!s || (s[8] & Pose.SPECTATOR)) continue;
+      if (!s || other.dead || (s[8] & Pose.SPECTATOR)) continue;
       if (playerBlocksAt(x, y, z, s[0], s[1], s[2], playerHeightForPose(s[8]))) return true;
     }
     return false;
   }
 
-  // ---- Player vs player (Update #9 §8): the host validates every hit ----
+  // ---- Player vs player: the host validates every hit ----
 
   get pvp() { const m = this.game.worldMeta; return !m || m.pvp !== false; }
 
@@ -334,7 +392,7 @@ export class HostServer {
 
   /** A guest hit someone (HIT { target, crit }). */
   _hit(peer, msg) {
-    if (!peer.state) return;
+    if (!peer.state || peer.dead) return;
     this._applyHit({ id: peer.userId, name: peer.name, held: peer.held, mode: peer.mode, x: peer.state[0], y: peer.state[1], z: peer.state[2], peer }, String(msg.target || ''), !!msg.crit);
   }
 
@@ -353,8 +411,8 @@ export class HostServer {
     const attPeer = att.peer || this;
     if (now - (attPeer.lastHit || 0) < 0.45) return;
     let vx, vy, vz, vMode, vPoints, victimPeer = null;
-    if (targetId === this.userId) { const p = g.player; vx = p.position.x; vy = p.position.y; vz = p.position.z; vMode = p.gameMode; vPoints = g.inventory.armorPoints(); }
-    else { victimPeer = this.peers.get(targetId); if (!victimPeer || !victimPeer.state) return; vx = victimPeer.state[0]; vy = victimPeer.state[1]; vz = victimPeer.state[2]; vMode = victimPeer.mode; vPoints = this._peerArmorPoints(victimPeer); }
+    if (targetId === this.userId) { const p = g.player; if (p.dead) return; vx = p.position.x; vy = p.position.y; vz = p.position.z; vMode = p.gameMode; vPoints = g.inventory.armorPoints(); }
+    else { victimPeer = this.peers.get(targetId); if (!victimPeer || !victimPeer.state || victimPeer.dead) return; vx = victimPeer.state[0]; vy = victimPeer.state[1]; vz = victimPeer.state[2]; vMode = victimPeer.mode; vPoints = this._peerArmorPoints(victimPeer); }
     if (vMode !== 'survival') return;
     const victim = victimPeer || this;
     if (now - (victim.lastHurt || 0) < 0.45) return;
@@ -381,6 +439,9 @@ export class HostServer {
 
   /** A guest died: everyone else gets the message. */
   _death(peer, msg) {
+    peer.dead = true;
+    peer.health = 0;
+    this._guestRow(peer.userId).health = 0;
     const text = deathMessage(peer.name, msg.cause);
     this.game.systemChat(text, 'yellow', false);
     this.broadcast(Msg.DEATH, { id: peer.userId, text }, peer);
@@ -389,7 +450,7 @@ export class HostServer {
   /** The host died: tell the guests (the host's own chat already shows its death screen message). */
   announceOwnDeath(cause) { const text = deathMessage(this.name, cause); this.game.ui.chat.system(text, 'yellow'); this.broadcast(Msg.DEATH, { id: this.userId, text }); }
 
-  // ---- Chat (Update #12) ----
+  // ---- Chat ----
 
   /** A guest's chat line: validated (length, control characters, about 5 per 5 s) and sent to everyone with the name the guest joined with — never a name from the message. */
   _chat(peer, msg) {
@@ -419,7 +480,7 @@ export class HostServer {
   _attack(peer, msg) {
     const mobs = this.game.entities.mobs;
     const mob = mobs.byId.get(msg.id);
-    if (!mob || !peer.state) return;
+    if (!mob || !peer.state || peer.dead) return;
     const d = Math.hypot(mob.position.x - peer.state[0], mob.position.z - peer.state[2]);
     if (d > 6) return;
     const damage = Math.max(1, Math.min(10, Number(msg.damage) || 1));
@@ -429,7 +490,7 @@ export class HostServer {
   _pickup(peer, msg) {
     const items = this.game.entities;
     const it = items.byId.get(msg.id);
-    if (!it || it.dead || !peer.state) return;
+    if (!it || it.dead || !peer.state || peer.dead) return;
     const px = peer.state[0], py = peer.state[1], pz = peer.state[2];
     const hw = PLAYER_WIDTH / 2 + ITEM_PICKUP_EXPAND_XZ + 0.5;
     const p = it.position;
@@ -464,7 +525,7 @@ export class HostServer {
     this.game.session.changedSinceSave = true;
   }
 
-  // ---- Game mode permissions (Update #9 §1): the host decides every guest's mode -------------------------
+  // ---- Game mode permissions: the host decides every guest's mode -------------------------
 
   /** Mode new guests start in: meta.defaultGameMode (Server Settings), else the world's own mode. */
   get defaultMode() { const meta = this.game.worldMeta; return (meta && MODES.includes(meta.defaultGameMode) && meta.defaultGameMode) || (meta && meta.gameMode) || 'survival'; }
@@ -504,7 +565,7 @@ export class HostServer {
     return rows;
   }
 
-  // ---- Kick and Ban (Update #15 §2) ----
+  // ---- Kick and Ban ----
 
   /** userId → { name, at } in the world save (created on first use). */
   get bans() { const meta = this.game.worldMeta; if (!meta) return {}; if (!meta.bans || typeof meta.bans !== 'object') meta.bans = {}; return meta.bans; }

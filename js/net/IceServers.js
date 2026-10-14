@@ -1,4 +1,4 @@
-// IceServers.js — the ICE servers for every WebRTC connection (Update #15 §3): two public STUN servers plus TURN
+// IceServers.js — the ICE servers for every WebRTC connection: two public STUN servers plus TURN
 // relays whose short-lived credentials come from the Supabase Edge Function `turn-credentials`
 // (supabase/functions/turn-credentials/index.ts: Cloudflare Realtime or Metered, chosen by the owner's TURN_PROVIDER
 // secret; the provider key never reaches the browser). The credentials are cached and refreshed about ten minutes

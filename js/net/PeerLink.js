@@ -2,7 +2,7 @@
 // (local description resolved only once ICE gathering completed), two data channels ("reliable": ordered,
 // retransmitted — world data, block changes, events; "state": unordered, maxRetransmits 0 — frequent
 // snapshots), a ping every PING_SECONDS with a PEER_TIMEOUT_SECONDS timeout, and close detection. It knows
-// nothing about how peers were found: `iceServers` is a parameter (STUN + TURN from IceServers.js since Update #15,
+// nothing about how peers were found: `iceServers` is a parameter (STUN + TURN from IceServers.js,
 // [] for a LAN-only link with host / mDNS candidates only). `connectionType` says how the selected candidate pair
 // travels — "LAN" (both ends private addresses), "Direct" (STUN-punched) or "Relay (TURN)" — from getStats(), refreshed
 // with every ping, for F3 and the host's player list.
@@ -11,8 +11,25 @@ import { Msg, PING_SECONDS, PEER_TIMEOUT_SECONDS, encode, decode } from './Proto
 
 /** Non-trickle ICE: the offer / answer carries every candidate gathered within this long (relay allocations take a moment). */
 const GATHER_TIMEOUT_MS = 4000;
-/** Non-trickle ICE: once at least one candidate is in and none arrived for this long, the description is sent as is. */
+/**
+ * Non-trickle ICE: once no candidate arrived for this long the description is sent as is — but only when the kinds the
+ * configuration promises are in: a server-reflexive (srflx) candidate when STUN servers are configured and a relay
+ * candidate when TURN servers are, so a slow STUN / TURN answer is not left out of a cross-network offer. A server that
+ * reports an error for every one of its URLs (unreachable, bad credentials) drops its requirement; otherwise the wait
+ * ends with gathering "complete" or GATHER_TIMEOUT_MS. Same-network play loses nothing: host candidates arrive at once
+ * and the quiet timer still ends the wait as soon as the promised kinds are in.
+ */
 const GATHER_QUIET_MS = 400;
+
+const urlsOf = (servers) => (servers || []).flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls])).filter((u) => typeof u === 'string');
+/** Host name of a stun: / turn: URL (lower case), or null. */
+const hostOf = (url) => { const m = /^(?:stun|stuns|turn|turns):\[?([^\]:?/]+)/i.exec(String(url || '')); return m ? m[1].toLowerCase() : null; };
+/** 'host' | 'srflx' | 'prflx' | 'relay' of an RTCIceCandidate (the `type` property, else parsed from the SDP line). */
+function candidateType(c) {
+  if (c.type) return c.type;
+  const m = /\styp\s+(\w+)/.exec(c.candidate || '');
+  return m ? m[1] : 'host';
+}
 
 /** Private (RFC 1918 / link-local / ULA) or mDNS addresses mean the same LAN. */
 export function isPrivateAddress(addr) {
@@ -46,7 +63,12 @@ export class PeerLink {
    * @param {{ iceServers?: RTCIceServer[], onMessage?: (msg, channel) => void, onOpen?: () => void, onClose?: (reason) => void }} opts
    */
   constructor(opts = {}) {
-    this.pc = new RTCPeerConnection({ iceServers: opts.iceServers || [] });
+    const iceServers = opts.iceServers || [];
+    this.pc = new RTCPeerConnection({ iceServers });
+    const urls = urlsOf(iceServers);
+    /** The STUN / TURN hosts configured: gathering waits for a srflx / relay candidate while any of them may still answer. */
+    this._stunHosts = new Set(urls.filter((u) => /^stuns?:/i.test(u)).map(hostOf).filter(Boolean));
+    this._turnHosts = new Set(urls.filter((u) => /^turns?:/i.test(u)).map(hostOf).filter(Boolean));
     this.onMessage = opts.onMessage || (() => {});
     this.onOpen = opts.onOpen || (() => {});
     this.onClose = opts.onClose || (() => {});
@@ -55,7 +77,7 @@ export class PeerLink {
     this.open = false;
     this.closed = false;
     this.rtt = 0;
-    /** 'LAN' | 'Direct' | 'Relay (TURN)' | null while unknown (Update #15). */
+    /** 'LAN' | 'Direct' | 'Relay (TURN)' | null while unknown. */
     this.connectionType = null;
     /** The selected pair as "type address" strings (diagnostics). */
     this.lastPair = null;
@@ -110,14 +132,47 @@ export class PeerLink {
   _gathered() {
     if (this.pc.iceGatheringState === 'complete') return Promise.resolve();
     return new Promise((resolve) => {
+      const started = performance.now();
+      const counts = { host: 0, srflx: 0, prflx: 0, relay: 0 };
+      const stunFailed = new Set(), turnFailed = new Set();
       let quiet = null, candidates = 0, finished = false;
-      const done = () => { if (finished) return; finished = true; this.pc.removeEventListener('icegatheringstatechange', check); this.pc.removeEventListener('icecandidate', onCandidate); if (quiet) clearTimeout(quiet); resolve(); };
-      const check = () => { if (this.pc.iceGatheringState === 'complete') done(); };
-      // Host candidates arrive within milliseconds; the rest of the "complete" wait is mDNS / IPv6 timeouts.
-      const onCandidate = (e) => { if (!e.candidate) { done(); return; } candidates++; if (quiet) clearTimeout(quiet); quiet = setTimeout(() => { if (candidates > 0) done(); }, GATHER_QUIET_MS); };
+      const needSrflx = () => this._stunHosts.size > 0 && stunFailed.size < this._stunHosts.size && counts.srflx === 0;
+      const needRelay = () => this._turnHosts.size > 0 && turnFailed.size < this._turnHosts.size && counts.relay === 0;
+      const done = (why) => {
+        if (finished) return;
+        finished = true;
+        this.pc.removeEventListener('icegatheringstatechange', check);
+        this.pc.removeEventListener('icecandidate', onCandidate);
+        this.pc.removeEventListener('icecandidateerror', onError);
+        if (quiet) clearTimeout(quiet);
+        console.info(`CraftOn net: ice gathering ${why} after ${Math.round(performance.now() - started)} ms (host ${counts.host}, srflx ${counts.srflx}, relay ${counts.relay}; stun hosts ${this._stunHosts.size} / ${stunFailed.size} failed, turn hosts ${this._turnHosts.size} / ${turnFailed.size} failed)`);
+        resolve();
+      };
+      const check = () => { if (this.pc.iceGatheringState === 'complete') done('complete'); };
+      // Host candidates arrive within milliseconds; the quiet timer ends the wait once nothing new came for a while and
+      // the kinds the STUN / TURN configuration promises are in (a srflx, a relay); the rest of "complete" is mDNS / IPv6.
+      const armQuiet = () => { if (quiet) clearTimeout(quiet); quiet = setTimeout(() => { if (candidates > 0 && !needSrflx() && !needRelay()) done('quiet'); }, GATHER_QUIET_MS); };
+      const onCandidate = (e) => {
+        if (!e.candidate) { done('complete'); return; }
+        candidates++;
+        const type = candidateType(e.candidate);
+        counts[type] = (counts[type] || 0) + 1;
+        armQuiet();
+      };
+      // A STUN / TURN host that fails (unreachable, DNS, bad credentials) can never deliver its candidate: stop waiting for
+      // it. Errors are attributed by host name, not by the URL's scheme: the browser also probes TURN hosts for srflx
+      // candidates and reports those failures with a stun: URL, which must not release the real STUN requirement.
+      const onError = (e) => {
+        const host = hostOf(e.url);
+        if (!host) return;
+        if (this._stunHosts.has(host)) stunFailed.add(host);
+        if (this._turnHosts.has(host)) turnFailed.add(host);
+        if (candidates > 0) armQuiet();
+      };
       this.pc.addEventListener('icegatheringstatechange', check);
       this.pc.addEventListener('icecandidate', onCandidate);
-      setTimeout(done, GATHER_TIMEOUT_MS);
+      this.pc.addEventListener('icecandidateerror', onError);
+      setTimeout(() => done('timed out'), GATHER_TIMEOUT_MS);
     });
   }
 

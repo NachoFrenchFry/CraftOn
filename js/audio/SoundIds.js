@@ -1,4 +1,4 @@
-// SoundIds.js — the sound ids the game plays (Update #15): one folder per sound under audio/, e.g. "breaking/stone",
+// SoundIds.js — the sound ids the game plays: one folder per sound under audio/, e.g. "breaking/stone",
 // "player/hurt", "mobs/cow/ambient", "ui/click". The code still asks for the old dotted names in a few places
 // ("stone.break", "ui.pop", "mob.cow_hurt"…) and the network relays them, so soundId() maps either form to the folder id.
 // The export tool (tools/sound-recipes/) and tools/check-sounds.mjs use the same mapping. Pure, worker-safe.

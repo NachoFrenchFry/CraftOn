@@ -1,4 +1,4 @@
-// LightCurve.js — the one brightness curve (Update #10) shared by the mesher-fed chunk materials, the shader
+// LightCurve.js — the one brightness curve shared by the mesher-fed chunk materials, the shader
 // pipeline, mobs, players, dropped items, particles and the first-person hand. Minecraft-like:
 //   l = level / 15;  curve = l / (4 − 3 l);  curve = mix(minBrightness, 1, curve ^ gamma)
 // `minBrightness` and `gamma` come from the Brightness option (Moody 0 % … Bright 100 %, default 50 %):
@@ -23,11 +23,11 @@ export function lightCurve(level, params = brightnessParams(BRIGHTNESS_DEFAULT))
 }
 
 /**
- * Block light's warm tint (Update #11): final colour = max(curve(sky), curve(block) × tint). The multiplier works in
- * linear light, so these are the linear values of about #FFD9A0 (sRGB 1 / 0.85 / 0.63 → linear 1 / 0.74 / 0.45);
- * after the renderer's sRGB output a torch-lit stone wall reads as that colour.
+ * Block light's warm tint: final colour = max(curve(sky), curve(block) × tint). The multiplier works in linear light,
+ * so these are the linear values of about #FFF1D6, a warm yellow-white (sRGB 1 / 0.945 / 0.84 → linear 1 / 0.88 / 0.68):
+ * torch-lit stone reads warm, never orange or red.
  */
-export const BLOCK_LIGHT_TINT = Object.freeze([1, 0.74, 0.45]);
+export const BLOCK_LIGHT_TINT = Object.freeze([1, 0.88, 0.68]);
 
 /** Lit colour factors of a cell from both channels (0–15 each, fractions allowed). */
 export function lightColor(sky, block, params = brightnessParams(BRIGHTNESS_DEFAULT), out = [0, 0, 0]) {
@@ -40,7 +40,7 @@ export function lightColor(sky, block, params = brightnessParams(BRIGHTNESS_DEFA
 export const LIGHT_CURVE_GLSL = `
 uniform float uMinBright;
 uniform float uGamma;
-const vec3 craftonWarm = vec3(1.0, 0.74, 0.45); // linear-space #FFD9A0
+const vec3 craftonWarm = vec3(1.0, 0.88, 0.68); // linear-space #FFF1D6, a warm yellow-white
 float craftonLightCurve(float l) {
   l = clamp(l, 0.0, 1.0);
   float c = l / (4.0 - 3.0 * l);

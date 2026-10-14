@@ -29,8 +29,8 @@ export const ItemIds = Object.freeze({
   IRON_HELMET: 282, IRON_CHESTPLATE: 283, IRON_GAUNTLETS: 284, IRON_LEGGINGS: 285, IRON_BOOTS: 286,
   DIAMOND_HELMET: 287, DIAMOND_CHESTPLATE: 288, DIAMOND_GAUNTLETS: 289, DIAMOND_LEGGINGS: 290, DIAMOND_BOOTS: 291,
   COW_SPAWN_EGG: 292, PIG_SPAWN_EGG: 293, SHEEP_SPAWN_EGG: 294,
-  COOKED_BEEF: 295, COOKED_PORKCHOP: 296, COOKED_MUTTON: 297, // Update #9 §8: smelted from the raw meats
-  // Update #11
+  COOKED_BEEF: 295, COOKED_PORKCHOP: 296, COOKED_MUTTON: 297, // smelted from the raw meats
+  // lava, sticks, torches, the gold tier, the storage blocks
   STICK: 298,
   LAVA_BUCKET: 299,
   GOLDEN_PICKAXE: 300, GOLDEN_AXE: 301, GOLDEN_SWORD: 302,
@@ -42,7 +42,7 @@ export const ARMOR_SLOTS = Object.freeze(['helmet', 'chestplate', 'gauntlets', '
 /** Armor points per material and piece (shown as "+N Armor"; the player has no health yet, so they are stored only). */
 export const ARMOR_POINTS = Object.freeze({
   wood: { helmet: 1, chestplate: 3, gauntlets: 1, leggings: 2, boots: 1 },     // 8
-  gold: { helmet: 2, chestplate: 4, gauntlets: 1, leggings: 3, boots: 1 },     // 11 (Update #11: between wood and iron)
+  gold: { helmet: 2, chestplate: 4, gauntlets: 1, leggings: 3, boots: 1 }, // 11 (between wood and iron)
   iron: { helmet: 2, chestplate: 6, gauntlets: 2, leggings: 5, boots: 2 },     // 17
   diamond: { helmet: 3, chestplate: 8, gauntlets: 3, leggings: 6, boots: 3 },  // 23
 });
@@ -64,7 +64,7 @@ function armorDefs() {
 }
 
 /**
- * Tier table (Update #11): mining speed (pickaxe on stone-type, axe on wood-type), pickaxe / axe / sword damage.
+ * Tier table: mining speed (pickaxe on stone-type, axe on wood-type), pickaxe / axe / sword damage.
  *   hand ×1 1/–/–  ·  wood ×4 2/3/4  ·  stone ×6 3/4/5  ·  gold ×8 4/5/6  ·  iron ×10 5/6/7  ·  diamond ×14 6/7/8
  * Stone by hand takes 6 s; with pickaxes 1.5 / 1.0 / 0.75 / 0.6 / ≈0.43 s.
  */
@@ -80,7 +80,7 @@ export const TOOL_DAMAGE = Object.freeze({
  * Fields: id, name, displayName, texture (16×16 icon / held sprite), stackSize, placeable (always false),
  * tool: { type: 'pickaxe' | 'axe' | 'sword', speed (pickaxes / axes), damage } for tools and weapons;
  * armor: { slot, material, points } for armor; spawnEgg: mob type (creative-only, never dropped or crafted);
- * food: { heal } for things you can eat (hold right click 1.6 s, Update #9 §8).
+ * food: { heal } for things you can eat (hold right click 1.6 s).
  */
 export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COAL, name: 'coal', displayName: 'Coal', texture: 'coal', stackSize: 64, placeable: false },
@@ -107,13 +107,13 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COOKED_BEEF, name: 'cooked_beef', displayName: 'Cooked Beef', texture: 'cooked_beef', stackSize: 64, placeable: false, food: { heal: 30 } },
   { id: ItemIds.COOKED_PORKCHOP, name: 'cooked_porkchop', displayName: 'Cooked Porkchop', texture: 'cooked_porkchop', stackSize: 64, placeable: false, food: { heal: 30 } },
   { id: ItemIds.COOKED_MUTTON, name: 'cooked_mutton', displayName: 'Cooked Mutton', texture: 'cooked_mutton', stackSize: 64, placeable: false, food: { heal: 25 } },
-  // Update #4: axes (wood-type blocks)
+  // axes (wood-type blocks)
   { id: ItemIds.WOODEN_AXE, name: 'wooden_axe', displayName: 'Wooden Axe', texture: 'wooden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.wooden, damage: TOOL_DAMAGE.axe.wooden } },
   { id: ItemIds.STONE_AXE, name: 'stone_axe', displayName: 'Stone Axe', texture: 'stone_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.stone, damage: TOOL_DAMAGE.axe.stone } },
   { id: ItemIds.IRON_AXE, name: 'iron_axe', displayName: 'Iron Axe', texture: 'iron_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.iron, damage: TOOL_DAMAGE.axe.iron } },
   { id: ItemIds.DIAMOND_AXE, name: 'diamond_axe', displayName: 'Diamond Axe', texture: 'diamond_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.diamond, damage: TOOL_DAMAGE.axe.diamond } },
   { id: ItemIds.GOLDEN_AXE, name: 'golden_axe', displayName: 'Golden Axe', texture: 'golden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.golden, damage: TOOL_DAMAGE.axe.golden } },
-  // Update #5: armor (15 pieces) and creative-only spawn eggs
+  // armor (15 pieces) and creative-only spawn eggs
   ...armorDefs(),
   { id: ItemIds.COW_SPAWN_EGG, name: 'cow_spawn_egg', displayName: 'Cow Spawn Egg', texture: 'cow_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'cow' },
   { id: ItemIds.PIG_SPAWN_EGG, name: 'pig_spawn_egg', displayName: 'Pig Spawn Egg', texture: 'pig_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'pig' },

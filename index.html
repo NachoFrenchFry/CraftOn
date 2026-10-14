@@ -27,7 +27,7 @@
 <body>
   <canvas id="game-canvas"></canvas>
 
-  <!-- Boot screen (Update #7): plain HTML, visible before any module loads; main.js updates the step text. -->
+  <!-- Boot screen: plain HTML, visible before any module loads; main.js updates the step text. -->
   <div id="boot-screen" class="screen menu-screen">
     <div class="menu-bg"></div>
     <div class="menu-content">
@@ -40,7 +40,7 @@
   <!-- ===================== HUD ===================== -->
   <div id="hud" class="hidden">
     <div id="crosshair"></div>
-    <!-- Status bars: the 100-health bar above the right end of the hotbar (Update #9 §8). -->
+    <!-- Status bars: the 100-health bar above the right end of the hotbar. -->
     <div id="status-bars">
       <div id="health-bar" class="health-bar hidden" aria-label="Health">
         <div class="hb-chip"></div><div class="hb-fill"></div><span class="hb-text">100 / 100</span>
@@ -55,7 +55,7 @@
     <div id="fire-overlay" class="hidden"></div>
     <div id="fps-counter" class="hidden"></div>
     <div id="tick-badge" class="tick-badge hidden"></div>
-    <!-- Chat (Update #12): top-left message boxes, the input bar while open -->
+    <!-- Chat: top-left message boxes, the input bar while open -->
     <div id="chat" class="chat">
       <div id="chat-messages" class="chat-messages"></div>
       <input id="chat-input" class="chat-input hidden" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Chat message">
@@ -64,7 +64,7 @@
   </div>
   <div id="debug-overlay" class="hidden"></div>
 2
-  <!-- ===================== INVENTORY (bloxd.io-style two panels, Update #5) ===================== -->
+  <!-- ===================== INVENTORY (bloxd.io-style two panels) ===================== -->
   <div id="inventory-screen" class="screen hidden">
     <div class="inv-layout">
       <div class="inv-panels">
@@ -130,7 +130,7 @@
     </div>
   </div>
 
-  <!-- World list (Update #12 §6): only the worlds, filling the panel; "Create New World" opens its own screen -->
+  <!-- World list: only the worlds, filling the panel; "Create New World" opens its own screen -->
   <div id="world-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
     <div class="menu-content list-content">
@@ -164,7 +164,7 @@
     </div>
   </div>
 
-  <!-- ===================== MULTIPLAYER (Update #8; the server list since Update #15) ===================== -->
+  <!-- ===================== MULTIPLAYER (the server list) ===================== -->
   <div id="multiplayer-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
     <div class="menu-content list-content">
@@ -250,7 +250,7 @@
     </div>
   </div>
 
-  <!-- Shaders (Update #9 §4): master switch, preset, one row per effect, live FPS -->
+  <!-- Shaders: master switch, preset, one row per effect, live FPS -->
   <div id="shaders-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
     <div class="menu-content options-content">
@@ -269,7 +269,7 @@
     <div class="menu-bg"></div>
     <div class="menu-content controls-content">
       <h2 class="menu-heading">Controls</h2>
-      <div class="controls-hint">Click a key to change it, then press any key or mouse button. Esc cancels. Esc and the mouse wheel cannot be rebound.</div>
+      <div class="controls-hint">Every action can have up to three keys or mouse buttons: click a key to change it, + to add one, × to remove it, then press any key or mouse button. Esc cancels. Esc and the mouse wheel cannot be rebound.</div>
       <div id="bind-list" class="bind-list"></div>
       <div class="controls-footer">
         <button id="btn-binds-reset-all" class="mc-button">Reset All to Defaults</button>
@@ -287,7 +287,7 @@
     </div>
   </div>
 
-  <!-- Death screen (Update #9 §8) -->
+  <!-- Death screen -->
   <div id="death-screen" class="screen overlay-screen death hidden">
     <div class="menu-content">
       <h2 class="menu-heading death-title">You died!</h2>
@@ -310,7 +310,7 @@
     </div>
   </div>
 
-  <!-- One-time Performance mode suggestion on a weak device (Update #9 §7) -->
+  <!-- One-time Performance mode suggestion on a weak device -->
   <div id="perf-suggest" class="perf-popup hidden">
     <div class="perf-title">Slow device?</div>
     <div id="perf-suggest-text" class="perf-text">This device looks weak. Performance mode lowers the render scale and distances for a smoother game.</div>
@@ -320,7 +320,7 @@
     </div>
   </div>
 
-  <!-- Host's Server Settings (Update #9 §1): default / host / per-player game modes and permissions -->
+  <!-- Host's Server Settings: default / host / per-player game modes and permissions -->
   <div id="server-settings" class="screen overlay-screen hidden">
     <div class="menu-content">
       <h2 class="menu-heading" id="srv-title">Server Settings</h2>

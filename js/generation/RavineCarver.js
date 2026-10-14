@@ -1,4 +1,4 @@
-// RavineCarver.js — long, narrow, very deep cracks like Minecraft's ravines (Update #8), carved with the worm
+// RavineCarver.js — long, narrow, very deep cracks like Minecraft's ravines, carved with the worm
 // approach of CaveCarver but with a tall vertical radius: 3–7 blocks wide, 40–80 deep (from the surface down
 // to about y 15–20), 60–120 long, slightly jagged walls, about one per RAVINE_CHUNK_CHANCE chunks. A ravine
 // is a deterministic path of discs computed once per source chunk (cached) and carved into every chunk it
@@ -90,7 +90,7 @@ export class RavineCarver {
    * Carve every ravine that crosses this chunk.
    * @param {Uint8Array} blocks
    * @param {Int16Array} heights 16×16 terrain heights (only land columns above sea level + 2 are cut)
-   * @param {Float32Array|null} [skip] per-column mask: columns above 0.15 are left alone (mega caves keep their roof, Update #12 §5b)
+   * @param {Float32Array|null} [skip] per-column mask: columns above 0.15 are left alone (mega caves keep their roof)
    */
   carve(blocks, cx, cz, heights, skip = null) {
     this.skip = skip;

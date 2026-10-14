@@ -38,7 +38,7 @@ for (const def of ITEM_DEFINITIONS) {
     tool: def.tool || null,
     armor: def.armor || null,
     spawnEgg: def.spawnEgg || null,
-    food: def.food || null, // { heal } (Update #9 §8)
+    food: def.food || null, // { heal }
   });
 }
 for (const it of items.values()) idByName.set(it.name, it.id);

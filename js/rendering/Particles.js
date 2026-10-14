@@ -20,9 +20,9 @@ export class ParticleSystem {
    */
   constructor(scene, atlasTexture, world) {
     this.world = world;
-    /** Update #9 §7: 'all' | 'decreased' | 'minimal' scales every spawn count. */
+    /** 'all' | 'decreased' | 'minimal' scales every spawn count. */
     this.level = 'all';
-    /** (x, y, z) → brightness factor of the sky light there (Update #10), set by Game. */
+    /** (x, y, z) → brightness factor of the sky light there, set by Game. */
     this.lightAt = null;
     this.count = 0;
     this.pos = new Float32Array(MAX_PARTICLES * 3);
@@ -97,7 +97,7 @@ export class ParticleSystem {
       this.sizes[i] = SIZE * (0.7 + Math.random() * 0.6);
     }
   }
-  /** Food crumbs (Update #9 §8): a few texels of an item icon from the mouth. */
+  /** Food crumbs: a few texels of an item icon from the mouth. */
   spawnItemCrumbs(x, y, z, tileIndex, n = 6) {
     n = this._budget(n);
     const tile = tileIndex;
@@ -127,12 +127,12 @@ export class ParticleSystem {
   _reset(i) { this.tint[i * 3] = this.tint[i * 3 + 1] = this.tint[i * 3 + 2] = 1; this.angle[i] = 0; this.spin[i] = 0; this.fade[i] = 0; this.gravityScale[i] = 1; this.unlit[i] = 0; }
 
   /**
-   * Flames (Update #11): tiny bright orange / yellow flecks from the torch texture's flame texels, rising and fading
+   * Flames (a burning player): tiny bright orange / yellow flecks from the lava texture's texels, rising and fading
    * in 0.25–0.5 s, lit by nothing (they glow). `spread` is the horizontal scatter, `rise` the upward speed.
    */
   spawnFlame(x, y, z, n = 2, spread = 0.06, rise = 0.6) {
     n = this._budget(n);
-    const t4 = getTileIndex('torch') * 4;
+    const t4 = getTileIndex('lava') * 4;
     const u0 = TILE_UVS[t4], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
     const texel = (u1 - u0) / TILE_SIZE;
     for (let k = 0; k < n; k++) {
@@ -142,7 +142,7 @@ export class ParticleSystem {
       this.pos[i * 3] = x + (Math.random() - 0.5) * spread * 2; this.pos[i * 3 + 1] = y + (Math.random() - 0.5) * spread; this.pos[i * 3 + 2] = z + (Math.random() - 0.5) * spread * 2;
       this.vel[i * 3] = (Math.random() - 0.5) * 0.25; this.vel[i * 3 + 1] = rise * (0.7 + Math.random() * 0.6); this.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.25;
       this.maxLife[i] = this.life[i] = 0.25 + Math.random() * 0.25;
-      const tx = 6 + Math.floor(Math.random() * 3), ty = 1 + Math.floor(Math.random() * 4); // the flame texels (rows 1..5, cols 6..9)
+      const tx = Math.floor(Math.random() * TILE_SIZE), ty = Math.floor(Math.random() * TILE_SIZE); // any lava texel
       this.uvRect[i * 4] = u0 + tx * texel; this.uvRect[i * 4 + 1] = v1 - (ty + 1) * texel; this.uvRect[i * 4 + 2] = u0 + (tx + 1) * texel; this.uvRect[i * 4 + 3] = v1 - ty * texel;
       this.shade[i] = 1.3; this.sizes[i] = SIZE * (0.45 + Math.random() * 0.4);
       this.tint[i * 3] = 1; this.tint[i * 3 + 1] = 0.75 + Math.random() * 0.25; this.tint[i * 3 + 2] = 0.35;
@@ -150,7 +150,7 @@ export class ParticleSystem {
     }
   }
 
-  /** Dark smoke (Update #11): a grey puff that rises slowly and fades (torch tips, sizzling lava). */
+  /** Dark smoke: a grey puff that rises slowly and fades (torch tips, sizzling lava). */
   spawnSmoke(x, y, z, n = 1, size = 1.1) {
     const before = this.count;
     this.spawnPuff(x, y, z, n, 22);
@@ -285,7 +285,7 @@ export class ParticleSystem {
       const ca = Math.cos(this.angle[i]), sa = Math.sin(this.angle[i]);
       const alpha = this.fade[i] ? Math.min(1, this.life[i] / (this.maxLife[i] * 0.6)) : 1;
       let lr = 1, lg = 1, lb = 1;
-      if (!this.unlit[i] && this.lightAt) { const lf = this.lightAt(cx, cy, cz); if (typeof lf === 'number') lr = lg = lb = lf; else { lr = lf[0]; lg = lf[1]; lb = lf[2]; } } // sky + warm block light (Update #11)
+      if (!this.unlit[i] && this.lightAt) { const lf = this.lightAt(cx, cy, cz); if (typeof lf === 'number') lr = lg = lb = lf; else { lr = lf[0]; lg = lf[1]; lb = lf[2]; } } // sky + warm block light
       const r = this.shade[i] * this.tint[b] * lr, g = this.shade[i] * this.tint[b + 1] * lg, bl = this.shade[i] * this.tint[b + 2] * lb;
       for (let c = 0; c < 4; c++) {
         const sx0 = CORNERS[c][0], sy0 = CORNERS[c][1];
@@ -301,7 +301,7 @@ export class ParticleSystem {
         Cc[co] = r; Cc[co + 1] = g; Cc[co + 2] = bl; Cc[co + 3] = alpha;
       }
     }
-    // Only the live particles are uploaded (Update #14 §3): three used to re-send the whole 110 KB of buffers every frame.
+    // Only the live particles are uploaded: three used to re-send the whole 110 KB of buffers every frame.
     if (this.count > 0) {
       const n = this.count * 4;
       this._range(this.posAttr, n * 3); this._range(this.uvAttr, n * 2); this._range(this.colAttr, n * 4);

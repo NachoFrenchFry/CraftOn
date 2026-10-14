@@ -1,4 +1,4 @@
-// chunk.worker.js — the one chunk worker (Update #14 §3): terrain generation, the initial light pass and meshing in a single
+// chunk.worker.js — the one chunk worker: terrain generation, the initial light pass and meshing in a single
 // script, so ChunkManager runs one pool of up to hardwareConcurrency − 1 workers (at most 6) and hands every job to the
 // idlest worker instead of splitting cores between fixed generation and meshing pools. Never imports Three.js.
 //   {type:'init', seed?, cutoutBlocks?}
@@ -34,12 +34,12 @@ self.onmessage = (e) => {
   if (msg.type === 'light') {
     const t0 = performance.now();
     const light = computeChunkLight(msg.grid, msg.tops || null);
-    self.postMessage({ id: msg.id, cx: msg.cx, cz: msg.cz, version: msg.version, light, ms: performance.now() - t0, phases: { ...lastPhases } }, [light.buffer]);
+    self.postMessage({ id: msg.id, cx: msg.cx, cz: msg.cz, revision: msg.revision, light, ms: performance.now() - t0, phases: { ...lastPhases } }, [light.buffer]);
     return;
   }
   if (msg.type === 'mesh') {
     const t0 = performance.now();
     const result = meshChunk(msg.padded, msg.sectionMask, msg.ao, builders, !!msg.fastLeaves, msg.light || null);
-    self.postMessage({ id: msg.id, cx: msg.cx, cz: msg.cz, version: msg.version, sectionMask: msg.sectionMask, sections: result.sections, ms: performance.now() - t0 }, result.transfer);
+    self.postMessage({ id: msg.id, cx: msg.cx, cz: msg.cz, revision: msg.revision, sectionMask: msg.sectionMask, sections: result.sections, ms: performance.now() - t0 }, result.transfer);
   }
 };

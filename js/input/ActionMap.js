@@ -1,4 +1,5 @@
-// ActionMap.js — resolves named game actions to live key/mouse state through the KeyBindingStore.
+// ActionMap.js — resolves named game actions to live key/mouse state through the KeyBindingStore. An action is
+// active / pressed when any of its (up to three) keys is.
 
 export class ActionMap {
   /**
@@ -10,27 +11,29 @@ export class ActionMap {
     this.store = store;
   }
 
-  /** True while the bound key for the action is held. */
+  _codes(action) { return this.store.bindings[action] || []; }
+
+  /** True while any bound key for the action is held. */
   isActive(action) {
-    const code = this.store.get(action);
-    return code !== '' && this.input.isDown(code);
+    for (const code of this._codes(action)) if (this.input.isDown(code)) return true;
+    return false;
   }
 
-  /** True on the frame the bound key went down. */
+  /** True on the frame a bound key went down. */
   wasPressed(action) {
-    const code = this.store.get(action);
-    return code !== '' && this.input.wasPressed(code);
+    for (const code of this._codes(action)) if (this.input.wasPressed(code)) return true;
+    return false;
   }
 
-  /** True on the frame the bound key was pressed for the second time within ~300 ms. */
+  /** True on the frame a bound key was pressed for the second time within ~300 ms. */
   wasDoubleTapped(action) {
-    const code = this.store.get(action);
-    return code !== '' && this.input.wasDoubleTapped(code);
+    for (const code of this._codes(action)) if (this.input.wasDoubleTapped(code)) return true;
+    return false;
   }
 
   wasReleased(action) {
-    const code = this.store.get(action);
-    return code !== '' && this.input.wasReleased(code);
+    for (const code of this._codes(action)) if (this.input.wasReleased(code)) return true;
+    return false;
   }
 
   /** Actions bound to a raw code (used by key event dispatch). */

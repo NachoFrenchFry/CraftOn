@@ -1,12 +1,11 @@
-// Protocol.js — message types and encoding for LAN multiplayer (Update #8). Every gameplay message travels
+// Protocol.js — message types and encoding for multiplayer. Hosts and guests run the same deployed build (the site is
+// always the latest), so there is no version handshake: a malformed or unknown message is ignored. Every gameplay message travels
 // over WebRTC data channels: small JSON objects (t = type) on the ordered "reliable" channel, frequent
 // snapshots as compact arrays on the unordered, no-retransmit "state" channel, and chunk edit diffs as
 // gzip + base64 text (cloud/ChunkCodec.js) in batches. Pure; no DOM, no Three.js.
 
 import { encodeChunk, decodeChunk } from '../core/cloud/ChunkCodec.js';
 
-/** Hosts and guests must match exactly ("Different game version"). */
-export const GAME_VERSION = '15';
 export const MAX_PLAYERS_DEFAULT = 8;
 export const MAX_PLAYERS_MIN = 2;
 export const MAX_PLAYERS_MAX = 8;
@@ -14,23 +13,23 @@ export const CHUNK_BATCH = 20;
 /** Rates (Hz) and delays (s). */
 export const PLAYER_SNAPSHOT_HZ = 20;
 export const MOB_SNAPSHOT_HZ = 12;
-/** Interpolation buffer (Update #15 §3): INTERP_DELAY on a steady link, up to INTERP_DELAY_MAX when the arrivals jitter. */
+/** Interpolation buffer: INTERP_DELAY on a steady link, up to INTERP_DELAY_MAX when the arrivals jitter. */
 export const INTERP_DELAY = 0.1;
 export const INTERP_DELAY_MAX = 0.25;
 export const EXTRAPOLATE_MAX = 0.2;
 export const PING_SECONDS = 2;
-/** No pong for this long closes the link (Update #15: 15 s — a guest generating its spawn chunks or a relayed link with a hiccup must not drop). */
+/** No pong for this long closes the link (15 s — a guest generating its spawn chunks or a relayed link with a hiccup must not drop). */
 export const PEER_TIMEOUT_SECONDS = 15;
-/** Join: the host's answer and then the ICE connection each get this long (Update #15: relays can take a while). */
+/** Join: the host's answer and then the ICE connection each get this long (relays can take a while). */
 export const JOIN_TIMEOUT_MS = 20000;
-/** Lobby visibility (Update #15 §2): public lobbies are listed for everyone, private ones only on the host's network or by code. */
+/** Lobby visibility: public lobbies are listed for everyone, private ones only on the host's network or by code. */
 export const VISIBILITIES = Object.freeze(['public', 'private']);
 
 export const Msg = Object.freeze({
   HELLO: 'hello', REJECT: 'reject', WELCOME: 'welcome', CHUNKS: 'chunks',
-  BLOCK: 'block', BLOCK_REJECT: 'blockReject', MODE: 'mode', // MODE: host → guest, the guest's game mode + whether it may change it (Update #9)
+  BLOCK: 'block', BLOCK_REJECT: 'blockReject', MODE: 'mode', // MODE: host → guest, the guest's game mode + whether it may change it
   ATTACK: 'attack', MOB_HURT: 'mobHurt', MOB_SPAWN: 'mobSpawn', MOB_REMOVE: 'mobRemove',
-  // Update #9 §8: HIT attacker → host (a player hit), DAMAGE host → victim (validated amount), HURT host → everyone
+  // HIT attacker → host (a player hit), DAMAGE host → victim (validated amount), HURT host → everyone
   // else (flash / sound), HEALTH guest → host (its health, after fall damage too), DEATH (guest → host → all), WORLD (pvp / keep inventory)
   HIT: 'hit', DAMAGE: 'damage', HURT: 'hurt', HEALTH: 'health', DEATH: 'death', WORLD: 'world',
   PICKUP: 'pickup', ITEM_GRANT: 'itemGrant', ITEM_SPAWN: 'itemSpawn', ITEM_REMOVE: 'itemRemove',
@@ -38,9 +37,12 @@ export const Msg = Object.freeze({
   BLOCKS: 'blocks', THROW: 'throw',
   JOIN: 'join', LEAVE: 'leave', INV: 'inv', BYE: 'bye', HOST_CLOSED: 'hostClosed',
   PING: 'ping', PONG: 'pong',
-  // Update #15 §2: KICK host → guest { reason } right before the host closes the link (kicked or banned)
+  // KICK host → guest { reason } right before the host closes the link (kicked or banned)
   KICK: 'kick',
-  // Update #12: CHAT guest → host { text } and host → all { name, text, host } or { system, color }; TICK host → guests { rate, frozen }
+  // RESPAWN guest → host { reason: 'respawn' | 'void' }: please place me; SPAWN_AT host → guest { x, y, z, reason }: the
+  // authoritative placement (a respawn, a void / teleport jump, or a 'correction' back to the last accepted position)
+  RESPAWN: 'respawn', SPAWN_AT: 'spawnAt',
+  // CHAT guest → host { text } and host → all { name, text, host } or { system, color }; TICK host → guests { rate, frozen }
   CHAT: 'chat', TICK: 'tick',
   // state channel
   P: 'p', PS: 'ps', M: 'm',
@@ -48,7 +50,6 @@ export const Msg = Object.freeze({
 
 export const RejectReason = Object.freeze({
   FULL: 'The server is full.',
-  VERSION: 'Different game version.',
   DUPLICATE: 'That account is already in this world.',
   CLOSED: 'The host closed the server.',
   BANNED: 'You are banned from this server.',
@@ -57,13 +58,13 @@ export const RejectReason = Object.freeze({
 });
 
 /** Pose bits in player snapshots. */
-export const Pose = Object.freeze({ ON_GROUND: 1, SNEAKING: 2, SWIMMING: 4, CRAWLING: 8, FLYING: 16, IN_WATER: 32, SPRINTING: 64, SPECTATOR: 128, ON_FIRE: 256, IN_LAVA: 512 });
+export const Pose = Object.freeze({ ON_GROUND: 1, SNEAKING: 2, SWIMMING: 4, CRAWLING: 8, FLYING: 16, IN_WATER: 32, SPRINTING: 64, SPECTATOR: 128, ON_FIRE: 256, IN_LAVA: 512, DEAD: 1024 });
 
 /** Pose bits of a local Player. */
 export function poseBits(p) {
   return (p.onGround ? Pose.ON_GROUND : 0) | (p.sneaking ? Pose.SNEAKING : 0) | (p.swimming ? Pose.SWIMMING : 0) | (p.crawling ? Pose.CRAWLING : 0)
     | (p.flying ? Pose.FLYING : 0) | (p.inWater ? Pose.IN_WATER : 0) | (p.sprinting ? Pose.SPRINTING : 0) | (p.isSpectator ? Pose.SPECTATOR : 0)
-    | (p.onFire ? Pose.ON_FIRE : 0) | (p.inLava ? Pose.IN_LAVA : 0);
+    | (p.onFire ? Pose.ON_FIRE : 0) | (p.inLava ? Pose.IN_LAVA : 0) | (p.dead ? Pose.DEAD : 0);
 }
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -80,7 +81,7 @@ export function decodePlayerState(a) {
     x: a[0], y: a[1], z: a[2], vx: a[3], vy: a[4], vz: a[5], yaw: a[6], pitch: a[7], pose,
     onGround: !!(pose & Pose.ON_GROUND), sneaking: !!(pose & Pose.SNEAKING), swimming: !!(pose & Pose.SWIMMING), crawling: !!(pose & Pose.CRAWLING),
     flying: !!(pose & Pose.FLYING), inWater: !!(pose & Pose.IN_WATER), sprinting: !!(pose & Pose.SPRINTING), spectator: !!(pose & Pose.SPECTATOR),
-    onFire: !!(pose & Pose.ON_FIRE), inLava: !!(pose & Pose.IN_LAVA),
+    onFire: !!(pose & Pose.ON_FIRE), inLava: !!(pose & Pose.IN_LAVA), dead: !!(pose & Pose.DEAD),
   };
 }
 

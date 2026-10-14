@@ -9,7 +9,7 @@ export class Settings {
   constructor(events) {
     this.events = events;
     this.values = { ...DEFAULT_SETTINGS };
-    /** True while a benchmark runs: changes stay in memory and are never persisted (Update #14 §0). */
+    /** True while a benchmark runs: changes stay in memory and are never persisted. */
     this.transient = false;
     this.load();
   }

@@ -43,7 +43,7 @@ export class UIManager {
     this.death = new DeathScreen(game);
     this.atlasView.addEventListener('click', () => this.toggleAtlasView());
     game.events.on('state:changed', (state) => this._onState(state));
-    // The lock controller says what an unlock meant (Update #13 §1): only a real Esc opens the pause menu; anything else
+    // The lock controller says what an unlock meant: only a real Esc opens the pause menu; anything else
     // unexpected shows the lightweight overlay, so the game can never bounce pause menu → overlay → pause menu.
     game.events.on('lock:locked', () => this.hud.setPointerHint(false));
     game.events.on('lock:unlocked', (reason) => this._onUnlocked(reason));

@@ -49,7 +49,7 @@ export class CraftingSystem {
   hasAnyMaterial(recipe) { return recipe.inputs.some((i) => this.inventory.countOf(i.itemId) > 0); }
 
   /**
-   * The recipe browser's list for a station (Update #13 §3). Creative: every recipe in data order. Survival: craftable
+   * The recipe browser's list for a station. Creative: every recipe in data order. Survival: craftable
    * recipes first (data order), then partly affordable ones from most to least complete (ties keep the data order);
    * recipes with none of their materials are left out. Rows: { recipe, craftable, completeness }.
    */

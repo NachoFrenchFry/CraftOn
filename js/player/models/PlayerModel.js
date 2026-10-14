@@ -1,6 +1,6 @@
 // PlayerModel.js — third-person body built from boxes: walk cycle, head look, body yaw lag,
 // sneaking tilt, forward arm swing while mining/placing, a held block in the right hand, worn armor as a
-// textured 3D layer (ArmorModel.js, Update #7), and a horizontal swimming pose with still arms and a flutter kick.
+// textured 3D layer (ArmorModel.js), and a horizontal swimming pose with still arms and a flutter kick.
 
 import * as THREE from 'three';
 import { createPart, partMaterial, COLORS, PX, setToolHandleRotation, tintModelLight } from './ModelParts.js';
@@ -53,7 +53,7 @@ export class PlayerModel {
     this.heldBlockId = 0;
     /** 0 = upright, 1 = horizontal swimming / crawling pose (eased). */
     this.swimBlend = 0;
-    /** Hurt flash (Update #9 §8): seconds left with every part tinted red. */
+    /** Hurt flash: seconds left with every part tinted red. */
     this.flashTimer = 0;
     this._hurtOn = false;
     this._build();
@@ -61,7 +61,7 @@ export class PlayerModel {
 
   flash(seconds = 0.35) { this.flashTimer = seconds; }
 
-  /** Brightness factor of the sky light at the model (Update #10); cheap when unchanged. */
+  /** Brightness factor of the sky light at the model; cheap when unchanged. */
   setLight(factor) {
     if (sameLight(factor, this._lightFactor)) return;
     this._lightFactor = copyLight(factor, this._lightFactor);
@@ -164,7 +164,7 @@ export class PlayerModel {
       this.heldMesh.rotation.set(0, 0, 0);
     } else {
       const size = 0.6;
-      this.heldMesh = new THREE.Mesh(createItemSpriteGeometry(this.atlas, item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture, size), this.blockMaterial); // torches: their sprite (Update #11)
+      this.heldMesh = new THREE.Mesh(createItemSpriteGeometry(this.atlas, item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture, size), this.blockMaterial); // torches: their sprite
       if (item.tool) {
         // Tools pivot at the grip (the sprite's bottom-left corner sits on the hand): the mesh is offset by
         // half its size inside a handle group (45° roll stands the diagonal up, then the edge turn about the
@@ -207,6 +207,7 @@ export class PlayerModel {
     else if (moving) this.bodyYaw += delta * (1 - Math.exp(-10 * dt));
     delta = angleDelta(p.yaw, this.bodyYaw);
     this.root.rotation.y = this.bodyYaw;
+    this.root.rotation.z = 0; // applyDeathPose() tips the body after this
 
     // Swimming / crawling: the body lies horizontal along the swim direction (eased over ~0.25 s).
     const lowPose = !!(p.swimming || p.crawling);
@@ -226,7 +227,7 @@ export class PlayerModel {
     // Swim cycle: arms still along the sides, legs in an alternating flutter kick (opposite phase).
     const swimTime = p.swimTime || 0;
     const speedUp = 1 + clamp(Math.hypot(p.velocity ? p.velocity.x : 0, p.velocity ? p.velocity.z : 0) / 5.5, 0, 1) * 0.4;
-    const kick = p.swimming ? flutterKick(swimTime * speedUp * SWIM_KICK_HZ, KICK) : NO_KICK; // reused (Update #14 §3)
+    const kick = p.swimming ? flutterKick(swimTime * speedUp * SWIM_KICK_HZ, KICK) : NO_KICK; // reused
     this.leftLeg.pivot.rotation.x = walkAngle * (1 - sw) + kick.left * sw;
     this.rightLeg.pivot.rotation.x = -walkAngle * (1 - sw) + kick.right * sw;
     this.leftArm.pivot.rotation.x = -walkAngle * (1 - sw);
@@ -244,7 +245,7 @@ export class PlayerModel {
     if (this.heldMesh) this.rightArm.pivot.rotation.x += 0.35;
 
     // Sneak: the torso leans forward about 0.5 rad toward the look direction (the model faces -Z, so a
-    // negative x rotation tips the chest forward; Update #9 fixed the sign), the head stays level.
+    // negative x rotation tips the chest forward), the head stays level.
     const tilt = p.sneaking ? -0.5 : 0;
     this.bodyPivot.rotation.x = damp(this.bodyPivot.rotation.x, tilt, 15, dt);
     this.head.pivot.rotation.x -= this.bodyPivot.rotation.x;
@@ -263,6 +264,13 @@ export class PlayerModel {
    * swimming check): horizontal body, arms still along the sides, flutter-kick legs in opposite phase,
    * head looking along the swim direction. World matrices are updated before returning.
    */
+  /** Dead (like a mob): the body tips over sideways with a smoothstep over t 0..1, lifted so it pivots on its side. Call after update(). */
+  applyDeathPose(t) {
+    const k = Math.min(1, Math.max(0, t)), e = k * k * (3 - 2 * k);
+    this.root.rotation.z = e * Math.PI / 2;
+    this.root.position.y += e * 0.3;
+  }
+
   setSwimPose(phase, pitch = 0) {
     this.swimBlend = 1;
     this.root.rotation.y = 0;

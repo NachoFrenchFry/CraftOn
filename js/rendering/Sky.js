@@ -31,7 +31,7 @@ export class Sky {
     this.waterColor = new THREE.Color(WATER_FOG_COLOR);
     this.lavaColor = new THREE.Color(LAVA_FOG_COLOR);
     this.underwater = false;
-    /** null | 'water' | 'lava': the liquid the camera is inside (Update #11). */
+    /** null | 'water' | 'lava': the liquid the camera is inside. */
     this.liquid = null;
     this.renderDistance = 8;
     scene.background = this.skyColor.clone();
@@ -87,7 +87,7 @@ export class Sky {
 
   setUnderwater(flag) { this.setLiquid(flag ? 'water' : null); }
 
-  /** The camera entered / left a liquid: dense blue fog in water, dense orange fog in lava (Update #11). */
+  /** The camera entered / left a liquid: dense blue fog in water, dense orange fog in lava. */
   setLiquid(kind) {
     if (this.liquid === kind) return;
     this.liquid = kind;

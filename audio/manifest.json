@@ -1,623 +1,515 @@
 {
  "sounds": {
   "ambient/cave": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "cave.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "ambient/drip": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "drip.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "ambient/water": {
-   "files": [
-    "1.wav"
-   ],
+   "file": "water.wav",
    "loop": true,
-   "volume": 1.0
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "ambient/wind": {
-   "files": [
-    "1.wav"
-   ],
+   "file": "wind.wav",
    "loop": true,
-   "volume": 1.0
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "breaking/dirt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "dirt.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "breaking/glass": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "glass.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "breaking/grass": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "grass.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "breaking/plant": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "plant.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "breaking/sand": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "sand.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "breaking/snow": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "snow.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "breaking/stone": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "stone.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "breaking/water": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "water.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "breaking/wood": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "wood.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "items/bucket_empty": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "bucket_empty.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "items/bucket_fill": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "bucket_fill.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "items/drop": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "drop.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "items/pickup": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "pickup.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "liquids/lava_pop": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "lava_pop.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "liquids/lava_sizzle": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "lava_sizzle.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mining/dirt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "dirt.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mining/glass": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "glass.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mining/grass": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "grass.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mining/plant": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "plant.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mining/sand": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "sand.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mining/snow": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "snow.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mining/stone": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "stone.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mining/water": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "water.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mining/wood": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "wood.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "mobs/cow/ambient": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "ambient.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mobs/cow/death": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "death.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mobs/cow/hurt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "hurt.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mobs/pig/ambient": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "ambient.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mobs/pig/death": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "death.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mobs/pig/hurt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "hurt.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mobs/sheep/ambient": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "ambient.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mobs/sheep/death": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "death.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "mobs/sheep/hurt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "hurt.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "placing/dirt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "dirt.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "placing/glass": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "glass.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "placing/grass": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "grass.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "placing/plant": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "plant.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "placing/sand": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "sand.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "placing/snow": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "snow.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "placing/stone": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "stone.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "placing/water": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "water.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "placing/wood": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "wood.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "player/burn": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "burn.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/crit": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "crit.wav",
+   "loop": false,
+   "pitch": 0.08,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/death": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "death.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/eat": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "eat.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/eat_done": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "eat_done.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/equip_metal": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "equip_metal.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/equip_wood": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "equip_wood.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/hurt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "hurt.wav",
+   "loop": false,
+   "pitch": 0.08,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/jump": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "jump.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/land": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "land.wav",
+   "loop": false,
+   "pitch": 0.08,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/splash": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "splash.wav",
+   "loop": false,
+   "pitch": 0.08,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "player/swim": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "swim.wav",
+   "loop": false,
+   "pitch": 0.08,
+   "volume": 1.0,
+   "volumeVar": 0.05
   },
   "ui/click": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "click.wav",
+   "loop": false,
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "ui/craft": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "craft.wav",
+   "loop": false,
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "ui/hover": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "hover.wav",
+   "loop": false,
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "ui/inventory_close": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "inventory_close.wav",
+   "loop": false,
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "ui/inventory_open": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "inventory_open.wav",
+   "loop": false,
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "ui/smelt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav"
-   ],
-   "volume": 1.0
+   "file": "smelt.wav",
+   "loop": false,
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "walking/dirt": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "dirt.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "walking/glass": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "glass.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "walking/grass": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "grass.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "walking/plant": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "plant.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "walking/sand": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "sand.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "walking/snow": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "snow.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "walking/stone": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "stone.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "walking/water": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "water.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   },
   "walking/wood": {
-   "files": [
-    "1.wav",
-    "2.wav",
-    "3.wav",
-    "4.wav"
-   ],
-   "volume": 1.0
+   "file": "wood.wav",
+   "loop": false,
+   "pitch": 0.12,
+   "volume": 1.0,
+   "volumeVar": 0.1
   }
- },
- "version": 1
+ }
 }

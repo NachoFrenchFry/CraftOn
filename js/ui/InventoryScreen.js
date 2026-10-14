@@ -1,4 +1,4 @@
-// InventoryScreen.js — the E / crafting table / furnace screen (bloxd.io style, Update #5). Right panel:
+// InventoryScreen.js — the E / crafting table / furnace screen (bloxd.io style). Right panel:
 // 5 armor slots over a 6×6 storage grid; hotbar row below both panels; left panel: the recipe browser
 // ("Hand Crafting" / "Crafting Table" / "Furnace") or, in Creative, a searchable item catalog with an
 // Items / Hand Crafting toggle. Minecraft click semantics: pick up, place, merge, swap, split, place-one,
@@ -399,7 +399,7 @@ export class InventoryScreen {
       this.titleEl.textContent = STATION_TITLES[station] || STATION_TITLES.inventory;
       this.crafting.setStation(station);
     }
-    this.lastState.fill(null); // Update #7 fix: slots emptied while the screen was closed used to keep their old icon
+    this.lastState.fill(null); // slots emptied while the screen was closed used to keep their old icon
     this.refresh();
     this.cursorEl.style.transform = `translate(${this.mouseX}px, ${this.mouseY}px) translate(-50%, -50%)`;
   }

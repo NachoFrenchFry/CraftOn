@@ -30,9 +30,9 @@ export class Renderer {
     this.worldStats = { calls: 0, triangles: 0 };
     /** Render scale picked by the Auto mode (PerformanceMonitor lowers it while the FPS stays under the target). */
     this.autoScale = 1;
-    /** Fixed internal resolution ({ w, h }) for the benchmark (Update #14 §0); null = the window size × DPR × scale. */
+    /** Fixed internal resolution ({ w, h }) for the benchmark; null = the window size × DPR × scale. */
     this.fixedSize = null;
-    /** Set by Game: the post-effect chain is timed apart from the world pass (Update #14 §0). */
+    /** Set by Game: the post-effect chain is timed apart from the world pass. */
     this.profiler = null;
     this._dprQuery = null;
     this._bindResize();
@@ -56,7 +56,7 @@ export class Renderer {
     this._dprQuery.addEventListener('change', this._dprHandler);
   }
 
-  /** The render scale in use: the setting, or the Auto mode's current pick (Update #9 §7). The canvas CSS upscales it pixelated. */
+  /** The render scale in use: the setting, or the Auto mode's current pick. The canvas CSS upscales it pixelated. */
   get renderScale() { const s = this.settings.get('renderScale'); return s > 0 ? s : this.autoScale; }
 
   setAutoScale(scale) {
@@ -75,7 +75,7 @@ export class Renderer {
     const scale = this.renderScale;
     if (this.fixedSize) { this.renderer.setPixelRatio(1); this.renderer.setSize(this.fixedSize.w, this.fixedSize.h, false); }
     else {
-      // HiDPI off (the default, Update #14 §2d): one internal pixel per CSS pixel, whatever the screen's ratio.
+      // HiDPI off (the default): one internal pixel per CSS pixel, whatever the screen's ratio.
       const dpr = this.settings.get('hiDpi') ? Math.min(window.devicePixelRatio || 1, 2) : 1;
       this.renderer.setPixelRatio(dpr * scale); this.renderer.setSize(w, h, false);
     }

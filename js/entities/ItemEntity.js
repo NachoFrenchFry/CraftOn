@@ -37,12 +37,12 @@ export class ItemEntity {
     this.age = 0;
     this.onGround = false;
     this.dead = false;
-    /** Lava (Update #11): destroyed by lava (EntityManager sizzles). */
+    /** Lava: destroyed by lava (EntityManager sizzles). */
     this.burned = false;
     this.spinOffset = Math.random() * Math.PI * 2;
     this.group = new THREE.Group();
     const item = ItemRegistry.get(itemId);
-    const spriteTexture = item && (!item.isBlock ? item.texture : BlockRegistry.isTorch(itemId) ? BlockRegistry.faceTexture(itemId, Direction.SOUTH) : null); // torches drop as their sprite (Update #11)
+    const spriteTexture = item && (!item.isBlock ? item.texture : BlockRegistry.isTorch(itemId) ? BlockRegistry.faceTexture(itemId, Direction.SOUTH) : null); // torches drop as their sprite
     const geom = spriteTexture ? createItemSpriteGeometry(atlas, spriteTexture, SIZE * 1.6) : createBlockGeometry(itemId, SIZE);
     this.mesh = new THREE.Mesh(geom, material);
     this.group.add(this.mesh);

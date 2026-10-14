@@ -1,4 +1,4 @@
-// tick.js — /tick (Update #12): the game speed on Minecraft's scale, 20 ticks per second = normal. The time scale
+// tick.js — /tick: the game speed on Minecraft's scale, 20 ticks per second = normal. The time scale
 // (rate / 20) is applied in one place, GameLoop, so physics, animations, flowing liquids, mobs, timers, particles,
 // shaders and sound all follow it; mouse look and UI fades stay real-time. Only the host may use it in multiplayer;
 // guests receive the rate and the freeze state.

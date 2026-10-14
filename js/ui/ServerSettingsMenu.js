@@ -1,8 +1,8 @@
-// ServerSettingsMenu.js — the host's "Server Settings" screen (Update #9 §1), opened from the pause menu while
+// ServerSettingsMenu.js — the host's "Server Settings" screen, opened from the pause menu while
 // hosting (in single player the same screen is "World Settings" with only the world toggles: PvP, keep inventory): the default game mode for new players, the host's own mode, and per player a mode selector plus a
 // "Can change own game mode" toggle (off by default). Everything is saved in the host's world
 // (meta.defaultGameMode, meta.guests[id].mode / canChangeMode) and applied to connected guests at once.
-// Update #15 §2: connected rows show the connection type and ping, every row has Kick (online) and Ban / Unban
+// connected rows show the connection type and ping, every row has Kick (online) and Ban / Unban
 // (bans are saved in the world as meta.bans); the list refreshes every 2 s while open for the pings.
 const MODES = ['survival', 'creative', 'spectator'];
 const cap = (m) => m.charAt(0).toUpperCase() + m.slice(1);
@@ -21,7 +21,7 @@ export class ServerSettingsMenu {
     this.hostOnly = [...this.root.querySelectorAll('.srv-host-only')];
     this.onDone = null;
     this.timer = null;
-    // World settings (Update #9 §8): PvP (hosting only) and keep inventory, saved in the world, sent to guests.
+    // World settings: PvP (hosting only) and keep inventory, saved in the world, sent to guests.
     this.pvp.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('pvp', this.pvp.checked); });
     this.keepInv.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('keepInventory', this.keepInv.checked); });
     this.defaultSel.addEventListener('change', () => { game.audio.playUI('click'); if (game.net && game.net.isHost) game.net.setDefaultMode(this.defaultSel.value); });

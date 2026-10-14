@@ -1,4 +1,4 @@
-// turn-credentials — Supabase Edge Function (Deno) for CraftOn, Update #15.
+// turn-credentials — Supabase Edge Function (Deno) for CraftOn.
 //
 // Hands a logged-in player short-lived TURN credentials so two browsers behind strict routers can still connect (the
 // relay is used only when a direct connection fails). The provider's key never leaves this function.

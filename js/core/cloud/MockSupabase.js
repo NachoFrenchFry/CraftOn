@@ -4,7 +4,7 @@
 // of the same browser see each other's rows (the headless host / guest and kick tests). Row Level Security is
 // imitated per table: worlds, chunks and active_sessions are owner-only; lobbies are owner-only except through
 // the list_lobbies / find_lobbies / find_lobby_by_code RPCs; signals are visible to their sender and recipient and can only
-// be inserted toward or from a lobby's host. The Edge Function `turn-credentials` (Update #15 §3) is imitated by
+// be inserted toward or from a lobby's host. The Edge Function `turn-credentials` is imitated by
 // `functions.invoke`, which answers with fake TURN servers on a reserved `.invalid` host (nothing is contacted). The
 // headless tests use only this; they never reach the real project.
 
@@ -98,7 +98,7 @@ class Query {
           if (!['public', 'private'].includes(row.visibility)) return { data: null, error: { message: 'new row for relation "lobbies" violates check constraint "lobbies_visibility_check"', status: 400 } };
           if (!JOIN_CODE.test(row.join_code || '')) return { data: null, error: { message: 'join_code format', status: 400 } };
           if (state.lobbies.some((l) => l.join_code === row.join_code && l.host_id !== uid)) return { data: null, error: { message: 'duplicate key value violates unique constraint "lobbies_join_code_key"', status: 409 } };
-          row.player_count = row.player_count ?? 1; row.max_players = row.max_players ?? 8; row.game_version = row.game_version ?? '';
+          row.player_count = row.player_count ?? 1; row.max_players = row.max_players ?? 8;
         }
         if (this.table === 'signals') {
           row.id = row.id || uuid(); row.from_user = uid; row.created_at = row.created_at || now();
@@ -184,7 +184,7 @@ export class MockSupabase {
     if (name === 'username_available') return { data: !this.state.users.some((u) => u.username.toLowerCase() === String(args.name).toLowerCase()), error: null };
     const lobbyRow = (l) => {
       const prof = this.state.profiles.find((p) => p.id === l.host_id);
-      return { id: l.id, host_id: l.host_id, host_name: prof ? prof.username : 'host', world_name: l.world_name, player_count: l.player_count, max_players: l.max_players, game_version: l.game_version };
+      return { id: l.id, host_id: l.host_id, host_name: prof ? prof.username : 'host', world_name: l.world_name, player_count: l.player_count, max_players: l.max_players };
     };
     const fresh = (l) => Date.now() - Date.parse(l.updated_at) < LOBBY_FRESH_MS;
     if (name === 'list_lobbies') {
@@ -201,7 +201,7 @@ export class MockSupabase {
     return { data: null, error: { message: `function ${name} does not exist`, status: 404 } };
   }
 
-  /** Edge Functions (Update #15 §3): `turn-credentials` answers like the real one, with servers on a reserved host. */
+  /** Edge Functions: `turn-credentials` answers like the real one, with servers on a reserved host. */
   get functions() {
     const mock = this;
     return {

@@ -1,4 +1,4 @@
-// SupabaseConfig.js — the only place the Supabase project details appear (Update #6). The publishable key
+// SupabaseConfig.js — the only place the Supabase project details appear. The publishable key
 // is designed to be public in client code; security comes from Row Level Security on the server.
 // NEVER put a secret or service_role key anywhere in this project.
 

@@ -1,4 +1,4 @@
-// SessionGuard.js — one place per account (Update #8). Each page load is an "instance" with a random id. On
+// SessionGuard.js — one place per account. Each page load is an "instance" with a random id. On
 // login and when entering a world the instance claims the account by upserting its id into active_sessions
 // (plain REST) and announces it on a BroadcastChannel so other tabs of the same browser are kicked at once; a
 // heartbeat every HEARTBEAT_SECONDS reads the row back and, if another instance owns it now, this one has been

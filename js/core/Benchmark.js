@@ -1,4 +1,4 @@
-// Benchmark.js — the built-in benchmark (?bench, Update #14 §0): a fixed seed and render distance at a fixed 1280×720
+// Benchmark.js — the built-in benchmark (?bench): a fixed seed and render distance at a fixed 1280×720
 // internal resolution; wait for the spawn area to load, stand still for 10 s, then fly a fixed 45-second path at
 // sprint-flying speed across forest, ocean, mountains and a desert lava lake. Every frame's interval and CPU time, the
 // per-system milliseconds (Profiler), triangles, draw calls and geometry memory are collected; the report is printed
@@ -187,7 +187,6 @@ export class Benchmark {
     try { const ext = gl.getExtension('WEBGL_debug_renderer_info'); renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); } catch (e) { /* ignore */ }
     const s = g.settings;
     this.report = {
-      version: 14,
       seed: BENCH_SEED_TEXT,
       renderer,
       resolution: `${g.renderer.renderer.domElement.width}x${g.renderer.renderer.domElement.height}`,

@@ -20,7 +20,7 @@ export class DebugOverlay {
       this.root.appendChild(document.createElement('br'));
       this.lines.push(el);
     }
-    // The performance graph (Update #14 §0): one bar per frame (240 frames), green under 16.7 ms, yellow under 33, red above.
+    // The performance graph: one bar per frame (240 frames), green under 16.7 ms, yellow under 33, red above.
     this.graph = document.createElement('canvas');
     this.graph.id = 'debug-graph';
     this.graph.width = 240; this.graph.height = 60;
@@ -70,7 +70,7 @@ export class DebugOverlay {
     el.style.display = text ? '' : 'none';
   }
 
-  /** Update #15 §3: how each connection travels (LAN / Direct / Relay (TURN)) and its ping; empty in single player. */
+  /** how each connection travels (LAN / Direct / Relay (TURN)) and its ping; empty in single player. */
   _networkLine() {
     const net = this.game.net;
     if (!net) return '';

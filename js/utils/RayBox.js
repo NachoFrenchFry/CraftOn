@@ -1,4 +1,4 @@
-// RayBox.js — ray / axis-aligned box slab test without allocations (Update #14 §3): the mob and remote-player raycasts
+// RayBox.js — ray / axis-aligned box slab test without allocations: the mob and remote-player raycasts
 // run every frame from BlockInteraction. Returns the entry distance along the ray, or -1 when the ray misses the box
 // or enters beyond `maxT`.
 export function rayBox(ox, oy, oz, dx, dy, dz, minX, minY, minZ, maxX, maxY, maxZ, maxT) {

@@ -10,7 +10,7 @@ import { CORNER_POS, CORNER_UV, NB_OFF } from './FaceTables.js';
 import { isWater, isSource, isFalling, heightOf, isLava, isLavaSource, isLavaFalling } from '../world/WaterLevels.js';
 
 const cornerHeights = new Float32Array(4);
-/** The liquid being meshed (water or lava, Update #11): predicates for "same liquid" and "full height" blocks. */
+/** The liquid being meshed (water or lava): predicates for "same liquid" and "full height" blocks. */
 let same = isWater, full = (id) => isSource(id) || isFalling(id);
 const lavaFull = (id) => isLavaSource(id) || isLavaFalling(id);
 const waterFull = (id) => isSource(id) || isFalling(id);

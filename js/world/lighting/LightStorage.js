@@ -1,4 +1,4 @@
-// LightStorage.js — the voxel light data (Update #10): one byte per voxel, low nibble = skyLight (0–15), high
+// LightStorage.js — the voxel light data: one byte per voxel, low nibble = skyLight (0–15), high
 // nibble = blockLight (0–15, reserved for torches). A chunk's light array uses the mesher's padded 18×18×256
 // layout (its own 16×16 columns plus a one-block border of the neighbours), so a mesh job needs nothing from
 // the neighbouring chunks and the border cells are kept in sync by the incremental updater. Light is never

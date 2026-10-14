@@ -1,4 +1,4 @@
-// Damage.js — the health numbers (Update #9 §8), pure so Node checks can print them: 100 health, +1 every 7 s,
+// Damage.js — the health numbers, pure so Node checks can print them: 100 health, +1 every 7 s,
 // gentle fall damage with armor (boots count double), player-vs-player damage scaled ×5 with armor reduction
 // and critical hits, and the death messages.
 
@@ -12,7 +12,7 @@ export const PVP_DAMAGE_SCALE = 5;
 export const CRIT_MULTIPLIER = 1.5;
 export const EAT_SECONDS = 1.6;
 export const RESPAWN_INVULNERABLE_SECONDS = 2;
-// Lava and fire (Update #11): 20 every 0.5 s while in lava (lethal in about 2.5 s unarmored), then 5 s on fire at 5 per second.
+// Lava and fire: 20 every 0.5 s while in lava (lethal in about 2.5 s unarmored), then 5 s on fire at 5 per second.
 export const LAVA_DAMAGE = 20;
 export const LAVA_DAMAGE_INTERVAL = 0.5;
 export const FIRE_SECONDS = 5;
@@ -37,7 +37,7 @@ export function fallDamage(fallDistance, armorPoints = 0, bootsPoints = 0) {
   return raw <= 0 ? 0 : Math.round(raw * armorReduction(armorPoints + bootsPoints));
 }
 
-/** Mob fall damage (Update #12 §5d): the player's curve on the mob's health scale, max(0, fall − 3) × 0.215 (a 10-health cow dies from about 50 blocks). */
+/** Mob fall damage: the player's curve on the mob's health scale, max(0, fall − 3) × 0.215 (a 10-health cow dies from about 50 blocks). */
 export function mobFallDamage(fallDistance) { return Math.max(0, fallDistance - 3) * 0.215; }
 
 /** Smallest whole fall (blocks) that kills a 100-health player with that armor. */

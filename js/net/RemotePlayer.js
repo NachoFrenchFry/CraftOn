@@ -1,4 +1,4 @@
-// RemotePlayer.js — what you see of another player (Update #8): the full third-person PlayerModel driven by
+// RemotePlayer.js — what you see of another player: the full third-person PlayerModel driven by
 // interpolated snapshots (walking, sneaking, swimming with the flutter kick, crawling, flying, head yaw /
 // pitch), the held item, the 3D armor layer, swing animations, the mining crack overlay on the block they are
 // breaking, spatial footsteps / splash / swim sounds, and a username nametag that faces the camera and hides
@@ -11,11 +11,11 @@ import { Interpolator } from './Interpolator.js';
 import { Pose } from './Protocol.js';
 import { rayBox } from '../utils/RayBox.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
-import { PLAYER_HEIGHT, PLAYER_WIDTH, SWIM_STROKE_INTERVAL } from '../config/Constants.js';
+import { PLAYER_HEIGHT, PLAYER_WIDTH, SWIM_STROKE_INTERVAL, PLAYER_DEATH_SECONDS } from '../config/Constants.js';
 
 const STEP_DISTANCE = 1.6;
 const NAMETAG_HEIGHT = PLAYER_HEIGHT + 0.45;
-/** The pixel font (font/Minecraft.ttf, Update #9) for canvas text; resolves once it is loaded. */
+/** The pixel font (font/Minecraft.ttf) for canvas text; resolves once it is loaded. */
 export const FONT_READY = (typeof document !== 'undefined' && document.fonts ? document.fonts.load('16px CraftOnFont').then(() => true, () => false) : Promise.resolve(false));
 export const CANVAS_FONT = '32px CraftOnFont, monospace';
 
@@ -86,10 +86,18 @@ export class RemotePlayer {
     this.swimTimer = 0;
     this.wasInWater = false;
     this.mineTimer = 0;
+    /** Dead (the DEAD pose bit): the body tips over for PLAYER_DEATH_SECONDS, puffs and stays hidden until the respawn. */
+    this.dead = false;
+    this.deathTimer = -1;
+    this.puffed = false;
+    this._lastSnapshotDead = false;
   }
 
   /** @param {number} t local receive time (s); @param {number[]} a snapshot array */
   snapshot(t, a) {
+    const dead = !!((a[8] | 0) & Pose.DEAD);
+    if (this._lastSnapshotDead && !dead) this.interp.reset(); // respawned: appear at the spawn, no slide from the death spot
+    this._lastSnapshotDead = dead;
     this.interp.push(t, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8] | 0);
   }
 
@@ -112,7 +120,7 @@ export class RemotePlayer {
 
   swing() { this.model.swing(); }
 
-  /** This player was hurt (Update #9 §8): red flash, hurt sound at its position, crit stars on a critical hit. */
+  /** This player was hurt: red flash, hurt sound at its position, crit stars on a critical hit. */
   hurt(crit = false, amount = 0) {
     this.model.flash(0.35);
     const p = this.state.renderPosition;
@@ -128,7 +136,7 @@ export class RemotePlayer {
     const o = this.interp.sample(now);
     if (!this.interp.hasData) return;
     const st = this.state;
-    const pose = o.extra | 0; // the pose bits decoded in place (Update #14 §3: no per-frame snapshot object)
+    const pose = o.extra | 0; // the pose bits decoded in place (no per-frame snapshot object)
     st.renderPosition.set(o.x, o.y, o.z);
     st.yaw = o.yaw; st.pitch = o.pitch;
     st.onGround = !!(pose & Pose.ON_GROUND); st.sneaking = !!(pose & Pose.SNEAKING); st.swimming = !!(pose & Pose.SWIMMING); st.crawling = !!(pose & Pose.CRAWLING);
@@ -138,12 +146,30 @@ export class RemotePlayer {
     st.horizontalSpeed = Math.hypot(o.vx, o.vz);
     const s = o;
     if (st.swimming) st.swimTime += dt * Math.max(0.5, Math.hypot(o.vx, o.vy, o.vz) / 5.5);
-    const visible = (!st.spectator || localPlayer.isSpectator) && Math.hypot(o.x - localPlayer.position.x, o.z - localPlayer.position.z) <= maxDistance;
+    const inRange = Math.hypot(o.x - localPlayer.position.x, o.z - localPlayer.position.z) <= maxDistance;
+    // Death: a red flash and the death sound, the body tips over (like a mob), a puff, then nothing until the respawn.
+    const dead = !!(pose & Pose.DEAD);
+    if (dead && !this.dead) {
+      this.dead = true; this.deathTimer = 0; this.puffed = false;
+      this.model.flash(0.35);
+      if (audio && inRange) audio.playAt('player.death', o.x, o.y + 1, o.z, 'player', 0.8);
+    } else if (!dead && this.dead) { this.dead = false; this.deathTimer = -1; this.puffed = false; this.model.root.rotation.z = 0; }
+    if (this.dead) {
+      this.deathTimer += dt;
+      st.horizontalSpeed = 0; st.velocity.x = 0; st.velocity.y = 0; st.velocity.z = 0; st.sprinting = false;
+      if (!this.puffed && this.deathTimer >= PLAYER_DEATH_SECONDS) { this.puffed = true; if (inRange && this.game.particles) this.game.particles.spawnPuff(o.x, o.y + 0.9, o.z, 12); }
+    }
+    const dying = this.dead && this.deathTimer < PLAYER_DEATH_SECONDS;
+    const visible = (!st.spectator || localPlayer.isSpectator) && inRange && (!this.dead || dying);
     this.visible = visible;
     this.model.root.visible = visible;
-    if (visible) { if (this.game.lightAt) this.model.setLight(this.game.lightAt(o.x, o.y + 1, o.z)); this.model.update(dt, st); }
-    if (visible && st.onFire && this.game.particles) this.game.particles.spawnFlame(o.x, o.y + 0.9, o.z, 2, 0.35, 0.9); // burning (Update #11)
-    this.nametag.visible = visible && !st.sneaking;
+    if (visible) {
+      if (this.game.lightAt) this.model.setLight(this.game.lightAt(o.x, o.y + 1, o.z));
+      this.model.update(dt, st);
+      if (this.dead) this.model.applyDeathPose(this.deathTimer / PLAYER_DEATH_SECONDS);
+    }
+    if (visible && st.onFire && !this.dead && this.game.particles) this.game.particles.spawnFlame(o.x, o.y + 0.9, o.z, 2, 0.35, 0.9); // burning
+    this.nametag.visible = visible && !st.sneaking && !this.dead;
     this.nametag.position.set(o.x, o.y + (st.crawling || st.swimming ? 0.9 : NAMETAG_HEIGHT), o.z);
     if (this.mineTimer > 0) { this.mineTimer -= dt; if (this.mineTimer <= 0) this.overlay.hide(); }
     // Sounds at their position: footsteps from the distance they cover on the ground, a splash on entering
@@ -186,7 +212,7 @@ export class RemotePlayerManager {
     this.game = game;
     /** @type {Map<string, RemotePlayer>} */
     this.players = new Map();
-    /** Update #9 §7: players farther than this are hidden (entity distance). */
+    /** players farther than this are hidden (entity distance). */
     this.entityDistanceBlocks = Infinity;
   }
 
@@ -214,14 +240,14 @@ export class RemotePlayerManager {
   raycast(ox, oy, oz, dx, dy, dz, maxDistance) {
     let best = null, bestT = maxDistance;
     for (const rp of this.players.values()) {
-      if (!rp.visible || rp.state.spectator || !rp.interp.hasData) continue;
+      if (!rp.visible || rp.dead || rp.state.spectator || !rp.interp.hasData) continue;
       const p = rp.position, hw = PLAYER_WIDTH / 2;
       const h = rp.state.crawling || rp.state.swimming ? 0.6 : rp.state.sneaking ? 1.5 : PLAYER_HEIGHT;
       const t = rayBox(ox, oy, oz, dx, dy, dz, p.x - hw, p.y, p.z - hw, p.x + hw, p.y + h, p.z + hw, bestT);
       if (t >= 0 && t < bestT) { bestT = t; best = rp; }
     }
     if (!best) return null;
-    this._hit.player = best; this._hit.distance = bestT; // reused (Update #14 §3)
+    this._hit.player = best; this._hit.distance = bestT; // reused
     return this._hit;
   }
 

@@ -1,7 +1,7 @@
 // ChunkMesher.js — hidden-face culling mesher with baked face brightness and vertex AO.
 // Pure functions over a padded block array; runs in the meshing worker and on the main thread.
 //
-// Update #14 §2a: full opaque cubes are greedy-meshed. Per face direction and slice, every visible face whose four
+// full opaque cubes are greedy-meshed. Per face direction and slice, every visible face whose four
 // corners share the same AO level and the same smoothed light (sky and block) is a "flat" face; neighbouring flat
 // faces with the same texture tile, rotation and flags merge into one quad, so a field of grass or a cliff is a
 // handful of triangles instead of hundreds. Faces with varying corner light / AO keep their own quad, so smooth
@@ -16,7 +16,7 @@ import { OPAQUE, RENDER_TYPE, PASS, FACE_TILE, FACE_ROT, CULL_SAME, RenderType, 
 import { getTileIndex, TILE_UV_INSET } from './AtlasLayout.js';
 import { BlockIds as B } from '../blocks/BlockIds.js';
 
-/** Fast leaves (Update #9 §7) use a derived opaque copy of the leaves texture (TextureAtlas fills the holes). */
+/** Fast leaves use a derived opaque copy of the leaves texture (TextureAtlas fills the holes). */
 const FAST_LEAVES_TILE = getTileIndex('leaves_fast');
 import { Direction } from '../utils/Direction.js';
 import { TypedArrayBuilder } from '../utils/Pool.js';
@@ -31,14 +31,14 @@ const INSET = TILE_UV_INSET;
 export class PassBuilder {
   constructor() {
     this.positions = new TypedArrayBuilder(Float32Array, 3 * 1024);
-    /** Tile-local texture coordinates (Update #14): 0..w / 0..h over a merged quad, repeated by the shader. */
+    /** Tile-local texture coordinates: 0..w / 0..h over a merged quad, repeated by the shader. */
     this.uvs = new TypedArrayBuilder(Float32Array, 2 * 1024);
     this.colors = new TypedArrayBuilder(Uint8Array, 3 * 1024);
-    /** Packed byte per vertex for the shader pipeline (Update #9 §4): face id (bits 0-2, 6 = plant), waving top (8), leaves (16), water (32), AO level (bits 6-7). */
+    /** Packed byte per vertex for the shader pipeline: face id (bits 0-2, 6 = plant), waving top (8), leaves (16), water (32), AO level (bits 6-7). */
     this.extra = new TypedArrayBuilder(Uint8Array, 1024);
-    /** Smoothed light per vertex ×16 (0–240), two bytes: sky (Update #10) and block light (Update #11), the 4-corner averages on the face's outward side. */
+    /** Smoothed light per vertex ×16 (0–240), two bytes: sky and block light, the 4-corner averages on the face's outward side. */
     this.lights = new TypedArrayBuilder(Uint8Array, 2 * 1024);
-    /** Atlas tile index per vertex: the layer of the texture array (Update #14 §2a). */
+    /** Atlas tile index per vertex: the layer of the texture array. */
     this.tiles = new TypedArrayBuilder(Uint16Array, 1024);
     this.indices = new TypedArrayBuilder(Uint32Array, 6 * 256);
     this.vertexCount = 0;
@@ -94,7 +94,7 @@ const LIGHT_AVG = new Uint8Array(5 * 64);
 for (let count = 1; count <= 4; count++) for (let sum = 0; sum <= 60; sum++) LIGHT_AVG[count * 64 + sum] = Math.round((sum / count) * 16);
 
 /**
- * Smooth lighting (Update #10): per corner, the average sky light of the four cells touching it on the face's
+ * Smooth lighting: per corner, the average sky light of the four cells touching it on the face's
  * outward side (face neighbour, two sides, diagonal), skipping opaque cells; when both sides are opaque the
  * diagonal is ignored (the AO corner rule, which also stops light leaks). Fast mode: the face neighbour's light.
  */
@@ -180,19 +180,20 @@ function addCross(pb, x, ly, z, id, ownLight = 240, ownBlock = 0) {
   }
 }
 
-/** A torch (Update #11): the TorchModel quads, self-lit (full light on both channels), in the cutout pass. */
+/** A torch: the TorchModel stick, self-lit (full light on both channels), in the cutout pass; the top face uses torch_top. */
 function addTorch(pb, x, ly, z, id) {
-  const tile = FACE_TILE[id * 6 + Direction.SOUTH];
+  const sideTile = FACE_TILE[id * 6 + Direction.SOUTH], topTile = FACE_TILE[id * 6 + Direction.UP];
   for (const quad of torchQuads(BlockRegistry.attachOf(id))) {
+    const tile = quad.top ? topTile : sideTile;
     for (let c = 0; c < 4; c++) {
-      const p = quad[c];
+      const p = quad.corners[c];
       pb.vertex(x + p[0], ly + p[1], z + p[2], p[3], p[4], 1, 6 | (3 << 6), 240, 240, tile);
     }
     pb.quadIndices(false);
   }
 }
 
-// ---- Greedy meshing of opaque cube faces (Update #14 §2a) ----
+// ---- Greedy meshing of opaque cube faces ----
 
 /** Per face: the normal axis and the two in-plane axes (index 0 = x, 1 = y, 2 = z) with their signs. */
 const AXIS_N = [], AXIS_U = [], AXIS_V = [], SIGN_U = [], SIGN_V = [];
@@ -352,7 +353,7 @@ export function meshSection(padded, sy, useAO, builders, fastLeaves = false, lig
   }
 }
 
-// ---- Section visibility graph (Update #14 §2c) ----
+// ---- Section visibility graph ----
 
 /** PAIR_BIT[a * 6 + b]: bit index (0..14) of the unordered face pair {a, b}; -1 on the diagonal. */
 export const PAIR_BIT = new Int8Array(36).fill(-1);

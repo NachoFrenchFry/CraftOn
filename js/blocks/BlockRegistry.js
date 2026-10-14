@@ -23,9 +23,9 @@ export const STONE_TYPE = new Uint8Array(BLOCK_COUNT);
 export const WOOD_TYPE = new Uint8Array(BLOCK_COUNT);
 /** 1 = faces between two blocks of this type are culled (glass, water); 0 = kept (fancy leaves). */
 export const CULL_SAME = new Uint8Array(BLOCK_COUNT);
-/** Light opacity 0–15 (Update #10): air / glass / plants 0, leaves / water / ice 1, full solid blocks 15 (block light completely). */
+/** Light opacity 0–15: air / glass / plants 0, leaves / water / ice 1, full solid blocks 15 (block light completely). */
 export const LIGHT_OPACITY = new Uint8Array(BLOCK_COUNT);
-/** Block light a block emits, 0–15 (Update #11: torch 14, lava 15). */
+/** Block light a block emits, 0–15 (torch 14, lava 15). */
 export const LIGHT_EMISSION = new Uint8Array(BLOCK_COUNT);
 /** Offset (dx, dy, dz) of the block that supports this one, or all zeros: plants / standing torch (0, -1, 0), wall torches the wall they hang on. */
 export const SUPPORT_DIR = new Int8Array(BLOCK_COUNT * 3);

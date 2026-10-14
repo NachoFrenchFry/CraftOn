@@ -1,11 +1,11 @@
 // WaterSimulation.js — Minecraft-style scheduled liquid updates: flow down as falling liquid, spread
 // sideways with weakening levels (water 7 blocks on flat ground, lava 3), prefer directions that lead to a
 // drop within 4 blocks, recede when cut off, form infinite sources (water only), destroy plants and torches.
-// Only scheduled blocks are ever touched, so still oceans cost nothing. The same class runs lava (Update #11)
+// Only scheduled blocks are ever touched, so still oceans cost nothing. The same class runs lava
 // with the `lava` kind: a slower tick (Game), no new sources, and the owner's rule that lava touching water
 // (any level, either way round) becomes cobblestone. Pure logic over a world interface; runs in Node for tests.
 //
-// Update #14 §1b: a tick works through its scheduled cells until a time budget (WATER_TICK_BUDGET_MS) is used up,
+// a tick works through its scheduled cells until a time budget (WATER_TICK_BUDGET_MS) is used up,
 // cells near the player first and otherwise oldest first; the rest waits for the next tick. Cells outside the
 // simulation distance are paused (kept, not dropped) until the player comes closer. Cells are numeric keys (no
 // strings), block reads go through a one-chunk cache, and the search for a drop is one breadth-first walk with a
@@ -57,7 +57,7 @@ export class WaterSimulation {
     this.pending = new Set();
     /** Scheduled cells outside the simulation distance: resumed when the player comes within range. */
     this.paused = new Set();
-    /** Update #9 §7: scheduled cells farther than simRadius from the player wait (simulation distance). */
+    /** scheduled cells farther than simRadius from the player wait (simulation distance). */
     this.simCenter = null;
     this.simRadius = Infinity;
     this._pausedAtX = Infinity; this._pausedAtZ = Infinity;
@@ -216,7 +216,7 @@ export class WaterSimulation {
     return rt === RenderType.CROSS || rt === RenderType.TORCH;
   }
 
-  /** Owner's rule (Update #11): a lava block touching water on any of its six sides becomes cobblestone. Returns true when it did. */
+  /** Owner's rule: a lava block touching water on any of its six sides becomes cobblestone. Returns true when it did. */
   _quench(x, y, z) {
     if (!isLava(this._get(x, y, z))) return false;
     const touching = isWater(this._get(x + 1, y, z)) || isWater(this._get(x - 1, y, z)) || isWater(this._get(x, y, z + 1)) || isWater(this._get(x, y, z - 1))
@@ -330,7 +330,7 @@ export class WaterSimulation {
   }
 
   /**
-   * One breadth-first walk over the passable cells at this height (Update #14 §1b; the old 4-way recursion visited ~160
+   * One breadth-first walk over the passable cells at this height (the old 4-way recursion visited ~160
    * cells with ~960 block reads per call and no visited set). Every cell remembers which starting directions reach it at its
    * shortest distance; the directions of the cells next to the nearest drop are the answer, ties included — the same result
    * as searching each direction on its own.

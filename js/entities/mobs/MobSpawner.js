@@ -1,6 +1,6 @@
 // MobSpawner.js — deterministic group spawns for freshly generated chunks: about 1 in 2 chunks gets a
 // group of 3–5 of one mob type on grass with two blocks of air above (never on sand, snow or in water)
-// (Update #12 §5d). Pure: returns spawn positions; MobManager instantiates them and handles natural respawns.
+//. Pure: returns spawn positions; MobManager instantiates them and handles natural respawns.
 
 import { chunkRandom } from '../../utils/Random.js';
 import { BlockIds as B } from '../../blocks/BlockIds.js';

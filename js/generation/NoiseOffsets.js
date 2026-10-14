@@ -1,4 +1,4 @@
-// NoiseOffsets.js — seeded per-field coordinate offsets (Update #6). Gradient noise is always 0 at the
+// NoiseOffsets.js — seeded per-field coordinate offsets. Gradient noise is always 0 at the
 // origin, so without offsets every seed had continentalness, erosion, temperature and humidity all near 0
 // at (0, 0): exactly the coastline and the biome boundaries. Each field now samples at (x + offX,
 // z + offZ) with large random offsets derived from the seed and a field index, so no field is pinned at

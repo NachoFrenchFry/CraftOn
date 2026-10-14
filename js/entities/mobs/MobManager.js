@@ -1,6 +1,6 @@
 // MobManager.js — owns the live mobs: spawning for fresh chunks, restoring saved mobs when chunks load
 // and stowing them when chunks unload, physics/AI ticks, rendering, combat hits, drops, sounds, saving.
-// Multiplayer (Update #8): every mob has an id; the host runs AI / physics / damage and announces spawns,
+// Multiplayer: every mob has an id; the host runs AI / physics / damage and announces spawns,
 // removals and hurts through hooks, while a guest (`remote`) only mirrors snapshots with interpolation.
 
 import { Sphere } from 'three';
@@ -38,9 +38,9 @@ export class MobManager {
     this.stored = new Map();
     this.waterSim = null;
     this.renderDistanceBlocks = 128;
-    /** (x, y, z) → brightness factor of the sky light there (Update #10), set by Game. */
+    /** (x, y, z) → brightness factor of the sky light there, set by Game. */
     this.lightAt = null;
-    /** Update #9 §7: mobs farther than this freeze (simulation distance) / are hidden (entity distance). */
+    /** mobs farther than this freeze (simulation distance) / are hidden (entity distance). */
     this.simDistanceBlocks = 96;
     this.entityDistanceBlocks = 128;
     this._ray = { mob: null, distance: Infinity };
@@ -53,7 +53,7 @@ export class MobManager {
     this.onSpawn = null;
     this.onRemove = null;
     this.onHurt = null;
-    /** Natural respawning (Update #12 §5d): every MOB_RESPAWN_SECONDS while under the cap; () => [{x, y, z, dirX, dirZ}] of every player (set by Game). */
+    /** Natural respawning: every MOB_RESPAWN_SECONDS while under the cap; () => [{x, y, z, dirX, dirZ}] of every player (set by Game). */
     this.respawnTimer = MOB_RESPAWN_SECONDS;
     this.playerPositions = null;
     this.respawns = 0;
@@ -258,7 +258,7 @@ export class MobManager {
   }
 
   /**
-   * Natural respawning (Update #12 §5d, host only): every MOB_RESPAWN_SECONDS, while fewer than MOB_CAP mobs are
+   * Natural respawning (host only): every MOB_RESPAWN_SECONDS, while fewer than MOB_CAP mobs are
    * loaded, try to put a group of 3–5 of one type on grass under the sky (sky light ≥ 9) at least 24 blocks from
    * every player, preferably behind them. Returns the number spawned (0 when nothing qualified).
    */
@@ -301,7 +301,7 @@ export class MobManager {
     return spawned;
   }
 
-  /** Lava (Update #11): the same numbers as the player (20 every 0.5 s in lava, then 5 s on fire at 5 per second; water puts it out). */
+  /** Lava: the same numbers as the player (20 every 0.5 s in lava, then 5 s on fire at 5 per second; water puts it out). */
   _lavaAndFire(m, dt) {
     if (m.isDying) { m.fireTimer = 0; return; }
     const p = m.position;
@@ -317,7 +317,7 @@ export class MobManager {
     } else m.burnTick = 0;
   }
 
-  /** Per frame: animate the mobs that can be seen (Update #14 §3: off-screen and far mobs skip the animation; their physics still runs). */
+  /** Per frame: animate the mobs that can be seen (off-screen and far mobs skip the animation; their physics still runs). */
   render(alpha, dt, frustum = null) {
     const sphere = this._sphere;
     for (const m of this.mobs) {

@@ -1,6 +1,6 @@
 // SurfaceBuilder.js — top/filler layers per biome, steep-slope stone, underwater floors (oceans and
 // river beds), snow caps on gentle high slopes, bare stone / gravel on steep faces and stony summits with
-// snow patches (Update #8), and the jagged bedrock floor. Worker-safe.
+// snow patches, and the jagged bedrock floor. Worker-safe.
 
 import { SEA_LEVEL, WORLD_HEIGHT, STONY_PEAK_Y } from '../config/Constants.js';
 import { BlockIds as B } from '../blocks/BlockIds.js';

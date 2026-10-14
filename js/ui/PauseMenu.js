@@ -1,6 +1,6 @@
 // PauseMenu.js — Esc menu: resume, options, game mode toggle, save & quit (or Leave Server for guests), and while
-// hosting a LAN server the "Hosting: <world> · Code ABC123 · N/8 players" line with Server Settings (Update #9)
-// and Stop Hosting (Update #8). A guest without permission sees its game mode button disabled.
+// hosting a LAN server the "Hosting: <world> · Code ABC123 · N/8 players" line with Server Settings
+// and Stop Hosting. A guest without permission sees its game mode button disabled.
 
 export class PauseMenu {
   /** @param {import('../core/Game.js').Game} game */

@@ -25,7 +25,7 @@ export const PHYSICS_HZ = 60;
 export const PHYSICS_STEP = 1 / PHYSICS_HZ;
 export const MAX_PHYSICS_STEPS = 5;
 export const MAX_FRAME_DT = 0.1;
-/** /tick (Update #12): Minecraft's scale, 20 ticks per second = normal speed; timeScale = rate / 20. One tick = 3 physics steps. */
+/** /tick: Minecraft's scale, 20 ticks per second = normal speed; timeScale = rate / 20. One tick = 3 physics steps. */
 export const TICK_RATE_DEFAULT = 20;
 export const TICK_RATE_MIN = 1;
 export const TICK_RATE_MAX = 100;
@@ -107,12 +107,12 @@ export const WATER_SURFACE_HEIGHT = 0.875;   // source water with air above
 
 // ---- Flowing water ----
 export const WATER_TICK_SECONDS = 0.25;        // scheduled water update interval (5 game ticks)
-export const WATER_TICK_BUDGET_MS = 1.5;      // Update #14 §1b: a tick stops scheduling updates after this much main-thread time; the rest waits
+export const WATER_TICK_BUDGET_MS = 1.5; // a tick stops scheduling updates after this much main-thread time; the rest waits
 export const WATER_NEAR_RADIUS = 48;          // cells within this distance of the player run before the rest of a tick
 export const MAX_WATER_UPDATES_PER_TICK = 4000; // hard safety cap behind the time budget
 export const WATER_SLOPE_SEARCH = 4;           // blocks to search for a drop when choosing flow directions
 export const WATER_MAX_LEVEL = 7;              // flowing level 7 is the weakest; 8 dries up
-// Lava (Update #11): slow thick updates, 3 blocks of spread, dense orange fog, damage numbers in player/Damage.js.
+// Lava: slow thick updates, 3 blocks of spread, dense orange fog, damage numbers in player/Damage.js.
 export const LAVA_TICK_SECONDS = 1.5;
 export const LAVA_FOG_COLOR = 0xd84a0c;
 export const LAVA_FOG_NEAR = 0.2;
@@ -120,13 +120,13 @@ export const LAVA_FOG_FAR = 3.5;
 export const LAVA_SPEED_FACTOR = 0.35;        // of the water swim speed
 export const LAVA_UP_SPEED = 1.6;             // slow climb while holding jump
 export const LAVA_POOL_CAVERN_BLOCKS = 250;   // cheese-carved blocks in a chunk before its floor basins may hold lava
-export const LAVA_POOL_MAX_Y = 30;            // ordinary-cave basins (6–15 blocks) up to here (Update #12 §5a)
+export const LAVA_POOL_MAX_Y = 30;            // ordinary-cave basins (6–15 blocks) up to here
 export const LAVA_POOL_MAX_CELLS = 180;
 export const LAVA_POOL_CHANCE = 0.9;          // per qualifying chunk
-/** Lava sea (Update #12 §5a): every cave cell at or below this height is lava, so the floors of deep caverns become lakes 20–60 blocks across. */
+/** Lava sea: every cave cell at or below this height is lava, so the floors of deep caverns become lakes 20–60 blocks across. */
 export const LAVA_SEA_LEVEL = 10;
-export const DESERT_LAKE_CHANCE = 2 / 5;      // per desert chunk cell; with the flatness check about one lake every 4–6 desert chunks (Update #13: smaller lakes, slightly commoner)
-// Mega caves (Update #12 §5b): one enormous cave system per MEGA_CAVE_CELL × MEGA_CAVE_CELL block cell, radius 200–320.
+export const DESERT_LAKE_CHANCE = 2 / 5;      // per desert chunk cell; with the flatness check about one lake every 4–6 desert chunks (smaller lakes, slightly commoner)
+// Mega caves: one enormous cave system per MEGA_CAVE_CELL × MEGA_CAVE_CELL block cell, radius 200–320.
 export const MEGA_CAVE_CELL = 2048;
 export const MEGA_CAVE_RADIUS_MIN = 200;
 export const MEGA_CAVE_RADIUS_MAX = 320;
@@ -150,9 +150,11 @@ export const MOB_HURT_FLASH_SECONDS = 0.4;
 export const MOB_INVULNERABLE_SECONDS = 0.5;
 export const MOB_PANIC_SECONDS = 5;
 export const MOB_DEATH_SECONDS = 1;
-export const MOB_AI_INTERVAL = 0.15;        // seconds between AI decisions (about 7 Hz, staggered per mob; Update #14 §3)
+/** A dead player's body tips over for this long, puffs and disappears until the respawn (other players and the own third-person view). */
+export const PLAYER_DEATH_SECONDS = 0.5;
+export const MOB_AI_INTERVAL = 0.15;        // seconds between AI decisions (about 7 Hz, staggered per mob)
 export const MOB_CAP = 60;
-export const MOB_SPAWN_CHANCE = 1 / 2;          // first-generation groups (Update #12 §5d)
+export const MOB_SPAWN_CHANCE = 1 / 2;          // first-generation groups
 export const MOB_GROUP_MIN = 3;
 export const MOB_GROUP_MAX = 5;
 export const MOB_RESPAWN_SECONDS = 30;          // natural respawn attempts while under the cap
@@ -164,7 +166,7 @@ export const MOB_MAX_DROP = 3;
 export const MOB_JUMP_VELOCITY = 8.6;
 export const MOB_PX = 1 / 16;                // 1 texture pixel = 1/16 block
 
-// ---- Caves (Update #3: Caves & Cliffs style) ----
+// ---- Caves (Caves & Cliffs style) ----
 export const CAVE_CHUNK_CHANCE = 3;          // worm systems spawn in 1 of N source chunks
 export const CAVE_ROOM_CHANCE = 3;           // 1 in N systems start with a big room
 export const SPAGHETTI_THRESHOLD = 0.09;
@@ -173,14 +175,14 @@ export const NOODLE_THRESHOLD = 0.035;       // thin noodle caves (scale 1/25)
 export const CHEESE_THRESHOLD = 0.65;        // big caverns up to y 50; the threshold rises above that
 export const CHEESE_TOP_Y = 50;
 export const PILLAR_THRESHOLD = 0.55;
-// Cave springs (Update #5): single water sources in cavern walls, 1–3 per chunk that holds a big cavern.
+// Cave springs: single water sources in cavern walls, 1–3 per chunk that holds a big cavern.
 export const CAVE_SPRING_MIN = 1;
 export const CAVE_SPRING_MAX = 3;
 export const CAVE_SPRING_CAVERN_BLOCKS = 600;   // cheese-carved blocks in a chunk that count as a big cavern        // 2D noise above this leaves stone columns inside caverns
-// Ravines (Update #8): 1 of N chunks rolls a start; about half the rolls land on water and are dropped, so
+// Ravines: 1 of N chunks rolls a start; about half the rolls land on water and are dropped, so
 // roughly one ravine begins per 2N chunks of land.
 export const RAVINE_CHUNK_CHANCE = 10;
-/** Mountain surfaces (Update #8): snow caps from here up; bare stone summits (with snow patches) higher still. */
+/** Mountain surfaces: snow caps from here up; bare stone summits (with snow patches) higher still. */
 export const SNOW_LINE_Y = 150;
 export const STONY_PEAK_Y = 190;
 
@@ -189,7 +191,7 @@ export const UNDERWATER_FOG_NEAR = 4;
 export const UNDERWATER_FOG_FAR = 44;
 export const UNDERWATER_SKY_TINT = 0.45;       // blend of the sky / sun colors toward the water color
 
-// ---- View bobbing (values at the default 50% intensity; Update #8 doubled them and slowed the cycle) ----
+// ---- View bobbing (values at the default 50% intensity) ----
 export const BOB_SIDE = 0.025;
 export const BOB_VERTICAL = 0.04;
 export const BOB_ROLL = 0.007;

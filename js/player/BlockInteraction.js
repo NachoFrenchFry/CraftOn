@@ -44,7 +44,7 @@ export class BlockInteraction {
     this.attackLockTimer = 0;
     this.attackLatched = false;
     this.mineSendTimer = 0;
-    /** Eating (Update #9 §8): seconds the use button has been held with food while below max health. */
+    /** Eating: seconds the use button has been held with food while below max health. */
     this.eatTimer = 0;
     this.chewTimer = 0;
     /** Other player under the crosshair (multiplayer), or null. */
@@ -70,7 +70,7 @@ export class BlockInteraction {
     const mobs = this.entities.mobs;
     const mobHit = mobs && !this.player.isSpectator ? mobs.raycast(ex, ey, ez, dx, dy, dz, ATTACK_REACH) : null;
     this.targetMob = mobHit && (!t.hit || mobHit.distance < t.distance) ? mobHit.mob : null;
-    // Other players (Update #9 §8 PvP): the nearest of block / mob / player wins.
+    // Other players (PvP): the nearest of block / mob / player wins.
     const rpHit = this.remotePlayers && !this.player.isSpectator ? this.remotePlayers.raycast(ex, ey, ez, dx, dy, dz, ATTACK_REACH) : null;
     this.targetPlayer = rpHit && (!t.hit || rpHit.distance < t.distance) && (!mobHit || rpHit.distance < mobHit.distance) ? rpHit.player : null;
     if (this.targetPlayer) this.targetMob = null;
@@ -101,7 +101,7 @@ export class BlockInteraction {
     } else if (attack && t.hit && !this.attackLatched && this.attackLockTimer <= 0 && !(this.player.isCreative && isSword(held))) this._mine(dt); // swords never break blocks in Creative
     else this._stopMining();
 
-    // Eating (Update #9 §8): hold use with food while below max health; 1.6 s with chewing sounds and crumbs.
+    // Eating: hold use with food while below max health; 1.6 s with chewing sounds and crumbs.
     const food = held != null ? ItemRegistry.food(held) : null;
     if (food && use && this.canEat && this.canEat()) {
       if (this.eatTimer === 0) this.chewTimer = 0.15;
@@ -218,7 +218,7 @@ export class BlockInteraction {
   breakBlock(x, y, z, force = false, volume = 1) {
     const id = this.world.getBlock(x, y, z);
     if (id === BlockIds.AIR || (!force && !isFinite(BREAK_TIME[id]))) return;
-    this.world.setBlock(x, y, z, BlockIds.AIR, true, true); // immediate: the player's own edit re-meshes at once (Update #14 §1a)
+    this.world.setBlock(x, y, z, BlockIds.AIR, true, true); // immediate: the player's own edit re-meshes at once
     this.audio.playBlock('break', id, x + 0.5, y + 0.5, z + 0.5, volume);
     this.particles.spawnBlockBreak(x, y, z, id, 12 + Math.floor(Math.random() * 8));
     this.breakOverlay.hide();
@@ -229,7 +229,7 @@ export class BlockInteraction {
         this.entities.spawnItem(x + 0.5, y + 0.3, z + 0.5, drop, 1);
       }
     }
-    // Plants and standing torches above, wall torches beside: whatever this block held up breaks too (Update #11).
+    // Plants and standing torches above, wall torches beside: whatever this block held up breaks too.
     breakDependents(this.world, x, y, z, (nx, ny, nz) => this.breakBlock(nx, ny, nz));
     this.events.emit('block:broken', x, y, z, id);
   }
@@ -247,7 +247,7 @@ export class BlockInteraction {
     if (!t.hit) return;
     const creative = this.player.isCreative;
     if (itemId === ItemIds.BUCKET) {
-      // Only sources can be picked up (flowing water / lava cannot); lava fills a Lava Bucket (Update #11).
+      // Only sources can be picked up (flowing water / lava cannot); lava fills a Lava Bucket.
       const filled = isSource(t.blockId) ? ItemIds.WATER_BUCKET : isLavaSource(t.blockId) ? ItemIds.LAVA_BUCKET : null;
       if (filled === null) return;
       const b = t.blockPos;
@@ -274,7 +274,7 @@ export class BlockInteraction {
   }
 
   /**
-   * Right-click (the "use" action): open a station under the crosshair, else equip held armor (Update #8), use a
+   * Right-click (the "use" action): open a station under the crosshair, else equip held armor, use a
    * bucket or a spawn egg, or place the held block. `repeat` is true for the held-button auto-repeat, which
    * never equips armor (that would swap the piece back and forth).
    */
@@ -305,7 +305,7 @@ export class BlockInteraction {
     const cur = this.world.getBlock(px, py, pz);
     if (!BlockRegistry.isReplaceable(cur)) return;
     if (!this.world.isLoadedAt(px, pz)) return;
-    // Torches (Update #11): on top of a block they stand, on its side they hang on that wall (tilted), never under a
+    // Torches: on top of a block they stand, on its side they hang on that wall (tilted), never under a
     // ceiling and never in a liquid; only full solid opaque cubes hold them (checked by isSupported below).
     if (BlockRegistry.isTorch(id)) {
       const n = t.faceNormal;

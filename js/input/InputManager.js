@@ -1,5 +1,5 @@
 // InputManager.js — keyboard/mouse state, wheel, per-frame edge detection and a capture mode used by the Controls
-// screen to record the next key or mouse button. The mouse lock itself belongs to PointerLockController (Update #13):
+// screen to record the next key or mouse button. The mouse lock itself belongs to PointerLockController:
 // this class only mirrors its state (`pointerLocked`), forwards key / click presses to it as user activation, and
 // swallows the mouse buttons that were held when a lock arrived (the "Click to resume" click never reaches the game).
 
@@ -51,6 +51,7 @@ export class InputManager {
     window.addEventListener('blur', () => this.clearAll());
     document.addEventListener('mousedown', (e) => this._onMouse(e, true));
     document.addEventListener('mouseup', (e) => this._onMouse(e, false));
+    document.addEventListener('auxclick', (e) => { if (e.button === 1 || e.button >= 3) e.preventDefault(); }); // middle / side buttons are game keys, never autoscroll or history
     document.addEventListener('mousemove', (e) => this._onMouseMove(e));
     document.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -104,6 +105,7 @@ export class InputManager {
       this._trackDoubleTap(code);
       this.events.emit('input:mousedown', e.button, e);
     } else {
+      if (e.button === 1 || e.button >= 3) e.preventDefault(); // the browser's Back / Forward on the side buttons fires on mouseup
       this.down.delete(code);
       this.swallowed.delete(code);
       this.released.add(code);

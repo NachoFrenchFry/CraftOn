@@ -1,4 +1,4 @@
-// Movement.js — velocity + drag horizontal movement (Update #5), pure and worker-free so it can be checked
+// Movement.js — velocity + drag horizontal movement, pure and worker-free so it can be checked
 // in Node. Each physics tick: velocity *= drag, then velocity += direction × accel while a key is held.
 // The steady state is accel / (1 − drag), so accel = targetSpeed × (1 − drag) keeps the old top speeds
 // (walk 4.317 b/s, sprint 5.612 b/s). Ground drag 0.83 per 60 Hz tick ≈ Minecraft's 0.546 per 20 Hz tick;
@@ -8,7 +8,7 @@ export const GROUND_DRAG = 0.83;
 export const GROUND_BRAKE_DRAG = 0.75;   // no input on the ground: full sprint → < 0.1 b/s in 15 ticks
 export const AIR_DRAG = 0.97;
 export const AIR_ACCEL_FACTOR = 0.2;     // air control: a fifth of the ground acceleration
-export const FLY_DRAG = 0.82;           // creative / spectator flight: much less floaty (Update #6)
+export const FLY_DRAG = 0.82;           // creative / spectator flight: much less floaty
 export const FLY_BRAKE_DRAG = 0.72;     // no input while flying: full sprint-fly stops (< 0.1 b/s) within ~0.3 s
 export const TICK = 1 / 60;
 

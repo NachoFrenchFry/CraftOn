@@ -10,7 +10,7 @@ import { InputManager } from '../input/InputManager.js';
 import { ActionMap } from '../input/ActionMap.js';
 import { PointerLockController } from '../input/PointerLockController.js';
 import { KeyBindingStore } from './KeyBindingStore.js';
-import { PAUSE_CODE, CHAT_ENTER_CODE, CHAT_SLASH_CODE } from '../config/KeyBindings.js';
+import { PAUSE_CODE, CHAT_ENTER_CODE, CHAT_SLASH_CODE, DROP_STACK_MODIFIERS } from '../config/KeyBindings.js';
 import { createCommands } from '../commands/index.js';
 import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX } from '../config/Constants.js';
 import { Renderer } from '../rendering/Renderer.js';
@@ -63,7 +63,7 @@ import { AudioManager } from '../audio/AudioManager.js';
 import { UIManager } from '../ui/UIManager.js';
 import { GuiScale } from '../ui/GuiScale.js';
 import { BlockIds } from '../blocks/BlockIds.js';
-import { SWIM_STROKE_INTERVAL, WATER_TICK_SECONDS, LAVA_TICK_SECONDS, ITEM_PICKUP_DELAY } from '../config/Constants.js';
+import { SWIM_STROKE_INTERVAL, WATER_TICK_SECONDS, LAVA_TICK_SECONDS, ITEM_PICKUP_DELAY, PLAYER_DEATH_SECONDS } from '../config/Constants.js';
 import { WaterSimulation, LIQUID_KINDS } from '../world/WaterSimulation.js';
 import { CraftingSystem } from '../crafting/CraftingSystem.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
@@ -83,13 +83,13 @@ export class Game {
     this.bootScreen = new BootScreen();
     this.debuglog = false;
     this.events = new EventBus();
-    /** Per-system main-thread timers (Update #14 §0): the F3 graph and the benchmark read them. */
+    /** Per-system main-thread timers: the F3 graph and the benchmark read them. */
     this.profiler = new Profiler();
     this.bench = new Benchmark(this);
     this.settings = new Settings(this.events);
     this.state = new GameState(this.events);
     this.input = new InputManager(canvas, this.events);
-    /** The one owner of the mouse lock (Update #13 §1); the input manager mirrors it and reports user activation. */
+    /** The one owner of the mouse lock; the input manager mirrors it and reports user activation. */
     this.lock = new PointerLockController(this.canvas, this.events);
     this.input.lock = this.lock;
     this.keybinds = new KeyBindingStore(this.events);
@@ -107,10 +107,10 @@ export class Game {
     this.saveManager = null;
     /** Resolves to true when a persisted session was restored (started inside boot(), awaited by main.js). */
     this.sessionTask = null;
-    /** One place per account (Update #8): claims, heartbeat, kick. Created with the account in boot(). */
+    /** One place per account: claims, heartbeat, kick. Created with the account in boot(). */
     this.sessionGuard = null;
     this.kicked = false;
-    /** LAN multiplayer (Update #8): a HostServer while hosting, a GuestClient while joined, else null. */
+    /** LAN multiplayer: a HostServer while hosting, a GuestClient while joined, else null. */
     this.net = null;
     this.remotePlayers = null;
     this.networkInfo = null;
@@ -125,7 +125,7 @@ export class Game {
     this.loop.onFrameEnd = (interval, cpu) => { this.profiler.endFrame(interval, cpu); this.bench.record(interval, cpu); };
     this.world.profiler = this.profiler;
     this.renderer.profiler = this.profiler;
-    /** /tick (Update #12): Minecraft's scale, 20 = normal; never saved, reset when a world loads. */
+    /** /tick: Minecraft's scale, 20 = normal; never saved, reset when a world loads. */
     this.tick = { rate: TICK_RATE_DEFAULT, frozen: false };
     this.commands = createCommands(this);
     this.worldMeta = null;
@@ -143,7 +143,7 @@ export class Game {
   }
 
   /**
-   * Load textures, build every subsystem and start the loop. Independent work runs in parallel (Update #7):
+   * Load textures, build every subsystem and start the loop. Independent work runs in parallel:
    * the cloud client + session check (+ world list prefetch), the block atlas, the mob / armor sheets and the
    * background sound pre-render. `onStep(text, fraction)` feeds the boot screen. Resolves once the account and
    * save manager exist; the session result is `this.sessionTask`.
@@ -182,7 +182,7 @@ export class Game {
     const scene = this.renderer.scene;
     this.icons = new BlockIconRenderer(this.atlas); // icons are drawn on demand (hotbar, catalog on first open)
     this.meshManager = new ChunkMeshManager(scene, this.world, this.atlas, this.settings);
-    this.visibility = new ChunkVisibility(this.meshManager); // cave culling (Update #14 §2c)
+    this.visibility = new ChunkVisibility(this.meshManager); // cave culling
     this.chunkManager = new ChunkManager(this.world, this.meshManager, this.settings);
     this.chunkManager.setCutoutBlocks(this.atlas.cutoutBlocks); // blocks whose textures have transparent pixels
     this.sky = new Sky(scene);
@@ -199,7 +199,7 @@ export class Game {
     this.waterSim = new WaterSimulation(this.world, (x, y, z, id) => this._onWaterDestroys(x, y, z, id));
     this.physics.waterSim = this.waterSim;
     this.entities.waterSim = this.waterSim;
-    // Lava (Update #11): the same scheduler at a slower tick; lava meeting water sizzles into cobblestone.
+    // Lava: the same scheduler at a slower tick; lava meeting water sizzles into cobblestone.
     this.lavaSim = new WaterSimulation(this.world, (x, y, z, id) => this._onWaterDestroys(x, y, z, id), LIQUID_KINDS.lava);
     this.waterSim.onConvert = this.lavaSim.onConvert = (x, y, z) => this._sizzle(x + 0.5, y + 0.5, z + 0.5);
     this.entities.onBurn = (x, y, z) => this._sizzle(x, y, z);
@@ -215,7 +215,7 @@ export class Game {
     });
     this.entities.mobs.waterSim = this.waterSim;
     this.entities.mobs.setRenderDistance(this.settings.get('renderDistance'));
-    // Natural respawns (Update #12 §5d) keep away from every player: the local one and, when hosting, the guests.
+    // Natural respawns keep away from every player: the local one and, when hosting, the guests.
     this.entities.mobs.playerPositions = () => {
       const p = this.player, out = [{ x: p.position.x, y: p.position.y, z: p.position.z, dirX: -Math.sin(p.yaw), dirZ: -Math.cos(p.yaw) }];
       if (this.remotePlayers) for (const rp of this.remotePlayers.players.values()) { const o = rp.state && rp.state.renderPosition ? rp.state.renderPosition : null; if (o) out.push({ x: o.x, y: o.y, z: o.z, dirX: -Math.sin(rp.state.yaw || 0), dirZ: -Math.cos(rp.state.yaw || 0) }); }
@@ -250,7 +250,7 @@ export class Game {
     this._wireEvents();
     this.perf = new PerformanceMonitor(this);
     this._applyPerformanceSettings();
-    // Voxel lighting (Update #10): everything coloured on the CPU reads the sky light at its position.
+    // Voxel lighting: everything coloured on the CPU reads the sky light at its position.
     applyBrightness(this.settings.get('brightness'));
     // (x, y, z) → [r, g, b] factors of the sky light and the warm block light there (Updates #10 / #11); one shared array,
     // consumers apply it at once.
@@ -267,7 +267,7 @@ export class Game {
     await cloudTask; // the account and save manager exist before any screen can need them
   }
 
-  /** Push the Performance options (Update #9 §7) into the loop, entities, water and particles. */
+  /** Push the Performance options into the loop, entities, water and particles. */
   _applyPerformanceSettings() {
     const s = this.settings;
     this.loop.maxFps = s.get('maxFps');
@@ -323,10 +323,10 @@ export class Game {
       this.health.onLand(fall);
     });
     ev.on('player:void', () => this.health.onVoid());
-    // Multiplayer (Update #9 §8): the host validates its own hits like any guest's; deaths are announced.
+    // Multiplayer: the host validates its own hits like any guest's; deaths are announced.
     ev.on('player:hitPlayer', (targetId, crit) => { if (this.net && this.net.isHost) this.net.hitPlayer(targetId, crit); });
     ev.on('player:died', (cause) => { if (this.net && this.net.isHost) this.net.announceOwnDeath(cause); });
-    // Eating (Update #9 §8): chewing sounds + crumbs of the food's icon from the mouth; healing when done.
+    // Eating: chewing sounds + crumbs of the food's icon from the mouth; healing when done.
     ev.on('player:eating', (itemId) => {
       this.audio.playPlayer('eat', 0.7);
       const item = ItemRegistry.get(itemId);
@@ -370,7 +370,7 @@ export class Game {
     ev.on('account:signedout', () => { this._dropNet(); if (this.state.inWorld) this.session.abandon(); if (!this.state.is(State.ACCOUNT)) this.state.set(State.ACCOUNT); });
   }
 
-  // ---- LAN multiplayer (Update #8) ----
+  // ---- LAN multiplayer ----
 
   /** True while this tab is a guest on someone else's server. */
   get isGuest() { return !!(this.net && !this.net.isHost); }
@@ -427,7 +427,7 @@ export class Game {
     client.onHostClosed = (reason) => this._connectionLost(reason);
     const ok = await this.session.startRemote(client, welcome);
     if (!ok) { this._dropNet(); return false; }
-    // The host decides the guest's game mode and whether it may change it (Update #9 §1).
+    // The host decides the guest's game mode and whether it may change it.
     const you = welcome.you || {};
     client.canChangeMode = !!you.canChangeMode;
     if (this.worldMeta) { this.worldMeta.keepInventory = !!welcome.keepInventory; this.worldMeta.pvp = welcome.pvp !== false; }
@@ -508,7 +508,7 @@ export class Game {
   }
 
   /** Water flowed into a plant: drop its item and show particles. */
-  /** Lava met water, or an item burned (Update #11): a hiss and a little smoke. */
+  /** Lava met water, or an item burned: a hiss and a little smoke. */
   _sizzle(x, y, z) {
     this.audio.playAt('lava.sizzle', x, y, z, 'blocks', 0.8);
     this.particles.spawnSmoke(x, y + 0.4, z, 5, 1.3);
@@ -542,7 +542,7 @@ export class Game {
 
   /**
    * Back to the game. `lock` is false when Esc closed the menu: Esc is not user activation, so the lock is requested on
-   * the next key press or click instead (Update #12 §3c); a click (the Resume button) or a key such as E locks at once.
+   * the next key press or click instead; a click (the Resume button) or a key such as E locks at once.
    * In single player the world was paused, so the loop's timing restarts without catching up.
    */
   resume(lock = true) {
@@ -572,7 +572,7 @@ export class Game {
     if (lock) this.requestPointerLock('inventory-close'); else this.lock.relockOnNextInput();
   }
 
-  // ---- Chat and commands (Update #12) ----
+  // ---- Chat and commands ----
 
   /** Chat box: `prefill` '/' when the slash key opened it. */
   openChat(prefill = '') {
@@ -600,7 +600,7 @@ export class Game {
     if (broadcast && this.net && this.net.isHost) this.net.broadcastSystem(text, color);
   }
 
-  // ---- /tick (Update #12): game speed on Minecraft's 20-ticks-per-second scale ----
+  // ---- /tick: game speed on Minecraft's 20-ticks-per-second scale ----
 
   setTickRate(rate, fromHost = false) {
     rate = Math.min(TICK_RATE_MAX, Math.max(TICK_RATE_MIN, Math.round(rate)));
@@ -708,7 +708,7 @@ export class Game {
     if (escape && this.ui.shaders.isOpen) { this.ui.shaders.close(); return; }
     if (!st.inWorld) return;
     // Esc while the mouse is locked makes the browser release the lock, and that release opens the pause menu
-    // (UIManager._onPointerLock). Esc on an open screen closes it without a lock request (Update #9): the game
+    // (UIManager._onPointerLock). Esc on an open screen closes it without a lock request: the game
     // resumes behind the "Click to resume" overlay. Esc while playing unlocked does nothing; the menu never
     // reopens on its own.
     if (escape) {
@@ -717,10 +717,10 @@ export class Game {
     }
     if (a.wasPressed('inventory')) {
       if (st.is(State.PLAYING)) this.openInventory();
-      else if (st.is(State.INVENTORY)) this.closeInventory(true); // closing with the key re-locks at once (Update #12 §3c)
+      else if (st.is(State.INVENTORY)) this.closeInventory(true); // closing with the key re-locks at once
     }
     if (!st.is(State.PLAYING)) return;
-    // Chat (Update #12): the bindable key, Enter, or "/" with a slash already typed. While the box is open the input
+    // Chat: the bindable key, Enter, or "/" with a slash already typed. While the box is open the input
     // element has focus, so no game key reaches here.
     if (!this.ui.chat.isOpen) {
       if (a.wasPressed('chat') || this.input.wasPressed(CHAT_ENTER_CODE)) { this.openChat(''); return; }
@@ -743,7 +743,7 @@ export class Game {
     if (a.wasPressed('drop')) {
       const stack = this.inventory.getSelected();
       if (stack) {
-        const n = a.isActive('sprint') ? stack.count : 1; // sprint key doubles as the whole-stack modifier
+        const n = DROP_STACK_MODIFIERS.some((c) => this.input.isDown(c)) ? stack.count : 1; // Shift + Drop throws the whole stack
         const taken = this.inventory.removeFromSlot(this.inventory.selectedIndex, n);
         if (taken) { this.entities.throwFromPlayer(taken.itemId, taken.count); this.events.emit('player:swing'); }
       }
@@ -846,11 +846,17 @@ export class Game {
       this.hand.setLight(this.lightAt(this._eye.x, this._eye.y, this._eye.z));
       this.hand.update(dt, p, this.cameraController.bobPhase, this.cameraController.handBobFactor);
       this.health.update(dt);
-      this.playerModel.root.visible = !first && !spectator;
-      if (!first && !spectator) { this.playerModel.setLight(this.lightAt(p.renderPosition.x, p.renderPosition.y + 1, p.renderPosition.z)); this.playerModel.update(dt, p); }
+      // The own third-person body: alive, or dead and still tipping over (then hidden until the respawn, like other players see it).
+      const showBody = !first && !spectator && (!p.dead || this.health.deathTimer < PLAYER_DEATH_SECONDS);
+      this.playerModel.root.visible = showBody;
+      if (showBody) {
+        this.playerModel.setLight(this.lightAt(p.renderPosition.x, p.renderPosition.y + 1, p.renderPosition.z));
+        this.playerModel.update(dt, p);
+        if (p.dead) this.playerModel.applyDeathPose(this.health.deathTimer / PLAYER_DEATH_SECONDS);
+      }
       this.ui.hud.setHotbarVisible(!spectator && !this.state.is(State.INVENTORY));
       this.sky.setLiquid(p.headInLava ? 'lava' : p.headInWater ? 'water' : null);
-      if (p.onFire && !p.dead && !spectator) this.particles.spawnFlame(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, first ? 1 : 2, 0.35, 0.9); // burning (Update #11)
+      if (p.onFire && !p.dead && !spectator) this.particles.spawnFlame(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, first ? 1 : 2, 0.35, 0.9); // burning
       this.sky.update(this.renderer.camera);
       this.audio.update(dt, this.renderer.camera, p, this.world);
       this._footsteps();

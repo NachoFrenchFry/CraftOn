@@ -1,4 +1,4 @@
-// LightUpdater.js — incremental lighting on the main thread (Update #10): a block placed or broken (by the player,
+// LightUpdater.js — incremental lighting on the main thread: a block placed or broken (by the player,
 // flowing water, a multiplayer change) runs the two-phase remove + re-propagate BFS of LightEngine.js over the
 // loaded, lit chunks inside a per-frame time budget (about 2 ms; the queues carry over, so huge changes never
 // freeze the game). Every light change marks the section it lives in (and the neighbouring sections that read
@@ -29,7 +29,7 @@ export class LightUpdater {
     /** Chunk keys whose `lightDirty` mask is non-zero (consumed by ChunkManager). */
     this.dirtyChunks = new Set();
     this.timing = { total: 0, count: 0 };
-    /** Seam jobs (Update #14 §1c): { cx, cz, dx, dz, y } border comparisons of freshly lit chunks, run in slices inside update(). */
+    /** Seam jobs: { cx, cz, dx, dz, y } border comparisons of freshly lit chunks, run in slices inside update(). */
     this.seams = [];
     const self = this;
     /** LightEngine access over the loaded world (unlit chunks are barriers). */
@@ -97,7 +97,7 @@ export class LightUpdater {
     const c = this.world.getChunk(x >> 4, z >> 4);
     if (!c) return;
     if (!c.lit) {
-      // Edited while its initial light job is in flight: replayed when that light lands (Update #14 §1d).
+      // Edited while its initial light job is in flight: replayed when that light lands.
       if (c.lighting) { if (!c.pendingLightEdits) c.pendingLightEdits = []; c.pendingLightEdits.push(x, y, z); }
       return;
     }
@@ -106,7 +106,7 @@ export class LightUpdater {
     const t0 = now();
     const old = this.access.get(x, y, z, SKY);
     if (old > 0) { this._set(x, y, z, SKY, 0); this.removal[SKY].push(x, y, z, old); }
-    // Block light (Update #11): darken what the cell's old light reached, then an emitter placed here (torch 14, lava 15)
+    // Block light: darken what the cell's old light reached, then an emitter placed here (torch 14, lava 15)
     // starts the BFS at its own value. docs/LIGHTING.md: propagation / two-phase depropagation on the BLOCK channel.
     const oldBlock = this.access.get(x, y, z, BLOCK);
     if (oldBlock > 0) { this._set(x, y, z, BLOCK, 0); this.removal[BLOCK].push(x, y, z, oldBlock); }
@@ -125,7 +125,7 @@ export class LightUpdater {
 
   /**
    * A chunk's initial light arrived: queue seam comparisons with every lit neighbour (both channels); they run in slices inside
-   * update()'s budget, never in one go (Update #14 §1c). Edits made while the job was in flight are replayed first.
+   * update()'s budget, never in one go. Edits made while the job was in flight are replayed first.
    */
   onChunkLit(chunk) {
     const edits = chunk.pendingLightEdits;

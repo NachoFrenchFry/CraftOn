@@ -6,12 +6,12 @@ import * as THREE from 'three';
 export const PX = 1.8 / 32;
 
 /**
- * Held tools (Update #8): the item sprite is a flat extrusion whose handle runs along its diagonal. A 45° roll
+ * Held tools: the item sprite is a flat extrusion whose handle runs along its diagonal. A 45° roll
  * stands the handle up (+Y of the handle group); this extra turn about that handle axis puts the sprite
  * plane into the swing plane, so the pickaxe point, the axe blade and the sword edge face -Z — the
  * direction the head travels during a swing — instead of the flat side.
  */
-export const TOOL_EDGE_TURN = Math.PI / 2 + 10 * Math.PI / 180; // 100°: the Update #8 edge turn plus 10° the other way (Update #9 follow-up)
+export const TOOL_EDGE_TURN = Math.PI / 2 + 10 * Math.PI / 180; // 100°: the edge turn plus 10° the other way
 /**
  * The turn actually applied about the handle: TOOL_EDGE_TURN − π (about −80°). The plain 100° turn left the sprite's
  * back (−Z) face toward the camera, so held tools looked left-right mirrored against their hotbar icons (an axe head
@@ -63,7 +63,7 @@ export function createModelLights() {
 const ownerOf = new WeakMap();   // material → model that owns the clone
 const baseColorOf = new WeakMap();
 /**
- * Voxel lighting for a character model (Update #10): every part gets its own material clone (lazily, once) whose
+ * Voxel lighting for a character model: every part gets its own material clone (lazily, once) whose
  * colour is the base colour × the brightness factor of the sky light at the model. Meshes swapped to a hurt
  * variant (userData.baseMaterial set) are left alone until the flash ends.
  */
@@ -74,6 +74,6 @@ export function tintModelLight(owner, root, factor) {
     let m = o.material;
     if (ownerOf.get(m) !== owner) { m = m.clone(); ownerOf.set(m, owner); baseColorOf.set(m, m.color.clone()); o.material = m; }
     const c = m.color.copy(baseColorOf.get(m));
-    if (rgb) { c.r *= factor[0]; c.g *= factor[1]; c.b *= factor[2]; } else c.multiplyScalar(factor); // [r, g, b]: sky + warm block light (Update #11)
+    if (rgb) { c.r *= factor[0]; c.g *= factor[1]; c.b *= factor[2]; } else c.multiplyScalar(factor); // [r, g, b]: sky + warm block light
   });
 }

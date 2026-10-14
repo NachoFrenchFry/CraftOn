@@ -1,4 +1,4 @@
-// PointerLockController.js — the one owner of the mouse lock (Update #13 §1). Nothing else calls
+// PointerLockController.js — the one owner of the mouse lock. Nothing else calls
 // requestPointerLock / exitPointerLock. A small state machine, unlocked → requesting → locked, with a pendingRelock
 // flag, decides in one place what every unlock meant:
 //   'own'        the game let go (a menu, the inventory, the chat, leaving the world) — nothing to do

@@ -1,4 +1,4 @@
-// Chat.js — the top-left chat (Update #12), after bloxd.io: every message is its own small rounded translucent
+// Chat.js — the top-left chat, after bloxd.io: every message is its own small rounded translucent
 // slate-blue box, only as wide as its text (up to 40 % of the screen), "Name: message" with a gold [Host] tag for
 // the host, system lines (joins, leaves, deaths, command feedback) in yellow / gray / red without a name. T, Enter
 // or "/" open it: the input bar appears under the messages, the whole history shows with a scrollbar, the mouse is
@@ -78,7 +78,7 @@ export class Chat {
   /** Closed: only the last MAX_SHOWN_CLOSED, fading after FADE_AFTER seconds; open: everything, opaque. */
   _refreshVisibility() {
     const n = this.lines.length;
-    // Only lines whose state changes touch the DOM (Update #14 §3): opacity in 1/50 steps, hidden flag cached per line.
+    // Only lines whose state changes touch the DOM: opacity in 1/50 steps, hidden flag cached per line.
     for (let i = 0; i < n; i++) {
       const line = this.lines[i];
       const { el, time } = line;

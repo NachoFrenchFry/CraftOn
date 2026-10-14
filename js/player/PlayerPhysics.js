@@ -166,7 +166,7 @@ export class PlayerPhysics {
     let speed;
     if (p.flying) speed = p.sprinting ? C.SPRINT_FLY_SPEED : C.FLY_SPEED;
     else if (p.swimming) speed = C.SWIM_SPRINT_SPEED;
-    else if (p.inLava) speed = C.SWIM_SPEED * C.LAVA_SPEED_FACTOR; // thick and slow (Update #11)
+    else if (p.inLava) speed = C.SWIM_SPEED * C.LAVA_SPEED_FACTOR; // thick and slow
     else if (p.inWater) speed = C.SWIM_SPEED * (p.sprinting ? 1.3 : 1);
     else if (p.sneaking || p.crawling) speed = C.SNEAK_SPEED;
     else speed = p.sprinting ? C.SPRINT_SPEED : C.WALK_SPEED;
@@ -301,6 +301,6 @@ export class PlayerPhysics {
     p.horizontalSpeed = Math.hypot(movedX, movedZ) / dt;
     if (p.onGround && !p.inWater) p.walkDistance += Math.hypot(movedX, movedZ);
 
-    if (p.position.y < C.VOID_Y) this.events.emit('player:void'); // Survival dies (Update #9 §8); other modes are put back at the spawn
+    if (p.position.y < C.VOID_Y) this.events.emit('player:void'); // Survival dies; other modes are put back at the spawn
   }
 }

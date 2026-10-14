@@ -1,4 +1,4 @@
-// Support.js — which block holds another up (Update #11): plants and standing torches need the block below,
+// Support.js — which block holds another up: plants and standing torches need the block below,
 // wall torches the wall they hang on. Shared by placement (BlockInteraction, the host's validation), breaking
 // (the dependents of a removed block break too) and the liquid simulation. Pure.
 import { BlockIds } from './BlockIds.js';

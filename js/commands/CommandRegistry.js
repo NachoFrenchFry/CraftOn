@@ -1,4 +1,4 @@
-// CommandRegistry.js — chat commands (Update #12): a chat line starting with "/" is a command. One file per
+// CommandRegistry.js — chat commands: a chat line starting with "/" is a command. One file per
 // command in this folder registers itself here; the registry parses the line, runs the command and offers
 // Tab completion for command names and arguments. Feedback goes only to the player who typed the command
 // (gray, red for errors) through `reply`.

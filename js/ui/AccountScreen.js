@@ -1,4 +1,4 @@
-// AccountScreen.js — the Log In / Create Account screen shown before the main menu (Update #6). Username
+// AccountScreen.js — the Log In / Create Account screen shown before the main menu. Username
 // and password only (no email anywhere), a loading state, friendly error line, Enter submits, and a Retry
 // button when the server cannot be reached. Key bindings are ignored while typing.
 

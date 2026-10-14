@@ -1,7 +1,7 @@
 // Inventory.js — the player's container: 9 hotbar slots (0–8), 36 storage slots (9–44, a 6×6 grid) and
 // 5 armor slots (45–49: helmet, chestplate, gauntlets, leggings, boots). Minecraft-style add / merge /
 // swap / split logic. Emits 'inventory:changed' and 'inventory:selected'. Saves with 27-slot storage
-// (before Update #5) load into the first 27 storage slots because slot indices are unchanged.
+// (before) load into the first 27 storage slots because slot indices are unchanged.
 
 import { ItemStack } from './ItemStack.js';
 import { ItemRegistry } from './ItemRegistry.js';
@@ -130,7 +130,7 @@ export class Inventory {
   }
 
   /**
-   * Equip the armor piece in slot `i` straight into its armor slot (Update #8 right-click). A piece already
+   * Equip the armor piece in slot `i` straight into its armor slot (right-click). A piece already
    * worn there swaps back into slot `i`. Returns the armor slot index, or -1 when the slot holds no armor.
    */
   equipFromSlot(i) {
@@ -167,7 +167,7 @@ export class Inventory {
     return out;
   }
 
-  /** Armor points of one worn slot ('boots' count double against falls, Update #9 §8). */
+  /** Armor points of one worn slot ('boots' count double against falls). */
   armorPointsFor(slot) {
     const k = ARMOR_SLOTS.indexOf(slot);
     const s = k >= 0 ? this.slots[ARMOR_START + k] : null;

@@ -1,4 +1,4 @@
-// Profiler.js — per-system main-thread timers and a frame-time history (Update #14 §0). Game wraps every system of a
+// Profiler.js — per-system main-thread timers and a frame-time history. Game wraps every system of a
 // frame in begin()/end() pairs; endFrame() files the frame (rAF interval, CPU time, per-system ms) into ring buffers
 // for the F3 graph, into running one-second averages for the F3 breakdown and into totals for the benchmark. No
 // allocations after warm-up: the per-frame table keeps fixed keys and the histories are typed arrays. Long tasks

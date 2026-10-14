@@ -1,4 +1,4 @@
-// SpawnFinder.js — picks a spawn column by scoring candidates in an outward spiral (Update #6): inland
+// SpawnFinder.js — picks a spawn column by scoring candidates in an outward spiral: inland
 // land (continentalness clearly past the coast), height between sea level + 3 and + 30, plains or forest
 // first (then any land biome except beach), gentle slopes, never a mountain peak. Pure terrain math, no
 // chunks needed, so it also runs in Node checks.
@@ -45,7 +45,7 @@ export function findSpawnColumn(gen, radius = SPAWN_SEARCH_RADIUS, step = SPAWN_
   for (let attempt = 0; attempt < 6; attempt++) {
     const best = searchSpawnColumn(gen, radius, step, sample, rejected);
     if (!best) return null;
-    // Update #11: never spawn within about 16 blocks of lava (a desert lava lake); try the next best column instead.
+    // never spawn within about 16 blocks of lava (a desert lava lake); try the next best column instead.
     if (!avoidLava || !gen.lavaNear || !gen.lavaNear(best.x, best.z, 16, best.height - 24)) return best;
     rejected.add(best.x + ',' + best.z);
   }

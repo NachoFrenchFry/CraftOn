@@ -1,7 +1,9 @@
-// AudioManager.js — lazy AudioContext (resumed on the first gesture), buses with settings-driven
-// volumes, the SoundBank of real audio files (Update #15: audio/<category>/<sound>/N.wav through audio/manifest.json,
-// loaded in the background from boot, most-used first; the menu never waits and a sound not loaded yet is skipped),
-// spatial playback, footsteps and the ambient loops (the wind is a looping file now, nothing is synthesized at runtime).
+// AudioManager.js — lazy AudioContext (resumed on the first gesture), buses with settings-driven volumes, the SoundBank
+// of real audio files (one file per sound, audio/<category>/<sound>.<ext> through audio/manifest.json, loaded in the
+// background from boot, most-used first; the menu never waits and a sound not loaded yet is skipped), spatial playback,
+// footsteps and the ambient loops (the wind is a looping file, nothing is synthesized at runtime). Variation is done in
+// code: every play shifts the pitch and the volume by a random amount set per sound in the manifest (strong for blocks,
+// none for UI sounds and loops) and never repeats the exact pitch of the previous play of that sound.
 
 import { SoundBank } from './SoundBank.js';
 import { SpatialAudio } from './SpatialAudio.js';
@@ -58,11 +60,13 @@ export class AudioManager {
     this.ready = false;
     this.initStarted = false;
     this._ambientTimer = 0;
-    /** /tick (Update #12): every buffer source plays at this rate, so sped-up footage sounds normal. */
+    /** /tick: every buffer source plays at this rate, so sped-up footage sounds normal. */
     this.timeScale = 1;
     this._dripTimer = 20 + Math.random() * 40;
     this._enclosed = false;
     this._nearWater = false;
+    /** id → the playback rate of its last play (the next one is pushed away from it). */
+    this._lastPitch = new Map();
     events.on('settings:changed', (key) => { if (key.endsWith('Volume')) this.applyVolumes(); });
     const unlock = () => this.init();
     window.addEventListener('pointerdown', unlock, { once: true });
@@ -128,7 +132,27 @@ export class AudioManager {
     return true;
   }
 
-  /** Non-positional playback. `name` is a sound id ("ui/click") or the old dotted name ("ui.click"). */
+  /**
+   * The playback rate for one play of a sound: 1 ± the manifest's `pitch`, never the same as the previous play of that
+   * sound (a repeat is pushed to the other half of the range), so fast footsteps or mining never sound robotic.
+   */
+  pitchFor(id) {
+    const spread = this.bank.pitchOf(id);
+    if (spread <= 0) return 1;
+    const last = this._lastPitch.get(id);
+    let rate = 1 + (Math.random() * 2 - 1) * spread;
+    if (last !== undefined && Math.abs(rate - last) < spread * 0.3) rate = last > 1 ? 1 - Math.random() * spread : 1 + Math.random() * spread;
+    this._lastPitch.set(id, rate);
+    return rate;
+  }
+
+  /** The gain multiplier for one play: the manifest volume × (1 ± `volumeVar`). */
+  gainFor(id) {
+    const spread = this.bank.volumeVarOf(id);
+    return this.bank.volumeOf(id) * (spread > 0 ? 1 + (Math.random() * 2 - 1) * spread : 1);
+  }
+
+  /** Non-positional playback. `name` is a sound id ("ui/click") or the old dotted name ("ui.click"); `rate` overrides the random pitch. */
   play(name, bus = 'ui', volume = 1, rate = null) {
     const id = soundId(name);
     if (!this._canPlay(id)) return;
@@ -137,9 +161,9 @@ export class AudioManager {
     const ctx = this.ctx;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.playbackRate.value = (rate ?? (0.9 + Math.random() * 0.2)) * this.timeScale;
+    src.playbackRate.value = (rate ?? this.pitchFor(id)) * this.timeScale;
     const gain = ctx.createGain();
-    gain.gain.value = volume * this.bank.volumeOf(id);
+    gain.gain.value = volume * this.gainFor(id);
     src.connect(gain);
     gain.connect(this.buses[bus] || this.buses.ui);
     this.activeVoices++;
@@ -154,7 +178,7 @@ export class AudioManager {
     const buffer = this.bank.get(id);
     if (!buffer) return;
     this.activeVoices++;
-    const src = this.spatial.play(buffer, x, y, z, volume * this.bank.volumeOf(id), (rate ?? (0.9 + Math.random() * 0.2)) * this.timeScale, this.buses[bus] || this.buses.blocks);
+    const src = this.spatial.play(buffer, x, y, z, volume * this.gainFor(id), (rate ?? this.pitchFor(id)) * this.timeScale, this.buses[bus] || this.buses.blocks);
     src.onended = () => { this.activeVoices--; };
   }
 

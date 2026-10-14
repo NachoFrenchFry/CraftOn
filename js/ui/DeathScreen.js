@@ -1,5 +1,5 @@
 // DeathScreen.js — "You died!" with the cause, Respawn (at the world spawn with full health) and Leave World
-// (Update #9 §8). Shown by UIManager while the state is DEAD; the world keeps running behind it.
+//. Shown by UIManager while the state is DEAD; the world keeps running behind it.
 import { causeText } from '../player/Damage.js';
 
 export class DeathScreen {

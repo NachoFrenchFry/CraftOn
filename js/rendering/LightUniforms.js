@@ -1,4 +1,4 @@
-// LightUniforms.js — the Brightness option as live values (Update #10): two shader uniforms shared by every lit
+// LightUniforms.js — the Brightness option as live values: two shader uniforms shared by every lit
 // material (chunk materials with shaders off, the shader pipeline's lit materials) and the matching JS curve
 // for everything coloured on the CPU (mobs, players, dropped items, particles, the first-person hand).
 import { brightnessParams, lightCurve, lightColor as lightColorWith, BRIGHTNESS_DEFAULT } from '../world/lighting/LightCurve.js';
@@ -16,7 +16,7 @@ export function applyBrightness(setting) {
 /** Brightness factor (0..1) for a sky light level 0..15 under the current Brightness setting. */
 export function lightFactor(level) { return lightCurve(level, lightParams); }
 
-/** [r, g, b] factors for a cell's sky and block light (the block channel warm-tinted, Update #11), under the current setting. */
+/** [r, g, b] factors for a cell's sky and block light (the block channel warm-tinted), under the current setting. */
 export function lightColor(sky, block, out = [0, 0, 0]) { return lightColorWith(sky, block, lightParams, out); }
 
 // A "light" handed to models is either a plain factor (number) or an [r, g, b] array; these helpers take both.

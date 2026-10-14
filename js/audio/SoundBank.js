@@ -1,10 +1,10 @@
-// SoundBank.js — the sounds as real files (Update #15): audio/manifest.json maps each sound id ("breaking/stone",
-// "mobs/cow/hurt"…) to its numbered variation files and a volume; the bank fetches them with `cache: 'reload'` (an
-// edited file shows up after a plain reload, like the textures), decodes them with an OfflineAudioContext (no user
-// gesture needed, so loading starts at boot) and keeps one AudioBuffer per variation. Common sounds load first and
-// nothing ever blocks the menu: a sound whose buffers are not there yet is skipped. Missing or broken files leave that
-// sound silent and are reported in one grouped console warning. The synthesis that used to render these lives in
-// tools/sound-recipes/ (the export tool) and is never imported by the game.
+// SoundBank.js — the sounds as real files: audio/manifest.json maps each sound id ("breaking/stone", "mobs/cow/hurt"…)
+// to one file (audio/<id>.<ext>) plus its base volume, how much the pitch and the volume may vary per play and whether it
+// loops; the bank fetches every file with `cache: 'reload'` (an edited file shows up after a plain reload, like the
+// textures), decodes it with an OfflineAudioContext (no user gesture needed, so loading starts at boot) and keeps one
+// AudioBuffer per sound. Common sounds load first and nothing ever blocks the menu: a sound whose buffer is not there
+// yet is skipped. A missing or broken file leaves that sound silent and is reported in one grouped console warning.
+// The synthesis the shipped files were rendered from lives in tools/sound-recipes/ and is never imported by the game.
 
 /** What plays first in a session loads first (id prefixes, in order). */
 const PRIORITY = ['ui/click', 'ui/hover', 'walking/', 'breaking/', 'placing/', 'mining/', 'player/', 'items/', 'ui/', 'ambient/wind', 'mobs/', 'liquids/', 'ambient/'];
@@ -13,16 +13,16 @@ const BATCH = 4;
 export class SoundBank {
   constructor(baseUrl = 'audio/') {
     this.baseUrl = baseUrl;
-    /** id → { files, volume, loop } from the manifest. */
+    /** id → { file, volume, pitch, volumeVar, loop } from the manifest. */
     this.manifest = new Map();
-    /** id → AudioBuffer[] (the decoded variations). */
+    /** id → AudioBuffer. */
     this.buffers = new Map();
     this.ready = false;
     /** The background loading promise (resolves with the number of sounds); `rendered` / `total` track progress for F3 / tests. */
     this.rendering = null;
     this.total = 0;
     this.rendered = 0;
-    /** [id, reason] of sounds that could not be loaded at all, and [id/file, reason] of single files that failed. */
+    /** [id, reason] of sounds that could not be loaded. */
     this.failed = [];
     this.manifestError = null;
     this._decoder = null;
@@ -45,8 +45,9 @@ export class SoundBank {
       const res = await fetch(this.baseUrl + 'manifest.json', { cache: 'reload' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      for (const [id, entry] of Object.entries(json.sounds || {})) {
-        this.manifest.set(id, { files: Array.isArray(entry.files) ? entry.files : [], volume: typeof entry.volume === 'number' ? entry.volume : 1, loop: !!entry.loop });
+      for (const [id, e] of Object.entries(json.sounds || {})) {
+        const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+        this.manifest.set(id, { file: typeof e.file === 'string' ? e.file : '', volume: num(e.volume, 1), pitch: Math.max(0, num(e.pitch, 0)), volumeVar: Math.max(0, num(e.volumeVar, 0)), loop: !!e.loop });
       }
     } catch (e) {
       this.manifestError = String(e && e.message || e);
@@ -66,41 +67,42 @@ export class SoundBank {
     return this.total;
   }
 
-  async _loadSound(id) {
+  /** audio/<folders of the id>/<file>: "mobs/cow/hurt" + "hurt.wav" → audio/mobs/cow/hurt.wav. */
+  urlOf(id) {
     const entry = this.manifest.get(id);
-    const list = [];
-    if (!entry.files.length) this.failed.push([id, 'no files in audio/' + id + '/']);
-    for (const file of entry.files) {
-      try {
-        const res = await fetch(`${this.baseUrl}${id}/${file}`, { cache: 'reload' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const bytes = await res.arrayBuffer();
-        const buffer = await this._decoderCtx().decodeAudioData(bytes);
-        list.push(buffer);
-      } catch (e) {
-        this.failed.push([`${id}/${file}`, String(e && e.message || e)]);
-      }
+    if (!entry || !entry.file) return null;
+    const dir = id.includes('/') ? id.slice(0, id.lastIndexOf('/') + 1) : '';
+    return `${this.baseUrl}${dir}${entry.file}`;
+  }
+
+  async _loadSound(id) {
+    const url = this.urlOf(id);
+    try {
+      if (!url) throw new Error('no file in the manifest');
+      const res = await fetch(url, { cache: 'reload' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const bytes = await res.arrayBuffer();
+      this.buffers.set(id, await this._decoderCtx().decodeAudioData(bytes));
+    } catch (e) {
+      this.failed.push([id, String(e && e.message || e)]);
     }
-    if (list.length) this.buffers.set(id, list);
     this.rendered++;
   }
 
   _report() {
     if (!this.failed.length) return;
     const lines = this.failed.slice(0, 40).map(([what, why]) => `  ${what}: ${why}`);
-    console.warn(`SoundBank: ${this.failed.length} sound file(s) could not be loaded (those sounds stay silent; .wav or .mp3 play everywhere, Safari skips some .ogg):\n${lines.join('\n')}${this.failed.length > 40 ? '\n  …' : ''}`);
+    console.warn(`SoundBank: ${this.failed.length} sound(s) could not be loaded (they stay silent; .wav or .mp3 play everywhere, Safari skips some .ogg):\n${lines.join('\n')}${this.failed.length > 40 ? '\n  …' : ''}`);
   }
 
-  has(id) { const l = this.buffers.get(id); return !!l && l.length > 0; }
+  has(id) { return this.buffers.has(id); }
 
-  /** A random variation of a sound, or null while it is not loaded (the caller stays silent). */
-  get(id, rng = Math.random) {
-    const list = this.buffers.get(id);
-    if (!list || !list.length) return null;
-    return list[Math.floor(rng() * list.length)];
-  }
+  /** The sound's buffer, or null while it is not loaded (the caller stays silent). */
+  get(id) { return this.buffers.get(id) || null; }
 
-  /** The manifest volume of a sound (1 when unknown). */
+  /** The manifest fields of a sound (defaults when unknown). */
   volumeOf(id) { const e = this.manifest.get(id); return e ? e.volume : 1; }
+  pitchOf(id) { const e = this.manifest.get(id); return e ? e.pitch : 0; }
+  volumeVarOf(id) { const e = this.manifest.get(id); return e ? e.volumeVar : 0; }
   isLoop(id) { const e = this.manifest.get(id); return !!e && e.loop; }
 }

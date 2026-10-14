@@ -24,7 +24,7 @@ export class SelectionBox {
       this.lines.scale.set(0.7, 0.8, 0.7);
       this.lines.position.set(p.x + 0.5, p.y + 0.4, p.z + 0.5);
     } else if (RENDER_TYPE[target.blockId] === RenderType.TORCH) {
-      // A small box around the torch model (Update #11), a little wider than the 2 px stick so it is easy to see.
+      // A small box around the torch model, a little wider than the 2 px stick so it is easy to see.
       const b = torchBounds(BlockRegistry.attachOf(target.blockId));
       const pad = 0.04;
       this.lines.scale.set(b.max[0] - b.min[0] + pad * 2, b.max[1] - b.min[1] + pad, b.max[2] - b.min[2] + pad * 2);

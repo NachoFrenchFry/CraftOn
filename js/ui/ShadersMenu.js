@@ -1,4 +1,4 @@
-// ShadersMenu.js — Options → Shaders… (Update #9 §4): the master switch, the preset (Low / Medium / High / Ultra /
+// ShadersMenu.js — Options → Shaders…: the master switch, the preset (Low / Medium / High / Ultra /
 // Custom: changing any single option switches to Custom), one row per effect, the live FPS while the screen is
 // open, and Done. Everything is a setting (saved locally, applied live by ShaderPipeline.apply()).
 import { SHADER_SCHEMA, SHADER_PRESETS } from '../config/DefaultSettings.js';

@@ -1,5 +1,5 @@
 // DefaultSettings.js — default user options. Settings.js merges these with localStorage and ignores keys that
-// no longer exist (the `clouds` toggle was removed in Update #7; old saved settings still load). Update #9 added
+// no longer exist (the `clouds` toggle was removed; old saved settings still load). Later came
 // the Performance section (render scale, FPS cap, simulation / entity distance, particles, leaves, chunk
 // updates) and the client-only shader options (the Shaders screen).
 
@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   renderDistance: 8,      // chunks, 2..16
   fov: 70,                // degrees, 50..110
   mouseSensitivity: 0.5,  // 0.05..1.5
+  crouchMode: 'hold',     // 'hold' | 'toggle' (Controls screen)
   invertY: false,
   masterVolume: 0.8,
   blocksVolume: 1.0,
@@ -14,25 +15,26 @@ export const DEFAULT_SETTINGS = Object.freeze({
   ambientVolume: 0.6,
   uiVolume: 0.8,
   guiScale: 0,            // 0 = Auto, 1..4 fixed
-  smoothLighting: true,   // ambient occlusion + 4-corner smooth light (Update #10)
+  smoothLighting: true, // ambient occlusion + 4-corner smooth light
   brightness: 50,         // Moody 0 % … Bright 100 %: how bright light level 0 is (caves stay playable)
   viewBobbing: 50,        // intensity 0..100 % (0 = off); 50 % is the tuned default
   showFps: false,
-  // ---- Performance (Update #9 §7) ----
-  renderScale: 0,         // 0.25 / 0.5 / 0.75 / 1 of the device resolution, or 0 = Auto (lowers itself under the FPS target; the default since Update #14)
-  hiDpi: false,           // Update #14 §2d: false caps the device pixel ratio at 1 (a 4K / Retina screen renders at its CSS size); true uses the full ratio
+  // ---- Performance ----
+  renderScale: 0,         // 0.25 / 0.5 / 0.75 / 1 of the device resolution, or 0 = Auto (lowers itself under the FPS target; the default)
+  hiDpi: false, // false caps the device pixel ratio at 1 (a 4K / Retina screen renders at its CSS size); true uses the full ratio
   maxFps: 0,              // 30 / 60 / 120, 0 = unlimited
   simulationDistance: 6,  // chunks 2..8: mobs, water flow and item entities only update this far from the player
   entityDistance: 100,    // % of the render distance beyond which mobs, dropped items and other players are hidden
   particles: 'all',       // 'all' | 'decreased' | 'minimal'
-  fancyLeaves: false,     // false = fast leaves: opaque, faces between leaf blocks culled (the default since Update #14)
+  fancyLeaves: false, // false = fast leaves: opaque, faces between leaf blocks culled (the default)
   chunkUpdates: 'normal', // 'low' | 'normal' | 'high': mesh uploads per frame
-  // ---- Shaders (Update #9 §4), client-only ----
+  // ---- Shaders, client-only ----
   shadersOn: false,
   shaderPreset: 'medium', // 'low' | 'medium' | 'high' | 'ultra' | 'custom'
   shShadows: true,
   shShadowQuality: 1024,  // shadow map size 1024 / 2048 / 4096
   shShadowDistance: 48,   // blocks 32..128
+  shNearShadow: true,     // a second, near shadow cascade (sharp contact shadows); Low keeps one
   shLighting: true,
   shWater: true,
   shWaving: true,
@@ -72,11 +74,12 @@ export const SETTING_SCHEMA = [
   { key: 'chunkUpdates', label: 'Chunk Updates per Frame', type: 'select', options: [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], section: 'performance' },
 ];
 
-/** The Shaders screen rows (Update #9 §4); `shadersOn` and `shaderPreset` are the two controls above the list. */
+/** The Shaders screen rows; `shadersOn` and `shaderPreset` are the two controls above the list. */
 export const SHADER_SCHEMA = [
   { key: 'shShadows', label: 'Shadows', type: 'toggle' },
   { key: 'shShadowQuality', label: 'Shadow quality', type: 'select', options: [[1024, '1024'], [2048, '2048'], [4096, '4096']], needs: 'shShadows' },
   { key: 'shShadowDistance', label: 'Shadow distance', type: 'range', min: 32, max: 128, step: 16, unit: ' blocks', needs: 'shShadows' },
+  { key: 'shNearShadow', label: 'Near shadow cascade (contact shadows)', type: 'toggle', needs: 'shShadows' },
   { key: 'shLighting', label: 'Lighting (sun + sky)', type: 'toggle' },
   { key: 'shWater', label: 'Fancy water', type: 'toggle' },
   { key: 'shWaving', label: 'Waving plants', type: 'toggle' },
@@ -89,13 +92,13 @@ export const SHADER_SCHEMA = [
 
 /** Presets: Low runs on integrated graphics (no shadows, no post), Ultra turns everything up. */
 export const SHADER_PRESETS = Object.freeze({
-  low: { shShadows: false, shShadowQuality: 1024, shShadowDistance: 32, shLighting: true, shWater: false, shWaving: true, shBloom: false, shGodRays: false, shToneMap: true, shVignette: false, shUnderwater: false },
-  medium: { shShadows: true, shShadowQuality: 1024, shShadowDistance: 48, shLighting: true, shWater: true, shWaving: true, shBloom: false, shGodRays: false, shToneMap: true, shVignette: true, shUnderwater: true },
-  high: { shShadows: true, shShadowQuality: 2048, shShadowDistance: 64, shLighting: true, shWater: true, shWaving: true, shBloom: true, shGodRays: true, shToneMap: true, shVignette: true, shUnderwater: true },
-  ultra: { shShadows: true, shShadowQuality: 4096, shShadowDistance: 96, shLighting: true, shWater: true, shWaving: true, shBloom: true, shGodRays: true, shToneMap: true, shVignette: true, shUnderwater: true },
+  low: { shShadows: false, shShadowQuality: 1024, shShadowDistance: 32, shNearShadow: false, shLighting: true, shWater: false, shWaving: true, shBloom: false, shGodRays: false, shToneMap: true, shVignette: false, shUnderwater: false },
+  medium: { shShadows: true, shShadowQuality: 1024, shShadowDistance: 48, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: false, shGodRays: false, shToneMap: true, shVignette: true, shUnderwater: true },
+  high: { shShadows: true, shShadowQuality: 2048, shShadowDistance: 64, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: true, shGodRays: true, shToneMap: true, shVignette: true, shUnderwater: true },
+  ultra: { shShadows: true, shShadowQuality: 4096, shShadowDistance: 96, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: true, shGodRays: true, shToneMap: true, shVignette: true, shUnderwater: true },
 });
 
-/** The "Performance mode" preset button (Update #9 §7). */
+/** The "Performance mode" preset button. */
 export const PERFORMANCE_MODE = Object.freeze({ renderScale: 0.5, renderDistance: 4, simulationDistance: 3, particles: 'decreased', fancyLeaves: false, smoothLighting: false, shadersOn: false });
 
 const RENDER_SCALES = [0.25, 0.5, 0.75, 1];

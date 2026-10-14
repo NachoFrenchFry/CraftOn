@@ -1,4 +1,4 @@
-// SkyLight.js — initial sky lighting of one chunk (Update #10), run in the meshing worker: given the blocks of
+// SkyLight.js — initial sky lighting of one chunk, run in the meshing worker: given the blocks of
 // the chunk and its eight horizontal neighbours (a 3×3 grid, 48×48×256), every column starts at 15 above its
 // highest block and travels straight down with no decay through opacity-0 blocks, losing a leaf / water / ice
 // block's opacity on the way and stopping at the first opaque block; then the BFS spreads it sideways and
@@ -15,7 +15,7 @@ const G_STRIDE_Y = G * G;
 const G_LENGTH = G_STRIDE_Y * WORLD_HEIGHT;
 let gridLight = null;
 let gridOpacity = null;
-/** Block light channel of the grid (Update #11): seeded by every emitter (torches, lava) in the 3×3 neighbourhood. */
+/** Block light channel of the grid: seeded by every emitter (torches, lava) in the 3×3 neighbourhood. */
 let gridBlock = null;
 /** Per column: y of the first opaque block from the top (-1 = none); the column is sky-lit above it. */
 const columnBlock = new Int16Array(G * G);
@@ -103,7 +103,7 @@ export function computeChunkLight(grid, tops = null) {
   const t2 = tnow(); lastPhases.seeded = queue.length;
   propagateGrid(gridLight, true);
   const t3 = tnow();
-  // 3. Block light (Update #11): every emitter in the grid (torches 14, lava 15) seeds the BLOCK channel; the same BFS
+  // 3. Block light: every emitter in the grid (torches 14, lava 15) seeds the BLOCK channel; the same BFS
   //    without the sky-column rule. Emitters sit below the tops, so only those rows are scanned.
   gridBlock.fill(0);
   queue.clear();

@@ -1,4 +1,4 @@
-// PostFX.js — the post-process chain of the shader pipeline (Update #9 §4) on Three's EffectComposer, pinned to
+// PostFX.js — the post-process chain of the shader pipeline on Three's EffectComposer, pinned to
 // the same Three.js version through the import map ("three/addons/"): RenderPass → god rays (screen-space radial
 // blur of the bright sky around the sun, hidden where terrain covers it) → UnrealBloomPass → grade pass (filmic
 // ACES tone mapping with a slightly warmer, richer look, vignette, underwater wobble) → OutputPass (sRGB). The

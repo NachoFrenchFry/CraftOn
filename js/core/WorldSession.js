@@ -1,4 +1,4 @@
-// WorldSession.js — world lifecycle on top of the cloud save manager (Update #6): download the world row
+// WorldSession.js — world lifecycle on top of the cloud save manager: download the world row
 // and its chunk diffs (with progress), find spawn, stream the spawn area, autosave every 60 s with retry
 // and backoff on failure, "Saving…" on Save & Quit, one open tab per world, and the unsaved-changes
 // answer for the browser's leave-page prompt. Owned by Game.
@@ -19,7 +19,7 @@ const LOAD_TIMEOUT_MS = 60000;
 const RETRY_SECONDS = [5, 10, 20, 40, 60];
 const QUIT_RETRY_MS = [1000, 2000, 4000];
 
-// New Survival worlds start with an empty inventory (Update #2).
+// New Survival worlds start with an empty inventory.
 
 export class WorldSession {
   /** @param {import('./Game.js').Game} game */
@@ -85,7 +85,7 @@ export class WorldSession {
     }
     this.lock = lock;
     this.meta = meta;
-    meta.guests = meta.guests && typeof meta.guests === 'object' ? meta.guests : {}; // LAN guests' player data (Update #8)
+    meta.guests = meta.guests && typeof meta.guests === 'object' ? meta.guests : {}; // LAN guests' player data
     g.worldMeta = meta;
     if (g.sessionGuard) g.sessionGuard.claim(); // entering a world claims the account again
     g.ui.loading.show('Generating terrain…');
@@ -147,7 +147,7 @@ export class WorldSession {
   }
 
   /**
-   * Join a LAN server as a guest (Update #8): the host's WELCOME gives the seed, world name, game mode, the
+   * Join a LAN server as a guest: the host's WELCOME gives the seed, world name, game mode, the
    * saved player data for this account (or the world spawn), the mobs, items and players; the chunk edit diffs
    * stream in afterwards ("Downloading world…"), then the terrain generates locally from the seed
    * ("Generating terrain…"). Nothing is saved to the cloud: the host keeps this player's data.
@@ -217,7 +217,7 @@ export class WorldSession {
     this.loading = false;
     g.resetTick();
     g.ui.chat.clear();
-    if (w.tick) { g.setTickRate(w.tick.rate || 20, true); g.setTickFrozen(!!w.tick.frozen, true); } // the host's speed (Update #12)
+    if (w.tick) { g.setTickRate(w.tick.rate || 20, true); g.setTickFrozen(!!w.tick.frozen, true); } // the host's speed
     g.state.set(State.PLAYING);
     g.loop.resetTiming();
     g.requestPointerLock('world-join');

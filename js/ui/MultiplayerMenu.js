@@ -1,13 +1,13 @@
-// MultiplayerMenu.js — the Multiplayer screens. Since Update #15 §2 the first screen is the server list: every public
+// MultiplayerMenu.js — the Multiplayer screens. The first screen is the server list: every public
 // server online plus the private ones on this network (list_lobbies, refreshed every 3 s and with Refresh), each with
 // the world name, host, players, a LAN badge for the same network and Join; "Join by code" at the top; "Host New
-// Server" opens the host flow (Update #8: pick one of your cloud worlds or create one, choose Public / Private and the
+// Server" opens the host flow (pick one of your cloud worlds or create one, choose Public / Private and the
 // player limit). Also the "Signed in somewhere else" kick screen (Reconnect / Log out) and the disconnect notice.
 
 import { State } from '../core/GameState.js';
 import { hashSeed, randomSeed } from '../utils/Random.js';
 import { detectNetworkHash } from '../net/NetworkId.js';
-import { GAME_VERSION, JOIN_CODE_PATTERN, MAX_PLAYERS_MIN, MAX_PLAYERS_MAX } from '../net/Protocol.js';
+import { JOIN_CODE_PATTERN, MAX_PLAYERS_MIN, MAX_PLAYERS_MAX } from '../net/Protocol.js';
 
 const FIND_REFRESH_MS = 3000;
 export const EMPTY_LIST_TEXT = 'No servers online right now. Host one!';
@@ -113,7 +113,7 @@ export class MultiplayerMenu {
 
   _setHostError(text) { this.hostError.textContent = text || ''; this.hostError.classList.toggle('hidden', !text); }
 
-  /** The create form for hosting, on its own screen (Update #12 §6); Back returns to the world picker. */
+  /** The create form for hosting, on its own screen; Back returns to the world picker. */
   showHostCreate() {
     this.hideAll();
     this.game.ui.mainMenu.hide();
@@ -199,15 +199,13 @@ export class MultiplayerMenu {
       const title = document.createElement('span'); title.textContent = l.world_name; name.appendChild(title);
       if (l.same_network) { const badge = document.createElement('span'); badge.className = 'lobby-badge'; badge.textContent = 'LAN'; badge.title = 'On your network'; name.appendChild(badge); }
       const meta = document.createElement('div'); meta.className = 'world-meta';
-      const mismatch = l.game_version !== GAME_VERSION;
       const full = l.player_count >= l.max_players;
       meta.textContent = `${l.host_name} · ${l.player_count}/${l.max_players} players`;
-      if (mismatch || full) { const note = document.createElement('span'); note.className = 'lobby-note'; note.textContent = mismatch ? ' · Different version' : ' · Full'; meta.appendChild(note); }
-      if (mismatch) row.classList.add('unavailable');
+      if (full) { const note = document.createElement('span'); note.className = 'lobby-note'; note.textContent = ' · Full'; meta.appendChild(note); row.classList.add('unavailable'); }
       info.append(name, meta);
       const join = document.createElement('button'); join.className = 'mc-button small'; join.textContent = 'Join';
-      join.disabled = mismatch || full;
-      join.title = mismatch ? 'Different version' : full ? 'The server is full' : '';
+      join.disabled = full;
+      join.title = full ? 'The server is full' : '';
       join.addEventListener('click', () => { this.game.audio.playUI('click'); this._join(l); });
       row.append(info, join);
       this.findList.appendChild(row);
@@ -231,7 +229,6 @@ export class MultiplayerMenu {
       if (res.error) throw new Error(res.error.message);
       const l = res.data && res.data[0];
       if (!l) { this._setFindError('No server with that code is open right now.'); return; }
-      if (l.game_version !== GAME_VERSION) { this._setFindError('Different game version.'); return; }
       this._join(l);
     } catch (e) { this._setFindError("Couldn't reach the server. Check your connection."); }
     finally { this.joinButton.disabled = false; this.joinButton.textContent = 'Join by code'; }

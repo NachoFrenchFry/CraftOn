@@ -1,16 +1,16 @@
-// GuestClient.js — joining a LAN server (Update #8): one WebRTC offer through the signals table, the HELLO /
+// GuestClient.js — joining a LAN server: one WebRTC offer through the signals table, the HELLO /
 // WELCOME handshake, the world download (seed, game mode, chunk edit diffs in compressed batches, mobs,
 // items, players) and then play: the guest simulates its own movement and predicts its own block changes
 // (sending requests the host validates; a rejection reverts the block), asks the host to pick up items and to
 // hurt mobs, mirrors every host broadcast (blocks, water, mobs, items, other players), and sends its player
-// data and inventory to the host for saving. Since Update #15 the link uses STUN + TURN (IceServers.js), so hosts on
+// data and inventory to the host for saving. The link uses STUN + TURN (IceServers.js), so hosts on
 // other networks are reachable too; a KICK from the host ends the session with the host's reason. Never uses Supabase Realtime.
 
 import { PeerLink } from './PeerLink.js';
 import { getIceServers } from './IceServers.js';
 import { ItemStack } from '../items/ItemStack.js';
 import { Signaling } from './Signaling.js';
-import { Msg, RejectReason, GAME_VERSION, PLAYER_SNAPSHOT_HZ, JOIN_TIMEOUT_MS, encodePlayerState, decodeChunkRow } from './Protocol.js';
+import { Msg, RejectReason, PLAYER_SNAPSHOT_HZ, JOIN_TIMEOUT_MS, encodePlayerState, decodeChunkRow } from './Protocol.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
 
@@ -36,9 +36,9 @@ export class GuestClient {
     this.welcome = null;
     /** { iceServers, turn, note } used for this link (F3). */
     this.ice = null;
-    /** The host's reason when it kicked or banned us (Update #15). */
+    /** The host's reason when it kicked or banned us. */
     this.kickReason = null;
-    /** Whether the host lets this guest change its own game mode (Update #9 §1; the host decides). */
+    /** Whether the host lets this guest change its own game mode (the host decides). */
     this.canChangeMode = false;
     this.healthDirty = false; this.healthTimer = 0;
     this.remote = game.remotePlayers;
@@ -62,7 +62,6 @@ export class GuestClient {
 
   /** Connect to a lobby: resolves with the WELCOME message (chunks keep streaming in afterwards). Throws with a friendly message. */
   async connect(lobby, timeoutMs = JOIN_TIMEOUT_MS) {
-    if (lobby.game_version !== GAME_VERSION) throw new Error(RejectReason.VERSION);
     if (lobby.player_count >= lobby.max_players) throw new Error(RejectReason.FULL);
     this.lobby = lobby;
     this.hostId = lobby.host_id;
@@ -75,7 +74,7 @@ export class GuestClient {
     this.link = new PeerLink({
       iceServers: this.ice.iceServers,
       onMessage: (msg, channel) => this._onMessage(msg, channel),
-      onOpen: () => { this.connected = true; this.link.send(Msg.HELLO, { userId: this.userId, name: this.name, version: GAME_VERSION, instanceId: this.game.sessionGuard ? this.game.sessionGuard.instanceId : '' }); },
+      onOpen: () => { this.connected = true; this.link.send(Msg.HELLO, { userId: this.userId, name: this.name, instanceId: this.game.sessionGuard ? this.game.sessionGuard.instanceId : '' }); },
       onClose: (reason) => this._closed(reason),
     });
     const offer = await this.link.createOffer();
@@ -126,11 +125,12 @@ export class GuestClient {
     on('inventory:selected', () => this._sendMeta());
     on('gamemode:changed', () => this._sendMeta());
     on('player:attack', (mobId, damage, crit) => this.link.send(Msg.ATTACK, { id: mobId, damage, crit }));
-    // Health (Update #9 §8): hits on other players go to the host; our health and deaths are reported.
+    // Health: hits on other players go to the host; our health and deaths are reported.
     on('player:hitPlayer', (targetId, crit) => this.link.send(Msg.HIT, { target: targetId, crit }));
     on('player:damaged', () => { this.link.send(Msg.HEALTH, { hp: g.player.health, hurt: true }); this.healthDirty = false; });
     on('player:health', () => { this.healthDirty = true; });
     on('player:died', (cause) => this.link.send(Msg.DEATH, { cause }));
+    on('player:respawn', () => this.requestRespawn('void')); // a Creative / Spectator void fall put us back at the spawn: tell the host
     on('item:pickupRequest', (it) => this.link.send(Msg.PICKUP, { id: it.id }));
     on('player:equip', (armor) => { const p = g.player.position; this.link.send(Msg.SOUND, { name: armor.material === 'wood' ? 'player.equip_wood' : 'player.equip_metal', x: p.x, y: p.y + 1, z: p.z, vol: 0.8 }); });
     g.entities.throwHook = (itemId, count, x, y, z, vx, vy, vz) => this.link.send(Msg.THROW, { item: itemId, n: count, x, y, z, vx, vy, vz });
@@ -141,6 +141,9 @@ export class GuestClient {
     const s = g.inventory.getSelected();
     this.link.send(Msg.META, { held: s ? s.itemId : 0, armor: g.inventory.armorMaterials(), mode: g.player.gameMode });
   }
+
+  /** Ask the host to place us (a respawn, or a void jump): the host resets its movement baseline and answers with SPAWN_AT. */
+  requestRespawn(reason = 'respawn') { if (this.link && this.link.open) this.link.send(Msg.RESPAWN, { reason }); }
 
   /** A chat line typed here goes to the host, which validates it and sends it to everyone (this guest included). */
   sendChat(text) { if (this.link && this.link.open) this.link.send(Msg.CHAT, { text }); }
@@ -156,6 +159,7 @@ export class GuestClient {
 
   _onMessage(msg, channel) {
     const g = this.game;
+    if (!msg || typeof msg.t !== 'string') return; // malformed: ignored
     switch (msg.t) {
       case Msg.WELCOME: if (this._welcomeDone) this._welcomeDone.resolve(msg); return;
       case Msg.REJECT: if (this._welcomeDone) this._welcomeDone.reject(new Error(msg.reason || 'Rejected.')); return;
@@ -184,6 +188,7 @@ export class GuestClient {
       case Msg.ITEM_SPAWN: g.entities.spawnItem(msg.x, msg.y, msg.z, msg.item, msg.n, msg.vx, msg.vy, msg.vz, 0.25, msg.id); return;
       case Msg.ITEM_REMOVE: g.entities.removeById(msg.id); return;
       case Msg.ITEM_GRANT: { const left = g.inventory.addItem(msg.item, msg.n); if (left < msg.n) g.events.emit('item:pickup', msg.item, msg.n - left); return; }
+      case Msg.SPAWN_AT: g.health.placeAt(Number(msg.x) || 0, Number(msg.y) || 0, Number(msg.z) || 0, msg.reason); return;
       case Msg.HOST_CLOSED: this._closed('host closed'); return;
       case Msg.KICK: this.kickReason = msg.reason === RejectReason.BANNED ? RejectReason.BANNED : RejectReason.KICKED; this._closed(this.kickReason === RejectReason.BANNED ? 'banned' : 'kicked'); return;
       default: return;
@@ -192,7 +197,7 @@ export class GuestClient {
 
   /** A host-authoritative block: apply without re-sending; play the other player's break / place effects. */
   /**
-   * A rejected placement gives the item back (Update #9 §2a): into the slot it came from, else anywhere in the
+   * A rejected placement gives the item back: into the slot it came from, else anywhere in the
    * inventory, else dropped at the feet (the host spawns the drop). Only real reasons show a short message;
    * a stale request (someone else changed that block first) is silent.
    */

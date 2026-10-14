@@ -1,4 +1,4 @@
-// LightSeams.js — the seam pass (Update #10): when a freshly lit chunk joins already-lit neighbours, the shared
+// LightSeams.js — the seam pass: when a freshly lit chunk joins already-lit neighbours, the shared
 // borders are compared and every cell that could brighten the cell across the border is queued for
 // propagation. Both chunks were lit from exact 3×3 block data, so normally nothing is queued; the pass catches
 // edits made in a neighbour while this chunk's light job was still in flight, and keeps the result identical
@@ -36,7 +36,7 @@ export const SEAM_SIDES = Object.freeze([['west', -1, 0], ['east', 1, 0], ['nort
 
 /**
  * The same comparison straight over the two chunks' light and block arrays, both channels in one pass, for the rows y0 ≤ y < y1
- * (Update #14 §1c: the accessor version above cost ~100 ms per chunk through map lookups; this one runs in time slices inside the
+ * (the accessor version above cost ~100 ms per chunk through map lookups; this one runs in time slices inside the
  * per-frame light budget). Mismatches are pushed to `skyQueue` / `blockQueue`. Returns how many cells were queued.
  */
 export function seamSlice(world, cx, cz, dx, dz, y0, y1, skyQueue, blockQueue) {
