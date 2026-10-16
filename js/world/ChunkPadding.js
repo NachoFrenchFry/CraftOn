@@ -10,13 +10,17 @@ export function paddedIndex(lx, ly, lz) {
 /**
  * Fill `out` (Uint8Array of PADDED_LENGTH) with the chunk's blocks and one-block borders from the
  * four horizontal neighbours (missing neighbours read as air). Corners are never sampled.
+ * `yMin`..`yMax` (inclusive) restrict the layers written — the instant remesh of one section only needs its 16 layers
+ * plus one above and below; the other layers are left as they are.
  */
-export function buildPaddedChunk(world, cx, cz, out) {
-  out.fill(0);
+export function buildPaddedChunk(world, cx, cz, out, yMin = 0, yMax = WORLD_HEIGHT - 1) {
+  if (yMin < 0) yMin = 0;
+  if (yMax > WORLD_HEIGHT - 1) yMax = WORLD_HEIGHT - 1;
+  out.fill(0, yMin * PADDED_STRIDE_Y, (yMax + 1) * PADDED_STRIDE_Y);
   const center = world.getChunk(cx, cz);
   if (!center) return out;
   const src = center.blocks;
-  for (let y = 0; y < WORLD_HEIGHT; y++) {
+  for (let y = yMin; y <= yMax; y++) {
     const yBase = y * PADDED_STRIDE_Y;
     const sBase = y << 8;
     for (let z = 0; z < CHUNK_SIZE; z++) {
@@ -29,7 +33,7 @@ export function buildPaddedChunk(world, cx, cz, out) {
   const east = world.getChunk(cx + 1, cz);
   const north = world.getChunk(cx, cz - 1);
   const south = world.getChunk(cx, cz + 1);
-  for (let y = 0; y < WORLD_HEIGHT; y++) {
+  for (let y = yMin; y <= yMax; y++) {
     const yBase = y * PADDED_STRIDE_Y;
     const sBase = y << 8;
     if (west) { const b = west.blocks; for (let z = 0; z < 16; z++) out[yBase + (z + 1) * PADDED_SIZE] = b[sBase + (z << 4) + 15]; }
@@ -40,7 +44,7 @@ export function buildPaddedChunk(world, cx, cz, out) {
   // Diagonal corner columns (only needed for ambient occlusion at chunk corners).
   const nw = world.getChunk(cx - 1, cz - 1), ne = world.getChunk(cx + 1, cz - 1);
   const sw = world.getChunk(cx - 1, cz + 1), se = world.getChunk(cx + 1, cz + 1);
-  for (let y = 0; y < WORLD_HEIGHT; y++) {
+  for (let y = yMin; y <= yMax; y++) {
     const yBase = y * PADDED_STRIDE_Y;
     const sBase = y << 8;
     if (nw) out[yBase] = nw.blocks[sBase + (15 << 4) + 15];

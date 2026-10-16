@@ -7,7 +7,8 @@
 // chain (PostFX.js) for bloom, god rays, tone mapping, vignette and the underwater wobble. The sun direction is
 // Sky.sunDir (no day / night cycle). Everything is client-only; game logic never reads it.
 import * as THREE from 'three';
-import { createChunkMaterial } from '../Materials.js';
+import { PACKED_VERTEX_GLSL } from '../PackedVertex.js';
+import { createChunkMaterial, chunkPassDefines } from '../Materials.js';
 import { AO_BRIGHTNESS, SKY_COLOR } from '../../config/Constants.js';
 import { SHADER_PRESETS } from '../../config/DefaultSettings.js';
 import { PostFX } from './PostFX.js';
@@ -18,7 +19,13 @@ const SUN_DISTANCE = 220;
 /** The near cascade: a 40-block box (half-extent) around the player on a map of at least 2048 px, for sharp contact shadows. */
 const NEAR_SHADOW_DISTANCE = 20;
 const NEAR_SHADOW_MIN_SIZE = 2048;
-/** Normal offset in texels (tiny: the depth pass draws back faces, so front faces never self-shadow; the slope bias covers the rest). */
+/**
+ * Normal offset in texels (tiny). The chunk depth pass draws the FRONT faces (the ones facing the sun): chunk meshes are
+ * not closed — hidden faces are culled, so a block on the ground has no bottom face and the ground under it has no top
+ * face — and a back-face depth pass therefore stores no surface at all where a block meets the floor, which leaves a lit
+ * strip about one texel ÷ sin(sun elevation) wide along every shaded base. With front faces the floor's own depth is in
+ * the map, so the slope-scaled bias in the fragment shader plus this small offset keep it acne-free.
+ */
 const NORMAL_OFFSET_TEXELS = 0.25;
 
 const FACE_NORMAL_GLSL = `
@@ -34,8 +41,7 @@ vec3 craftonFaceNormal(float e) {
 }`;
 
 const VERTEX_HEAD = `#include <common>
-attribute float extra;
-attribute vec2 light;
+${PACKED_VERTEX_GLSL}
 varying float vExtra;
 varying vec2 vLight;
 varying vec3 vWorldPos;
@@ -47,10 +53,9 @@ ${FACE_NORMAL_GLSL}`;
 
 /** Waving plants and leaves, shared by the colour pass and the shadow depth pass (so shadows wave with their casters). */
 const WAVE_GLSL = `{
-  vec3 wp0 = (modelMatrix * vec4(position, 1.0)).xyz;
-  float bits = floor(extra / 8.0);
-  float topWave = mod(bits, 2.0);
-  float leaves = mod(floor(bits / 2.0), 2.0);
+  vec3 wp0 = (modelMatrix * vec4(cv.pos, 1.0)).xyz;
+  float topWave = cv.topWave;
+  float leaves = cv.leaves;
   if (uWaving > 0.5) {
     if (topWave > 0.5) {
       transformed.x += sin(uTime * 1.7 + wp0.x * 0.9 + wp0.z * 1.3) * 0.08;
@@ -62,28 +67,28 @@ const WAVE_GLSL = `{
   }
 }`;
 
-const VERTEX_BEGIN = `vec3 transformed = vec3(position);
-{
-  // The fragment gets only the bits that are the same on every vertex of the face (face id, leaves, water): the
-  // per-vertex AO level (bits 6-7) and the plant top-wave bit (8) would interpolate into garbage flags.
-  float e = extra;
-  e -= floor(e / 64.0) * 64.0;
-  e -= mod(floor(e / 8.0), 2.0) * 8.0;
-  vExtra = e;
-}
-vLight = light / 240.0;
+/** Decodes the packed vertex (in place of Three's uv_vertex, the first include in main) and feeds the map coordinates. */
+const VERTEX_UV = `CraftonVertex cv = craftonDecode();
+#ifdef USE_MAP
+vMapUv = cv.uv;
+#endif
+vTile = cv.tile;`;
+
+const VERTEX_BEGIN = `vec3 transformed = cv.pos;
+// The fragment gets only the bits that are the same on every vertex of the face (face id, leaves, water): the
+// per-vertex AO level and the plant top-wave bit would interpolate into garbage flags.
+vExtra = cv.face + cv.leaves * 16.0 + cv.water * 32.0;
+vLight = cv.light;
 ${WAVE_GLSL}`;
 
-/** The shadow depth pass for chunks: the same waving, the alpha test from the tile array (leaves, plants, glass). */
+/** The shadow depth pass for chunks: the same decode and waving, the alpha test from the tile array (leaves, plants, glass). */
 const DEPTH_VERTEX_HEAD = `#include <common>
-attribute float extra;
-attribute float tile;
+${PACKED_VERTEX_GLSL}
 varying float vTile;
 uniform float uTime;
 uniform float uWaving;`;
-const DEPTH_VERTEX_BEGIN = `vec3 transformed = vec3(position);
-${WAVE_GLSL}
-vTile = tile;`;
+const DEPTH_VERTEX_BEGIN = `vec3 transformed = cv.pos;
+${WAVE_GLSL}`;
 
 /**
  * Shadow lookup with a 3×3 PCF and a slope-scaled bias in light space: `bias` is the depth of one texel's worth of
@@ -102,9 +107,9 @@ float craftonShadow(sampler2D map, vec2 mapSize, vec3 c, float bias) {
 }
 #endif`;
 
-const VERTEX_COLOR = `#include <color_vertex>
+const VERTEX_COLOR = `vColor = vec3(cv.shade);
 {
-  float aoLevel = floor(extra / 64.0);
+  float aoLevel = cv.ao;
   float ao = aoLevel < 0.5 ? uAo.x : (aoLevel < 1.5 ? uAo.y : (aoLevel < 2.5 ? uAo.z : uAo.w));
   if (uLighting > 0.5) vColor = vec3(ao); // real light replaces the baked face brightness; AO stays
 }`;
@@ -216,6 +221,10 @@ export class ShaderPipeline {
     };
     /** The near cascade: a second directional light with no diffuse contribution (intensity 0), only a shadow map. */
     this.nearLight = null;
+    /** Shadow update policy: the maps re-render only when a cascade snapped, chunk geometry changed or something moves inside the box. */
+    this._lastGeometryVersion = -1;
+    this._frame = 0;
+    this._casters = -1;
     this._right = new THREE.Vector3(); this._up = new THREE.Vector3(); this._tmp = new THREE.Vector3(); this._q = new THREE.Quaternion();
     game.events.on('renderer:resize', (w, h) => { if (this.post) this.post.setSize(w, h); });
   }
@@ -259,7 +268,19 @@ export class ShaderPipeline {
     g.renderer.scene.add(this.nearLight); // after the sun light, so it is shadow index 1
     g.renderer.scene.add(this.nearLight.target);
     r.shadowMap.type = THREE.PCFShadowMap; // the chunk shader does its own 3×3 PCF; characters use Three's
+    // The sun is fixed and the terrain mostly static: each cascade re-renders only when update() says so.
+    dir.shadow.autoUpdate = false; dir.shadow.needsUpdate = true;
+    this.nearLight.shadow.autoUpdate = false; this.nearLight.shadow.needsUpdate = true;
+    this._lastGeometryVersion = -1;
     this._markShadowCasters(true);
+    if (g.renderer.precompile) g.renderer.precompile(this.allMaterials()); // no hitch on the first lit frame
+  }
+
+  /** Every material the lit path can use (for shader precompilation). */
+  allMaterials() {
+    const out = [];
+    if (this.litMaterials) for (const m of Object.values(this.litMaterials)) { if (m.isMaterial) out.push(m); else out.push(...Object.values(m)); }
+    return out;
   }
 
   _disable() {
@@ -271,6 +292,7 @@ export class ShaderPipeline {
     hemi.intensity = 1.1; dir.intensity = 0.9;
     dir.position.set(0.5, 1, 0.3); dir.target.position.set(0, 0, 0); dir.target.updateMatrixWorld();
     dir.castShadow = false;
+    dir.shadow.autoUpdate = true;
     if (dir.shadow.map) { dir.shadow.map.dispose(); dir.shadow.map = null; }
     if (this.nearLight) {
       this.nearLight.castShadow = false;
@@ -288,7 +310,7 @@ export class ShaderPipeline {
   /**
    * One cascade's shadow camera: an orthographic box of half-extent `dist` around the target with near / far hugging the
    * scene (the light sits SUN_DISTANCE from the target; terrain spans the box plus some height), a normal offset of
-   * NORMAL_OFFSET_TEXELS and no constant bias (the depth pass draws back faces and the fragment shader adds a slope-scaled
+   * NORMAL_OFFSET_TEXELS and no constant bias (the depth pass draws the sun-facing faces and the fragment shader adds a slope-scaled
    * bias). Returns the depth of one world texel in light-space depth units for that slope bias.
    */
   _setupCascade(light, dist, size) {
@@ -319,10 +341,30 @@ export class ShaderPipeline {
     if (near) near.castShadow = wantNear;
     this.uniforms.uNearShadow.value = wantNear ? 1 : 0;
     r.shadowMap.enabled = shadows;
-    r.shadowMap.needsUpdate = true;
+    dir.shadow.needsUpdate = true;
+    if (near) near.shadow.needsUpdate = true;
   }
 
-  /** Place a cascade's light so its box follows the player, snapped to texel-sized steps in light space (no shimmer). */
+  /**
+   * Whether anything that casts a moving shadow sits inside the near / far boxes this frame: visible mobs (they animate
+   * even when standing), dropped items (they spin and bob), other players and the own third-person body.
+   */
+  _motion(p, farDist) {
+    const g = this.game, near = NEAR_SHADOW_DISTANCE + 2, far = farDist + 2;
+    let anyNear = false, anyFar = false;
+    const at = (x, z) => { const d = Math.max(Math.abs(x - p.x), Math.abs(z - p.z)); if (d <= far) anyFar = true; if (d <= near) anyNear = true; };
+    if (g.playerModel && g.playerModel.root.visible) at(p.x, p.z);
+    const mobs = g.entities && g.entities.mobs ? g.entities.mobs.mobs : null;
+    if (mobs) for (const m of mobs) if (!m.frozen && m.root.visible) at(m.position.x, m.position.z);
+    if (g.entities) for (const it of g.entities.items) if (it.group.visible) at(it.position.x, it.position.z);
+    if (g.remotePlayers) for (const rp of g.remotePlayers.players.values()) if (rp.visible) at(rp.position.x, rp.position.z);
+    return { near: anyNear, far: anyFar };
+  }
+
+  /**
+   * Place a cascade's light so its box follows the player, snapped to texel-sized steps in light space (no shimmer).
+   * Returns true when the box moved (a texel step): the map then has to re-render.
+   */
   _snapLight(light, dist, size, p, sunDir) {
     const texel = (2 * dist) / size;
     this._right.set(0, 1, 0).cross(sunDir).normalize();
@@ -330,10 +372,14 @@ export class ShaderPipeline {
     const rx = Math.round(p.dot(this._right) / texel) * texel;
     const ry = Math.round(p.dot(this._up) / texel) * texel;
     const rz = p.dot(sunDir);
+    const snap = light.userData.snap || (light.userData.snap = { rx: NaN, ry: NaN, dist: 0, size: 0 });
+    const moved = snap.rx !== rx || snap.ry !== ry || snap.dist !== dist || snap.size !== size;
+    snap.rx = rx; snap.ry = ry; snap.dist = dist; snap.size = size;
     const target = light.target.position;
     target.copy(this._right).multiplyScalar(rx).addScaledVector(this._up, ry).addScaledVector(sunDir, rz);
     light.position.copy(target).addScaledVector(sunDir, SUN_DISTANCE);
     light.target.updateMatrixWorld();
+    return moved;
   }
 
   _applyPost() {
@@ -357,40 +403,61 @@ export class ShaderPipeline {
     const dir = this.lights[1];
     // Both shadow cameras follow the player, snapped to texel-sized steps in light space so shadows do not shimmer.
     const p = g.player.renderPosition;
-    const size = this.settings.get('shShadowQuality') | 0;
-    this._snapLight(dir, this.settings.get('shShadowDistance'), size, p, sunDir);
-    if (this.nearLight && this.nearLight.castShadow) { const n = ShaderPipeline.nearCascade(size); this._snapLight(this.nearLight, n.dist, n.size, p, sunDir); }
+    const size = this.settings.get('shShadowQuality') | 0, farDist = this.settings.get('shShadowDistance');
+    const farMoved = this._snapLight(dir, farDist, size, p, sunDir);
+    let nearMoved = false;
+    if (this.nearLight && this.nearLight.castShadow) { const n = ShaderPipeline.nearCascade(size); nearMoved = this._snapLight(this.nearLight, n.dist, n.size, p, sunDir); }
+    // Re-render a cascade only when needed: its box snapped, chunk geometry changed inside its box, or something moves
+    // inside it (the near map every such frame, the far map at most every 4th frame); waving plants count as movement.
+    this._frame++;
+    const cb = g.meshManager.changeBounds;
+    const touches = (half) => cb.any && cb.maxX >= p.x - half && cb.minX <= p.x + half && cb.maxZ >= p.z - half && cb.minZ <= p.z + half && cb.maxY >= p.y - half && cb.minY <= p.y + half;
+    const farGeom = touches(farDist + 2), nearGeom = touches(ShaderPipeline.nearCascade(size).dist + 2);
+    if (this._lastGeometryVersion !== g.meshManager.geometryVersion) { this._lastGeometryVersion = g.meshManager.geometryVersion; g.meshManager.clearChangeBounds(); }
+    const waving = u.uWaving.value > 0.5;
+    const motion = dir.castShadow ? this._motion(p, farDist) : { near: false, far: false };
+    if (dir.castShadow && (farMoved || farGeom || ((motion.far || waving) && (this._frame & 3) === 0))) dir.shadow.needsUpdate = true;
+    if (this.nearLight && this.nearLight.castShadow && (nearMoved || nearGeom || motion.near || waving)) this.nearLight.shadow.needsUpdate = true;
     // The first-person hand gets the sun from the same direction (its scene has its own lights, in view space).
     if (g.hand && g.hand.lights) { this._q.copy(cam.quaternion).invert(); g.hand.lights[1].position.copy(sunDir).applyQuaternion(this._q); }
     // New mobs, players and dropped items cast shadows too: look for new meshes about once a second.
     this.shadowScan -= dt;
-    if (this.shadowScan <= 0 && dir.castShadow) { this.shadowScan = 1; this._markShadowCasters(true); }
+    if (this.shadowScan <= 0 && dir.castShadow) {
+      this.shadowScan = 1;
+      const casters = this._markShadowCasters(true);
+      if (casters !== this._casters) { this._casters = casters; dir.shadow.needsUpdate = true; if (this.nearLight) this.nearLight.shadow.needsUpdate = true; } // a new caster appeared
+    }
     if (this.post) this.post.update(this.time, cam, sunDir, g.player.headInWater && this.settings.get('shUnderwater'), g.sky);
   }
 
-  /** castShadow on every character / mob / item mesh (not chunks, sky, particles or overlays). */
+  /** castShadow on every character / mob / item mesh (not chunks, sky, particles or overlays). Returns how many there are. */
   _markShadowCasters(on) {
     const atlas = this.game.atlas.texture;
+    let count = 0;
     this.game.renderer.scene.traverse((o) => {
       if (!o.isMesh || o.name === 'section' || o.userData.noShadow) return;
       const m = o.material;
       if (!m || !(m.isMeshLambertMaterial || (m.isMeshBasicMaterial && m.map === atlas))) return;
       o.castShadow = on;
+      count++;
     });
+    return count;
   }
 
   _createLitMaterials(atlas) {
     // The chunk vertices carry tile-local coordinates and a tile index: `map` stays set so Three generates the
     // uv varying, but the texel comes from the tile array.
-    const make = (key, params) => {
+    const make = (key, params, shadowSide = THREE.FrontSide) => {
       const m = new THREE.MeshLambertMaterial({ map: atlas.texture, vertexColors: true, fog: true, ...params });
+      m.defines = chunkPassDefines(key); // the packed vertex layout of the pass (float heights for liquids, flat lava)
       m.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, this.uniforms);
         shader.uniforms.uTiles = { value: atlas.arrayTexture };
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', VERTEX_HEAD + '\nattribute float tile;\nvarying float vTile;')
-          .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = craftonFaceNormal(extra);\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3(tangent.xyz);\n#endif')
-          .replace('#include <begin_vertex>', VERTEX_BEGIN + '\nvTile = tile;')
+          .replace('#include <common>', VERTEX_HEAD + '\nvarying float vTile;')
+          .replace('#include <uv_vertex>', VERTEX_UV)
+          .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = craftonFaceNormal(cv.face);\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3(tangent.xyz);\n#endif')
+          .replace('#include <begin_vertex>', VERTEX_BEGIN)
           .replace('#include <color_vertex>', VERTEX_COLOR)
           .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         shader.fragmentShader = shader.fragmentShader
@@ -401,20 +468,24 @@ export class ShaderPipeline {
           .replace('#include <dithering_fragment>', FRAGMENT_TAIL);
       };
       m.customProgramCacheKey = () => 'crafton-lit-' + key;
-      m.shadowSide = THREE.BackSide; // the depth pass draws back faces (front-face culling): front faces never self-shadow
+      // Never BackSide (and never null, which Three treats as BackSide for a FrontSide material): the chunk meshes are open
+      // voxel shells, so back-face casting leaves a lit gap at every block-floor contact (see NORMAL_OFFSET_TEXELS).
+      m.shadowSide = shadowSide;
       m.name = 'lit-' + key;
       return m;
     };
     // The chunk depth pass: the same waving and the alpha test from the tile array, so leaves and plants cast the
-    // shadow they show (Three copies side, map and alphaTest from the colour material at render time).
+    // shadow they show (Three copies shadowSide, map and alphaTest from the colour material at render time).
     const depth = (key) => {
       const d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: atlas.texture });
+      d.defines = chunkPassDefines(key);
       d.onBeforeCompile = (shader) => {
         shader.uniforms.uTiles = { value: atlas.arrayTexture };
         shader.uniforms.uTime = this.uniforms.uTime;
         shader.uniforms.uWaving = this.uniforms.uWaving;
         shader.vertexShader = shader.vertexShader
           .replace('#include <common>', DEPTH_VERTEX_HEAD)
+          .replace('#include <uv_vertex>', VERTEX_UV)
           .replace('#include <begin_vertex>', DEPTH_VERTEX_BEGIN);
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nprecision highp sampler2DArray;\nuniform sampler2DArray uTiles;\nvarying float vTile;')
@@ -425,13 +496,13 @@ export class ShaderPipeline {
       return d;
     };
     // Lava: unlit and a little brighter than its texture (the bloom pass picks the glow up); never shadowed.
-    const lava = createChunkMaterial(atlas.arrayTexture, 'lit-lava', { lit: false, side: THREE.DoubleSide, boost: 1.25 });
+    const lava = createChunkMaterial(atlas.arrayTexture, 'lit-lava', { lit: false, side: THREE.DoubleSide, boost: 1.25, pass: 'lava' });
     return {
       opaque: make('opaque', { side: THREE.FrontSide }),
       cutout: make('cutout', { alphaTest: 0.5, transparent: false, side: THREE.FrontSide }),
-      translucent: make('translucent', { transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }),
+      translucent: make('translucent', { transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }, THREE.BackSide), // water casts from its underside, as before
       lava,
-      depth: { opaque: depth('opaque'), cutout: depth('cutout'), translucent: depth('translucent'), lava: new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }) },
+      depth: { opaque: depth('opaque'), cutout: depth('cutout'), translucent: depth('translucent'), lava: depth('lava') }, // lava: the decoder, no map (its lit material has none)
     };
   }
 }

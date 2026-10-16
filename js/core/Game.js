@@ -375,6 +375,25 @@ export class Game {
   /** True while this tab is a guest on someone else's server. */
   get isGuest() { return !!(this.net && !this.net.isHost); }
 
+  /**
+   * Every material a frame can use (the chunk passes plain and lit, the shadow depth materials, lava, the block / item
+   * model materials, characters, particles, the sky, overlays), for Renderer.precompile() during loading.
+   */
+  precompileMaterials() {
+    const out = [];
+    const add = (m) => { if (m && m.isMaterial && !out.includes(m)) out.push(m); };
+    const walk = (root) => { if (root) root.traverse((o) => { if (o.material) { if (Array.isArray(o.material)) o.material.forEach(add); else add(o.material); } }); };
+    if (this.meshManager) { for (const m of Object.values(this.meshManager.baseMaterials || {})) add(m); }
+    if (this.shaders && this.shaders.allMaterials) this.shaders.allMaterials().forEach(add);
+    add(this.blockModelMaterial); add(this.handBlockMaterial);
+    if (this.entities) { add(this.entities.material); add(this.entities.materialTranslucent); }
+    if (this.particles) add(this.particles.material);
+    if (this.sky) { add(this.sky.dome && this.sky.dome.material); add(this.sky.sun && this.sky.sun.material); add(this.sky.sunGlow && this.sky.sunGlow.material); }
+    if (this.selectionBox) add(this.selectionBox.lines && this.selectionBox.lines.material);
+    if (this.playerModel) walk(this.playerModel.root);
+    return out;
+  }
+
   /** Load one of my worlds and host it (Multiplayer → Host New Server). `opts`: { maxPlayers, visibility } or just the player limit. */
   async hostWorld(worldId, opts = MAX_PLAYERS_DEFAULT) {
     const ok = await this.startWorld(worldId);
@@ -861,7 +880,7 @@ export class Game {
       this.audio.update(dt, this.renderer.camera, p, this.world);
       this._footsteps();
       this._swimSounds(dt);
-      this.ui.hud.setCrosshairVisible(this.cameraController.perspective !== Perspective.THIRD_FRONT);
+      this.ui.hud.setCrosshairVisible(this.cameraController.perspective !== Perspective.THIRD_FRONT && !this.player.isSpectator); // no crosshair for a spectator
       pr.end('misc');
       pr.begin('autosave');
       this.session.update(realDt);   // autosave stays on real time

@@ -11,7 +11,7 @@ export class WorkerPool {
     this.nextId = 1;
     for (let i = 0; i < size; i++) {
       const worker = new Worker(url, { type: 'module' });
-      const entry = { worker, busy: 0 };
+      const entry = { worker, busy: 0, index: i };
       worker.onmessage = (e) => this._onMessage(entry, e.data);
       worker.onerror = (e) => console.error('Worker error:', e.message || e);
       this.workers.push(entry);
@@ -28,12 +28,19 @@ export class WorkerPool {
     const p = this.pending.get(data.id);
     if (!p) return;
     this.pending.delete(data.id);
+    data.worker = entry.index; // which worker answered (buffers go back to its pool)
     p.resolve(data);
   }
 
   /** Send to every worker (no reply expected). */
   broadcast(msg) {
     for (const w of this.workers) w.worker.postMessage(msg);
+  }
+
+  /** Send to one worker by index (no reply expected), e.g. buffers going back to the worker that produced them. */
+  send(index, msg, transfer = []) {
+    const w = this.workers[index];
+    if (w) w.worker.postMessage(msg, transfer);
   }
 
   /** Send a request to the least busy worker; resolves with the reply. */

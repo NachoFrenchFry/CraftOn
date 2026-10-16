@@ -58,6 +58,7 @@ export class Sky {
     this.dome.renderOrder = -1000;
     this.dome.userData.noShadow = true;
     this.dome.frustumCulled = false;
+    this.dome.matrixAutoUpdate = false;
     scene.add(this.dome);
 
     // The sun is opaque and depth-tested (depthWrite off) so terrain in front of it hides it; it is drawn
@@ -69,6 +70,7 @@ export class Sky {
     this.sun.userData.noShadow = true;
     this.sun.frustumCulled = false;
     this.sunDir = new THREE.Vector3(0.45, 0.75, 0.3).normalize();
+    this.sun.matrixAutoUpdate = false;
     scene.add(this.sun);
     // Soft glow ring behind the sun, also depth-tested.
     const glowMat = new THREE.MeshBasicMaterial({ color: this.baseColors.sun.clone(), fog: false, depthWrite: false, depthTest: true, transparent: true, opacity: 0.22 });
@@ -76,6 +78,7 @@ export class Sky {
     this.sunGlow.renderOrder = -999;
     this.sunGlow.userData.noShadow = true;
     this.sunGlow.frustumCulled = false;
+    this.sunGlow.matrixAutoUpdate = false;
     scene.add(this.sunGlow);
     this.setRenderDistance(8);
   }
@@ -138,5 +141,7 @@ export class Sky {
     this.sun.lookAt(camera.position);
     this.sunGlow.position.copy(camera.position).addScaledVector(this.sunDir, 402);
     this.sunGlow.lookAt(camera.position);
+    // Static-matrix meshes: only this method moves them, so the matrices are written here, not by the scene walk.
+    this.dome.updateMatrix(); this.sun.updateMatrix(); this.sunGlow.updateMatrix();
   }
 }

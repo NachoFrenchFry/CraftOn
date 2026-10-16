@@ -1,29 +1,30 @@
 // Materials.js — the chunk materials (opaque, cutout, translucent, lava) plus shared helpers.
 //
 // the chunk passes are ShaderMaterials over the texture array (one 16×16 layer per atlas tile): a
-// vertex carries tile-local coordinates that repeat with fract() across a greedy-merged quad and its tile index
-// (`tile` attribute). The look is MeshBasicMaterial's — texel × vertex colour (face shade × AO) × the voxel light
-// curve, fog, sRGB output — so nothing changes on screen. Small block models (items, the held block) keep the
-// plain atlas materials.
+// vertex is the packed 8-byte word pair of PackedVertex.js, decoded in the vertex shader into its position, tile-local
+// coordinates that repeat with fract() across a greedy-merged quad, its tile index, shade (face brightness × AO) and
+// light. The look is MeshBasicMaterial's — texel × shade × the voxel light curve, fog, sRGB output — so nothing changes
+// on screen. Small block models (items, the held block) keep the plain atlas materials.
 
 import * as THREE from 'three';
 import { LIGHT_UNIFORMS } from './LightUniforms.js';
 import { LIGHT_CURVE_GLSL } from '../world/lighting/LightCurve.js';
+import { PACKED_VERTEX_GLSL } from './PackedVertex.js';
 
 const CHUNK_VERTEX = `
-attribute float tile;
-attribute vec2 light;
+${PACKED_VERTEX_GLSL}
 varying vec2 vUv;
 varying float vTile;
 varying vec3 vColor;
 varying vec2 vLight;
 #include <fog_pars_vertex>
 void main() {
-  vUv = uv;
-  vTile = tile;
-  vColor = color;
-  vLight = light / 240.0;
-  vec3 transformed = position;
+  CraftonVertex cv = craftonDecode();
+  vUv = cv.uv;
+  vTile = cv.tile;
+  vColor = vec3(cv.shade);
+  vLight = cv.light;
+  vec3 transformed = cv.pos;
   vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -58,10 +59,22 @@ void main() {
 }`;
 
 /**
- * One chunk pass material over the tile array. `lit` applies the Brightness light curve (everything but lava).
+ * The vertex-shader defines of a chunk pass: liquid passes carry the float height attribute, lava is flat-shaded (no face brightness).
+ * @param {'opaque'|'cutout'|'translucent'|'lava'} pass
+ */
+export function chunkPassDefines(pass) {
+  const d = {};
+  if (pass === 'translucent' || pass === 'lava') d.CRAFTON_LIQUID_Y = '';
+  if (pass === 'lava') d.CRAFTON_FLAT_SHADE = '';
+  return d;
+}
+
+/**
+ * One chunk pass material over the tile array. `lit` applies the Brightness light curve (everything but lava); `pass`
+ * picks the vertex layout defines (chunkPassDefines).
  * @param {THREE.DataArrayTexture} tileArray
  */
-export function createChunkMaterial(tileArray, key, { lit = true, cutout = false, transparent = false, opacity = 1, side = THREE.FrontSide, boost = 1 } = {}) {
+export function createChunkMaterial(tileArray, key, { lit = true, cutout = false, transparent = false, opacity = 1, side = THREE.FrontSide, boost = 1, pass = 'opaque' } = {}) {
   const uniforms = {
     ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
     tiles: { value: tileArray },
@@ -74,8 +87,8 @@ export function createChunkMaterial(tileArray, key, { lit = true, cutout = false
     uniforms,
     vertexShader: CHUNK_VERTEX,
     fragmentShader: CHUNK_FRAGMENT,
-    defines: { ...(cutout ? { CUTOUT: '' } : {}), ...(lit ? { VOXEL_LIGHT: '' } : {}) },
-    vertexColors: true,
+    defines: { ...(cutout ? { CUTOUT: '' } : {}), ...(lit ? { VOXEL_LIGHT: '' } : {}), ...chunkPassDefines(pass) },
+    vertexColors: false, // the shade comes out of the packed vertex
     fog: true,
     transparent,
     depthWrite: !transparent,
@@ -89,11 +102,11 @@ export function createChunkMaterial(tileArray, key, { lit = true, cutout = false
 /** @param {THREE.DataArrayTexture} tileArray the atlas as a texture array (TextureAtlas.arrayTexture) */
 export function createChunkMaterials(tileArray) {
   const opaque = createChunkMaterial(tileArray, 'opaque');
-  const cutout = createChunkMaterial(tileArray, 'cutout', { cutout: true });
+  const cutout = createChunkMaterial(tileArray, 'cutout', { cutout: true, pass: 'cutout' });
   // Double-sided so the water surface is drawn from underneath (looking up from under water).
-  const translucent = createChunkMaterial(tileArray, 'translucent', { transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+  const translucent = createChunkMaterial(tileArray, 'translucent', { transparent: true, opacity: 0.75, side: THREE.DoubleSide, pass: 'translucent' });
   // Lava: opaque-looking, self-lit (no light curve), seen from below too.
-  const lava = createChunkMaterial(tileArray, 'lava', { lit: false, side: THREE.DoubleSide });
+  const lava = createChunkMaterial(tileArray, 'lava', { lit: false, side: THREE.DoubleSide, pass: 'lava' });
   return { opaque, cutout, translucent, lava };
 }
 

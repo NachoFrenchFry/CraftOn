@@ -61,21 +61,23 @@ export class LightUpdater {
   _set(x, y, z, channel, v) {
     const cx = x >> 4, cz = z >> 4, lx = x & 15, lz = z & 15;
     const w = this.world;
-    const write = (c, px, pz) => {
-      if (!c || !c.lit) return;
-      const i = lightIndex(px, y, pz);
-      c.light[i] = channel === SKY ? (c.light[i] & 0xf0) | v : (c.light[i] & 0x0f) | (v << 4);
-      this._markDirty(c, y, px, pz);
-    };
-    write(w.getChunk(cx, cz), lx, lz);
-    if (lx === 0) write(w.getChunk(cx - 1, cz), 16, lz);
-    if (lx === 15) write(w.getChunk(cx + 1, cz), -1, lz);
-    if (lz === 0) write(w.getChunk(cx, cz - 1), lx, 16);
-    if (lz === 15) write(w.getChunk(cx, cz + 1), lx, -1);
-    if (lx === 0 && lz === 0) write(w.getChunk(cx - 1, cz - 1), 16, 16);
-    if (lx === 15 && lz === 0) write(w.getChunk(cx + 1, cz - 1), -1, 16);
-    if (lx === 0 && lz === 15) write(w.getChunk(cx - 1, cz + 1), 16, -1);
-    if (lx === 15 && lz === 15) write(w.getChunk(cx + 1, cz + 1), -1, -1);
+    this._write(w.getChunk(cx, cz), lx, y, lz, channel, v);
+    if (lx === 0) this._write(w.getChunk(cx - 1, cz), 16, y, lz, channel, v);
+    if (lx === 15) this._write(w.getChunk(cx + 1, cz), -1, y, lz, channel, v);
+    if (lz === 0) this._write(w.getChunk(cx, cz - 1), lx, y, 16, channel, v);
+    if (lz === 15) this._write(w.getChunk(cx, cz + 1), lx, y, -1, channel, v);
+    if (lx === 0 && lz === 0) this._write(w.getChunk(cx - 1, cz - 1), 16, y, 16, channel, v);
+    if (lx === 15 && lz === 0) this._write(w.getChunk(cx + 1, cz - 1), -1, y, 16, channel, v);
+    if (lx === 0 && lz === 15) this._write(w.getChunk(cx - 1, cz + 1), 16, y, -1, channel, v);
+    if (lx === 15 && lz === 15) this._write(w.getChunk(cx + 1, cz + 1), -1, y, -1, channel, v);
+  }
+
+  /** One cell of one chunk's light array (a method, not a closure: this runs for every cell of every flood). */
+  _write(c, px, y, pz, channel, v) {
+    if (!c || !c.lit) return;
+    const i = lightIndex(px, y, pz);
+    c.light[i] = channel === SKY ? (c.light[i] & 0xf0) | v : (c.light[i] & 0x0f) | (v << 4);
+    this._markDirty(c, y, px, pz);
   }
 
   /** The section containing the cell plus the vertically adjacent one when the cell sits on a section border (smooth lighting reads one cell out). */

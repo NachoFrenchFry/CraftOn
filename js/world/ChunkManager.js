@@ -51,7 +51,13 @@ export class ChunkManager {
     this._candidates = [];
     /** Worker timing accumulators (for the debug overlay). */
     this.genTiming = { total: 0, count: 0 };
-    this.meshTiming = { total: 0, count: 0 };
+    /** Worker mesh time per job; `sections` (an array when a tool turns timing on) collects the per-section milliseconds. */
+    this.meshTiming = { total: 0, count: 0, sections: null };
+    /** Padded block copies and light copies that came back from the workers, ready for the next mesh job. */
+    this._paddedFree = [];
+    this._lightFree = [];
+    /** How far flat opaque faces merge in the worker: 'greedy' (2D), 'strips' (1D) or 'faces' (none); the bench and the sparkle test switch it. */
+    this.meshMode = 'greedy';
   }
 
   get renderDistance() { return this.settings.get('renderDistance'); }
@@ -279,11 +285,12 @@ export class ChunkManager {
       const key = chunkKey(r.cx, r.cz);
       this.meshInFlight.delete(key);
       const chunk = this.world.chunks.get(key);
-      if (!chunk) continue;
+      if (!chunk) { this._recycle(r); continue; }
       chunk.meshing = false;
       if (pr) pr.begin('meshing');
       this.meshManager.applyChunkResult(r.cx, r.cz, r, r.sectionMask, r.revisions);
       if (pr) pr.end('meshing');
+      this._recycle(r);
       chunk.meshed = true;
       if (chunk.remeshMask) this.meshCheck.add(key); // sections edited while the job ran: the next (partial) job
       uploads++;
@@ -324,7 +331,8 @@ export class ChunkManager {
   }
 
   _hasAllNeighbors(cx, cz) {
-    for (const [dx, dz] of NEIGHBOR_OFFSETS) if (!this.world.chunks.has(chunkKey(cx + dx, cz + dz))) return false;
+    const chunks = this.world.chunks;
+    for (let i = 0; i < NEIGHBOR_OFFSETS.length; i++) { const o = NEIGHBOR_OFFSETS[i]; if (!chunks.has(chunkKey(cx + o[0], cz + o[1]))) return false; }
     return true;
   }
 
@@ -361,20 +369,44 @@ export class ChunkManager {
       if (!sectionMask) continue;
       chunk.meshing = true;
       this.meshInFlight.add(key);
-      const padded = allocPadded();
+      // The padded copy and the light copy come back with the result (transferred both ways), so steady-state meshing allocates nothing.
+      const padded = this._paddedFree.pop() || allocPadded();
       buildPaddedChunk(this.world, chunk.cx, chunk.cz, padded);
-      const light = chunk.light.slice();
+      let light = this._lightFree.pop();
+      if (!light || light.length !== chunk.light.length) light = new Uint8Array(chunk.light.length);
+      light.set(chunk.light);
       const revisions = Array.from(chunk.sectionRevisions);
-      const msg = { type: 'mesh', cx: chunk.cx, cz: chunk.cz, padded, light, sectionMask, ao, fastLeaves, revision: chunk.revision };
+      const msg = { type: 'mesh', cx: chunk.cx, cz: chunk.cz, padded, light, sectionMask, ao, fastLeaves, revision: chunk.revision, mode: this.meshMode, timing: this.meshTiming.sections !== null };
       const gen = this.generation;
       this.pool.post(msg, [padded.buffer, light.buffer]).then((r) => {
-        if (gen !== this.generation) return;
+        if (gen !== this.generation) { this._recycle(r); return; }
         this.meshTiming.total += r.ms || 0; this.meshTiming.count++;
+        if (this.meshTiming.sections && r.sectionMs) for (const ms of r.sectionMs) this.meshTiming.sections.push(ms);
         r.revisions = revisions;
         this.meshResults.push(r);
       });
     }
     cand.length = 0;
+  }
+
+  /**
+   * A mesh result's buffers go back where they came from: the padded / light copies to the free lists (the next job
+   * fills them) and every section's pass buffers to the worker that produced them (transferred), so it allocates nothing
+   * for the next chunk.
+   */
+  _recycle(r) {
+    const keep = this.pool.size * 2 + 2;
+    if (r.padded && r.padded.length && this._paddedFree.length < keep) this._paddedFree.push(r.padded);
+    if (r.light && r.light.length && this._lightFree.length < keep) this._lightFree.push(r.light);
+    const buffers = [];
+    if (r.sections) for (const s of r.sections) for (const name of ['opaque', 'cutout', 'translucent', 'lava']) {
+      const pass = s[name];
+      if (!pass) continue;
+      if (pass.data && pass.data.buffer.byteLength) buffers.push(pass.data.buffer);
+      if (pass.yf && pass.yf.buffer.byteLength) buffers.push(pass.yf.buffer);
+    }
+    r.sections = null;
+    if (buffers.length && r.worker !== undefined) this.pool.send(r.worker, { type: 'recycle', buffers }, buffers);
   }
 
   /** True when the chunk at world (x, z) has block data. */

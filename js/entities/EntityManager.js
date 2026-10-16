@@ -58,10 +58,16 @@ export class EntityManager {
     this.throwHook = null;
   }
 
-  clear() {
+  /** Remove every dropped item (and nothing else): what loading a world's item list replaces. */
+  clearItems() {
     for (const it of this.items) { this.scene.remove(it.group); it.mesh.material.dispose(); }
     this.items.length = 0;
     this.byId.clear();
+  }
+
+  /** Remove everything — items and mobs. Only for leaving or resetting a world (WorldSession); never while loading one. */
+  clear() {
+    this.clearItems();
     if (this.mobs) this.mobs.clear();
   }
 
@@ -185,7 +191,8 @@ export class EntityManager {
     this.time += dt;
     const far = this.entityDistanceBlocks, p = this.player.position;
     for (const it of this.items) {
-      it.group.visible = far === Infinity || Math.hypot(it.position.x - p.x, it.position.z - p.z) <= far;
+      const show = far === Infinity || Math.hypot(it.position.x - p.x, it.position.z - p.z) <= far;
+      if (show !== it.group.visible) { it.group.visible = show; if (show) this.scene.add(it.group); else this.scene.remove(it.group); } // out of range: out of the scene
       if (it.group.visible) it.render(alpha, this.time, this.lightAt ? this.lightAt(it.position.x, it.position.y + 0.2, it.position.z) : 1);
     }
     if (this.mobs) this.mobs.render(alpha, dt, frustum);
@@ -196,7 +203,9 @@ export class EntityManager {
   }
 
   deserialize(list) {
-    this.clear();
+    // Items only: the mobs were restored before the chunks streamed in (WorldSession.start) and a full clear here used to
+    // wipe them — and the stowed mobs waiting for their chunk — so every loaded world lost its mobs.
+    this.clearItems();
     if (!Array.isArray(list)) return;
     for (const d of list) {
       if (!d || !ItemRegistry.has(d.id) || !(d.n > 0)) continue; // items removed from the game vanish silently

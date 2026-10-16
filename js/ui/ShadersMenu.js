@@ -76,6 +76,7 @@ export class ShadersMenu {
         });
       }
       row.appendChild(control);
+      if (schema.hint) { const hint = document.createElement('div'); hint.className = 'option-hint'; hint.textContent = schema.hint; row.appendChild(hint); }
       this.list.appendChild(row);
       this.controls.set(schema.key, { schema, control, value, row });
     }

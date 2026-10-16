@@ -2,6 +2,7 @@
 // the two-pass render (world, then the first-person hand overlay on a cleared depth buffer).
 
 import * as THREE from 'three';
+import { GpuTimer, uncappedFps } from './GpuTimer.js';
 import { HAND_FOV } from '../config/Constants.js';
 
 export class Renderer {
@@ -17,6 +18,8 @@ export class Renderer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false });
     this.renderer.autoClear = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    /** GPU frame time (WebGL2 timer queries; `available` false means CPU-only estimates). */
+    this.gpuTimer = new GpuTimer(this.renderer.getContext());
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(settings.get('fov'), 1, 0.05, 1000);
     this.handScene = new THREE.Scene();
@@ -93,8 +96,51 @@ export class Renderer {
     }
   }
 
+  /** The frame rate the game could reach without the display's refresh cap: { fps, estimate } (estimate = no GPU timer). */
+  uncapped(cpuMs) { return uncappedFps(cpuMs, this.gpuTimer.available ? this.gpuTimer.avgMs : 0); }
+
+  /**
+   * Compile the shader programs of these materials now (one dummy mesh each in a scratch scene, lit by the real scene's
+   * lights), so the first lava, torch, water or lit frame never hitches on a compile. Resolves when done.
+   */
+  /**
+   * Compile every material in `materials` now (a scratch scene of one dummy mesh per material, lights and fog from the real
+   * scene) and resolve once their programs are usable. Three's compileAsync is not used: it polls `program.isReady()` on
+   * every material until all are ready and throws when one was disposed meanwhile (shaders toggled off during the wait).
+   */
+  async precompile(materials) {
+    const list = (materials || []).filter((m) => m && m.isMaterial);
+    const r = this.renderer;
+    if (!list.length || typeof r.compile !== 'function') return 0;
+    const scratch = new THREE.Scene();
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+    for (const m of list) { const mesh = new THREE.Mesh(geom, m); mesh.frustumCulled = false; scratch.add(mesh); }
+    let compiled = null;
+    try { compiled = r.compile(scratch, this.camera, this.scene); } catch (e) { /* a material that cannot compile shows up on its first use instead */ }
+    geom.dispose();
+    if (!compiled || !r.properties) return list.length;
+    // KHR_parallel_shader_compile: wait (at most ~2 s) until every program reports ready; a disposed material simply drops out.
+    const t0 = performance.now();
+    await new Promise((resolve) => {
+      const check = () => {
+        let pending = 0;
+        for (const m of compiled) {
+          const program = r.properties.get(m).currentProgram;
+          if (program && typeof program.isReady === 'function' && !program.isReady()) pending++;
+        }
+        if (pending === 0 || performance.now() - t0 > 2000) resolve();
+        else requestAnimationFrame(check);
+      };
+      check();
+    });
+    return list.length;
+  }
+
   render() {
     const r = this.renderer;
+    this.gpuTimer.poll();
+    this.gpuTimer.begin();
     r.clear();
     if (this.post) { if (this.profiler) this.profiler.begin('post'); this.post.render(); if (this.profiler) this.profiler.end('post'); } else r.render(this.scene, this.camera);
     this.worldStats.calls = r.info.render.calls;
@@ -103,6 +149,7 @@ export class Renderer {
       r.clearDepth();
       r.render(this.handScene, this.handCamera);
     }
+    this.gpuTimer.end();
   }
 
   get info() { return this.renderer.info; }

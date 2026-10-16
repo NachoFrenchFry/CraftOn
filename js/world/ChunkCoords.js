@@ -2,8 +2,11 @@
 
 import { CHUNK_SHIFT, CHUNK_MASK } from '../config/Constants.js';
 
-const KEY_OFFSET = 1 << 20;
-const KEY_MUL = 1 << 21;
+// Keys stay inside V8's small-integer range (31 bits): 15 bits per axis, so |cx|, |cz| < 16 384 (±262 144 blocks). A key
+// beyond that would be a heap number, and every Map / Set lookup with it (the visibility walk, light floods, chunk queues)
+// allocated one — the sampling heap profiler showed it as the biggest allocator while flying.
+const KEY_OFFSET = 1 << 14;
+const KEY_MUL = 1 << 15;
 
 /** Chunk coordinate containing a world coordinate (works for negatives and fractions). */
 export function toChunkCoord(v) { return Math.floor(v) >> CHUNK_SHIFT; }
@@ -11,7 +14,7 @@ export function toChunkCoord(v) { return Math.floor(v) >> CHUNK_SHIFT; }
 /** Local coordinate 0..15 within the chunk. */
 export function toLocalCoord(v) { return Math.floor(v) & CHUNK_MASK; }
 
-/** Packed numeric key for a chunk (|cx|, |cz| < 2^20). */
+/** Packed numeric key for a chunk (|cx|, |cz| < 2^14; a small integer, see above). */
 export function chunkKey(cx, cz) { return (cx + KEY_OFFSET) * KEY_MUL + (cz + KEY_OFFSET); }
 
 export function keyToChunkX(key) { return Math.floor(key / KEY_MUL) - KEY_OFFSET; }

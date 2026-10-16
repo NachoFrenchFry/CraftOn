@@ -80,6 +80,14 @@ export class MobManager {
     return mob;
   }
 
+  /** Show or hide a mob: a hidden one leaves the scene entirely (no matrix walk or projection for mobs beyond the entity distance). */
+  _show(m, on) {
+    if (m.root.visible === on && (on ? m.root.parent === this.scene : m.root.parent === null)) return;
+    m.root.visible = on;
+    if (on) { if (m.root.parent !== this.scene) this.scene.add(m.root); }
+    else if (m.root.parent) this.scene.remove(m.root);
+  }
+
   _drop(i) {
     const m = this.mobs[i];
     this.scene.remove(m.root);
@@ -157,7 +165,7 @@ export class MobManager {
       if (m.isDying) { m.deathTimer += dt; if (m.deathTimer >= MOB_DEATH_SECONDS) { this._drop(i); continue; } }
       const d = Math.hypot(m.position.x - px, m.position.z - pz);
       m.frozen = d > far;
-      m.root.visible = !m.frozen && d <= this.entityDistanceBlocks;
+      this._show(m, !m.frozen && d <= this.entityDistanceBlocks);
     }
   }
 
@@ -230,7 +238,7 @@ export class MobManager {
       const m = this.mobs[i];
       const d = Math.hypot(m.position.x - px, m.position.z - pz);
       m.frozen = d > far;
-      m.root.visible = !m.frozen && d <= this.entityDistanceBlocks;
+      this._show(m, !m.frozen && d <= this.entityDistanceBlocks);
       if (m.frozen) continue;
       const wasGround = m.walkDistance;
       m.fixedUpdate(dt, this.world, this.waterSim);

@@ -70,9 +70,25 @@ export async function loadEntityTextures() {
 /** @deprecated alias of loadEntityTextures (the map also holds the armor sheets). */
 export const loadMobTextures = loadEntityTextures;
 
+/** Part geometries shared by every mob of a type (a box with the sheet's net applied depends only on the definition). */
+const partGeometries = new Map();
+function partGeometry(def, part) {
+  const key = (def.type || def.name || def.texture) + '/' + part.name;
+  let geom = partGeometries.get(key);
+  if (!geom) {
+    const [W, H, D] = part.size;
+    const inflate = part.inflate || 0;
+    geom = new THREE.BoxGeometry((W + 2 * inflate) * MOB_PX, (H + 2 * inflate) * MOB_PX, (D + 2 * inflate) * MOB_PX);
+    applyNetUVs(geom, part.uv[0], part.uv[1], W, H, D);
+    partGeometries.set(key, geom);
+  }
+  return geom;
+}
+
 /**
  * Build a mob model. Returns { root, pivots: Map<partName, Group>, materials: Material[] }.
- * Materials are per instance so hurt flashes don't affect other mobs.
+ * Materials are per instance so hurt flashes don't affect other mobs; the part geometries are shared per mob type
+ * (never disposed), so spawning a mob allocates no geometry.
  */
 export function createMobModel(def, textures) {
   const root = new THREE.Group();
@@ -90,11 +106,7 @@ export function createMobModel(def, textures) {
     return matFor.get(key);
   };
   for (const part of def.parts) {
-    const [W, H, D] = part.size;
-    const inflate = part.inflate || 0;
-    const geom = new THREE.BoxGeometry((W + 2 * inflate) * MOB_PX, (H + 2 * inflate) * MOB_PX, (D + 2 * inflate) * MOB_PX);
-    applyNetUVs(geom, part.uv[0], part.uv[1], W, H, D);
-    const mesh = new THREE.Mesh(geom, material(part.layer));
+    const mesh = new THREE.Mesh(partGeometry(def, part), material(part.layer));
     mesh.position.set(part.offset[0] * MOB_PX, part.offset[1] * MOB_PX, part.offset[2] * MOB_PX);
     if (part.rotX) mesh.rotation.x = part.rotX;
     const pivot = new THREE.Group();

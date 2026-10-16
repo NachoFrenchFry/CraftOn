@@ -75,7 +75,7 @@ export class Benchmark {
   }
 
   _newSamples() {
-    return { interval: [], cpu: [], tris: [], calls: [], seconds: 0 };
+    return { interval: [], cpu: [], gpu: [], tris: [], calls: [], seconds: 0, heapSamples: 0, heapGrowth: 0, heapLast: 0, heapTimer: 0 };
   }
 
   /** Per frame, before the systems run: moves the player along the path; `realDt` in seconds. */
@@ -138,14 +138,28 @@ export class Benchmark {
   /** Per frame, after the render: file the frame into the active phase. */
   record(intervalMs, cpuMs) {
     if (!this.active || !this.samples || this.phase === 'loading' || this.phase === 'done') return;
-    const s = this.samples, ws = this.game.renderer.worldStats;
+    const s = this.samples, ws = this.game.renderer.worldStats, gt = this.game.renderer.gpuTimer;
     s.interval.push(intervalMs); s.cpu.push(cpuMs); s.tris.push(ws.triangles); s.calls.push(ws.calls); s.seconds += intervalMs / 1000;
+    if (gt && gt.available && gt.lastMs > 0) s.gpu.push(gt.lastMs);
+    // JS heap allocation rate: the sum of the heap's growth between samples (a garbage collection shrinks it; those
+    // drops are ignored), every quarter second. Chromium only (performance.memory).
+    s.heapTimer += intervalMs;
+    if (s.heapTimer >= 250 && performance.memory) {
+      s.heapTimer = 0;
+      const used = performance.memory.usedJSHeapSize;
+      if (s.heapSamples > 0 && used > s.heapLast) s.heapGrowth += used - s.heapLast;
+      s.heapLast = used; s.heapSamples++;
+    }
   }
 
   _summarize(s) {
     const n = s.interval.length;
     const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
     const r1 = (v) => Math.round(v * 10) / 10;
+    const gpu = s.gpu.length ? { p50: r1(percentile(s.gpu, 0.5)), p95: r1(percentile(s.gpu, 0.95)), p99: r1(percentile(s.gpu, 0.99)), max: r1(Math.max(0, ...s.gpu)) } : null;
+    const cpuP50 = percentile(s.cpu, 0.5);
+    const unc = 1000 / Math.max(0.01, cpuP50, gpu ? gpu.p50 : 0);
+    const heapAllocMBps = s.heapSamples > 1 && s.seconds > 0 ? Math.round(s.heapGrowth / 1048576 / s.seconds * 100) / 100 : null;
     return {
       frames: n,
       seconds: r1(s.seconds),
@@ -158,6 +172,7 @@ export class Benchmark {
       drawCalls: { avg: Math.round(avg(s.calls)), max: Math.max(0, ...s.calls) },
       systems: this._systems(n),
       longestTaskMs: r1(this.game.profiler.longestTask),
+      gpuMs: gpu, uncappedFps: r1(unc), uncappedEstimate: !gpu, heapAllocMBps,
       longTasks: this.game.profiler.longTasks,
     };
   }
@@ -174,9 +189,10 @@ export class Benchmark {
 
   _geometry() {
     const mm = this.game.meshManager;
-    let bytes = 0, meshes = 0;
-    if (mm && mm.geometryBytes) { bytes = mm.geometryBytes(); meshes = mm.meshCount; }
-    return { bytes, megabytes: Math.round(bytes / 1048576 * 10) / 10, meshes, geometries: this.game.renderer.info.memory.geometries };
+    let bytes = 0, meshes = 0, used = 0;
+    if (mm && mm.geometryBytes) { bytes = mm.geometryBytes(); meshes = mm.meshCount; used = mm.geometryUsedBytes ? mm.geometryUsedBytes() : bytes; }
+    // bytes = what the GPU holds (pass buffers at their allocated size plus the shared index); used = the vertices in them
+    return { bytes, megabytes: Math.round(bytes / 1048576 * 10) / 10, usedBytes: used, usedMegabytes: Math.round(used / 1048576 * 10) / 10, meshes, geometries: this.game.renderer.info.memory.geometries };
   }
 
   _finish() {
@@ -198,6 +214,8 @@ export class Benchmark {
       flying: this.flying,
       geometry: this._geometry(),
       chunksLoaded: g.world.chunks.size,
+      /** Draw-range culling at the end of the flight: triangles the contiguous visible spans draw vs. those of the sections the walk reached. */
+      culling: g.meshManager && g.meshManager.stats ? { spanTriangles: Math.round(g.meshManager.stats.spanTriangles || 0), reachedTriangles: Math.round(g.meshManager.stats.reachedTriangles || 0) } : null,
       summary: null,
     };
     const st = this.standing, fl = this.flying;
@@ -208,6 +226,8 @@ export class Benchmark {
       longestTaskMs: Math.max(st.longestTaskMs, fl.longestTaskMs),
       longestFrameMs: Math.max(st.frameMs.max, fl.frameMs.max),
       triangles: fl.triangles.avg, drawCalls: fl.drawCalls.avg, geometryMB: this.report.geometry.megabytes,
+      geometryBytes: this.report.geometry.bytes, geometryUsedMB: this.report.geometry.usedMegabytes, gpuMsP50: fl.gpuMs ? fl.gpuMs.p50 : null, uncappedFps: fl.uncappedFps, uncappedEstimate: fl.uncappedEstimate, heapAllocMBps: fl.heapAllocMBps, heapAllocStandingMBps: st.heapAllocMBps,
+      spanTriangles: this.report.culling ? this.report.culling.spanTriangles : null, reachedTriangles: this.report.culling ? this.report.culling.reachedTriangles : null,
       loadSeconds: this.loaded.seconds,
     };
     window.__bench = this.report;
@@ -225,6 +245,7 @@ export class Benchmark {
       `loaded in ${r.loading.seconds} s (${r.loading.chunks} chunks${r.loading.complete ? '' : ', timed out'})`,
       line('standing', st), line('flying', fl),
       `longest task ${r.summary.longestTaskMs} ms   longest frame ${r.summary.longestFrameMs} ms   triangles ${fl.triangles.avg} (max ${fl.triangles.max})   draw calls ${fl.drawCalls.avg} (max ${fl.drawCalls.max})   geometry ${r.geometry.megabytes} MB in ${r.geometry.meshes} meshes`,
+      `uncapped ≈ ${fl.uncappedFps} fps${fl.uncappedEstimate ? '* (CPU-only estimate)' : ''}   gpu p50 ${fl.gpuMs ? fl.gpuMs.p50 + ' ms' : 'n/a'}   heap allocation ${fl.heapAllocMBps === null ? 'n/a' : fl.heapAllocMBps + ' MB/s'} while flying`,
       '', 'per system (flying):', sys,
     ].join('\n');
     let el = this.panel;

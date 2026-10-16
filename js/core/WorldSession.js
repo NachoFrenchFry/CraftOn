@@ -127,6 +127,7 @@ export class WorldSession {
 
     await this._streamSpawnArea();
     g.ui.loading.show('Almost ready…', { keepProgress: true });
+    await g.renderer.precompile(g.precompileMaterials()); // every shader variant compiled before the first frame
     g.ui.loading.setProgress(1);
     if (!meta.player) this._settleOnSurface();
     else this._settleIfBuried();
@@ -208,6 +209,7 @@ export class WorldSession {
     await this._streamSpawnArea();
     if (client.closed) { this.loading = false; this._leave(); g.net = null; g.state.set(State.MENU); g.ui.multiplayer.showFind('The host closed the server.'); return false; }
     g.ui.loading.show('Almost ready…', { keepProgress: true });
+    await g.renderer.precompile(g.precompileMaterials()); // every shader variant compiled before the first frame
     g.ui.loading.setProgress(1);
     if (!meta.player) this._settleOnSurface(); else this._settleIfBuried();
     this.autosaveTimer = AUTOSAVE_SECONDS;

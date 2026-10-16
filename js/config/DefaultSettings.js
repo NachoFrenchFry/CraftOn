@@ -79,7 +79,7 @@ export const SHADER_SCHEMA = [
   { key: 'shShadows', label: 'Shadows', type: 'toggle' },
   { key: 'shShadowQuality', label: 'Shadow quality', type: 'select', options: [[1024, '1024'], [2048, '2048'], [4096, '4096']], needs: 'shShadows' },
   { key: 'shShadowDistance', label: 'Shadow distance', type: 'range', min: 32, max: 128, step: 16, unit: ' blocks', needs: 'shShadows' },
-  { key: 'shNearShadow', label: 'Near shadow cascade (contact shadows)', type: 'toggle', needs: 'shShadows' },
+  { key: 'shNearShadow', label: 'Sharp nearby shadows', type: 'toggle', needs: 'shShadows', hint: 'A second, higher-detail shadow map close to you. Sharper shadows on nearby blocks, players and mobs. Costs some performance.' },
   { key: 'shLighting', label: 'Lighting (sun + sky)', type: 'toggle' },
   { key: 'shWater', label: 'Fancy water', type: 'toggle' },
   { key: 'shWaving', label: 'Waving plants', type: 'toggle' },

@@ -2,11 +2,11 @@
 // weighted average of the water blocks (and air) around that corner, sides follow the corners, and the
 // material is double-sided so the surface is visible from below. Pure, worker-safe.
 
-import { PADDED_SIZE, PADDED_STRIDE_Y, WORLD_HEIGHT, FACE_BRIGHTNESS } from '../config/Constants.js';
+import { PADDED_SIZE, PADDED_STRIDE_Y, WORLD_HEIGHT } from '../config/Constants.js';
 import { OPAQUE, SOLID, FACE_TILE } from '../blocks/BlockRegistry.js';
-import { TILE_UV_INSET } from './AtlasLayout.js';
 import { Direction } from '../utils/Direction.js';
-import { CORNER_POS, CORNER_UV, NB_OFF } from './FaceTables.js';
+import { CORNER_POS, NB_OFF } from './FaceTables.js';
+import { packA, packB, FLAG_WATER } from './PackedVertex.js';
 import { isWater, isSource, isFalling, heightOf, isLava, isLavaSource, isLavaFalling } from '../world/WaterLevels.js';
 
 const cornerHeights = new Float32Array(4);
@@ -42,15 +42,21 @@ function cornerHeight(padded, idx, y, cx, cz) {
 /** Corner index in cornerHeights for a corner position (x, z) ∈ {0,1}². */
 const cornerSlot = (x, z) => x + z * 2;
 
-function addQuad(pb, x, ly, z, f, tile, heights, bright, light = 240, blockLight = 0, flags = 32) {
+/**
+ * One liquid face (y chunk-local). The shade is the face brightness (water; the lava material is flat-shaded) and the
+ * corner heights travel as exact float32 y values next to the packed words — as the old float position held them:
+ * rounded once as the section-local height and once more after adding the section's base.
+ */
+function addQuad(pb, x, y, z, f, tile, heights, light = 240, blockLight = 0, flags = FLAG_WATER) {
   const corners = CORNER_POS[f];
+  const b = packB(tile, light, blockLight, 3, flags); // water flag for the shader pipeline's fancy water; lava has none
+  const ly = y & 15, yOff = y - ly;
   for (let c = 0; c < 4; c++) {
     const cp = corners[c];
-    const uv = CORNER_UV[c];
     const h = cp[1] ? heights[cornerSlot(cp[0], cp[2])] : 0;
-    pb.vertex(x + cp[0], ly + h, z + cp[2], uv[0] ? 1 - TILE_UV_INSET : TILE_UV_INSET, uv[1] ? 1 - TILE_UV_INSET : TILE_UV_INSET, bright, f | flags | (3 << 6), light, blockLight, tile); // water flag (32) for the shader pipeline; lava has none
+    pb.pushLiquid(packA(x + cp[0], y + cp[1], z + cp[2], c, 1, 1, f), b, Math.fround(Math.fround(ly + h) + yOff));
   }
-  pb.quadIndices(false);
+  pb.endQuad(false);
 }
 
 /**
@@ -58,9 +64,9 @@ function addQuad(pb, x, ly, z, f, tile, heights, bright, light = 240, blockLight
  * @param {import('./ChunkMesher.js').PassBuilder} pb translucent pass builder
  * @param {Uint8Array} padded
  * @param {number} idx index of the block in `padded`
- * @param {number} x local x, ly section-local y, z local z, y world y
+ * @param {number} x local x, y chunk-local (= world) y, z local z
  */
-export function meshLiquid(pb, padded, idx, x, ly, z, y, id, light = null) {
+export function meshLiquid(pb, padded, idx, x, y, z, id, light = null) {
   const lava = isLava(id);
   if (lava) { same = isLava; full = lavaFull; } else { same = isWater; full = waterFull; }
   const tile = FACE_TILE[id * 6 + Direction.UP];
@@ -74,8 +80,8 @@ export function meshLiquid(pb, padded, idx, x, ly, z, y, id, light = null) {
     // The top surface is drawn unless more of the liquid sits above it — under a solid block it keeps its lowered
     // height, so a block placed over water never leaves a see-through hole.
     if (f === Direction.UP ? same(nb) : (same(nb) || OPAQUE[nb] === 1)) continue;
-    if (lava) { addQuad(pb, x, ly, z, f, tile, cornerHeights, 1, 240, 240, 0); continue; } // lava glows: full bright, no light curve, no water flag
+    if (lava) { addQuad(pb, x, y, z, f, tile, cornerHeights, 240, 240, 0); continue; } // lava glows: full bright (flat-shaded material), no light curve, no water flag
     const cell = light ? (OPAQUE[padded[idx + NB_OFF[f]]] === 1 ? light[idx] : light[idx + NB_OFF[f]]) : 0;
-    addQuad(pb, x, ly, z, f, tile, cornerHeights, FACE_BRIGHTNESS[f], light ? (cell & 15) * 16 : 240, light ? (cell >> 4) * 16 : 0);
+    addQuad(pb, x, y, z, f, tile, cornerHeights, light ? (cell & 15) * 16 : 240, light ? (cell >> 4) * 16 : 0);
   }
 }

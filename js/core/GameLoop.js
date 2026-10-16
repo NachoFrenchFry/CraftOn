@@ -32,6 +32,9 @@ export class GameLoop {
     this.lastTime = 0;
     this.frameId = 0;
     this.fps = 0;
+    /** Rolling average of the main-thread work per frame (ms), refreshed with `fps`: the CPU half of the uncapped FPS readout. */
+    this.cpuMs = 0;
+    this._cpuSum = 0;
     /** Frame cap: 0 = unlimited; otherwise frames closer together than 1 / maxFps are skipped. */
     this.maxFps = 0;
     this._fpsFrames = 0;
@@ -141,6 +144,10 @@ export class GameLoop {
     const alpha = this.frozen || !simulating ? 1 : this.accumulator / PHYSICS_STEP;
     this.lastGameDt = gameDt; this.lastSteps = steps;
     this.render(alpha, gameDt, dt);
-    if (this.onFrameEnd) this.onFrameEnd(this.lastIntervalMs, performance.now() - now);
+    const cpu = performance.now() - now;
+    this._cpuSum += cpu;
+    if (this._fpsFrames === 0) { this.cpuMs = this._cpuSum / Math.max(1, this._cpuFrames || 1); this._cpuSum = 0; this._cpuFrames = 0; }
+    this._cpuFrames = (this._cpuFrames || 0) + 1;
+    if (this.onFrameEnd) this.onFrameEnd(this.lastIntervalMs, cpu);
   }
 }

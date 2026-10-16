@@ -6,73 +6,75 @@
 // faces with the same texture tile, rotation and flags merge into one quad, so a field of grass or a cliff is a
 // handful of triangles instead of hundreds. Faces with varying corner light / AO keep their own quad, so smooth
 // lighting looks exactly as before. Texture coordinates are tile-local (u, v in tile units, repeating with fract()
-// in the shader) and every vertex carries its tile index (`tile` attribute) for the texture array (Materials.js).
+// in the shader) and every vertex carries its tile index for the texture array (Materials.js) — both decoded from the
+// packed words in the vertex shader.
 // Cutout blocks (fancy leaves, glass), water, lava, cross plants and torches keep the per-block mesher.
+// Every vertex is packed into two uint32 words (PackedVertex.js: chunk-local integer position, corner index, quad size,
+// face, tile, light, AO and flags; liquids add a float height); quads use the renderer's shared index pattern, so a
+// flipped AO diagonal is a rotation of the quad's four vertices (PassBuilder.endQuad).
 // §2c: computeVisMask() floods a section's non-opaque cells and reports which pairs of its six faces connect, the
 // per-section visibility graph the renderer walks each frame (Visibility.js).
 
-import { PADDED_SIZE, PADDED_STRIDE_Y, WORLD_HEIGHT, SECTION_SIZE, SECTION_COUNT, FACE_BRIGHTNESS, AO_BRIGHTNESS } from '../config/Constants.js';
+import { PADDED_SIZE, PADDED_STRIDE_Y, WORLD_HEIGHT, SECTION_SIZE, SECTION_COUNT } from '../config/Constants.js';
 import { OPAQUE, RENDER_TYPE, PASS, FACE_TILE, FACE_ROT, CULL_SAME, RenderType, RenderPass } from '../blocks/BlockRegistry.js';
-import { getTileIndex, TILE_UV_INSET } from './AtlasLayout.js';
+import { getTileIndex } from './AtlasLayout.js';
 import { BlockIds as B } from '../blocks/BlockIds.js';
 
 /** Fast leaves use a derived opaque copy of the leaves texture (TextureAtlas fills the holes). */
 const FAST_LEAVES_TILE = getTileIndex('leaves_fast');
 import { Direction } from '../utils/Direction.js';
 import { TypedArrayBuilder } from '../utils/Pool.js';
+import { packA, packB, packModelA, packModelB, FLAG_ROT, FLAG_LEAVES, FLAG_TOPWAVE, FACE_PLANT, ATTACH_CODE } from './PackedVertex.js';
 import { CORNER_POS, CORNER_UV, NB_OFF, AO_OFF, FACE_ORIGIN, FACE_U, FACE_V, FACE_N } from './FaceTables.js';
 import { meshLiquid } from './LiquidMesher.js';
 import { torchQuads } from '../blocks/TorchModel.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 
-const INSET = TILE_UV_INSET;
-
-/** Accumulates one render pass of a section. */
+/** Accumulates one render pass of a section: packed vertices (two words each) and, for liquid passes, exact float heights. */
 export class PassBuilder {
   constructor() {
-    this.positions = new TypedArrayBuilder(Float32Array, 3 * 1024);
-    /** Tile-local texture coordinates: 0..w / 0..h over a merged quad, repeated by the shader. */
-    this.uvs = new TypedArrayBuilder(Float32Array, 2 * 1024);
-    this.colors = new TypedArrayBuilder(Uint8Array, 3 * 1024);
-    /** Packed byte per vertex for the shader pipeline: face id (bits 0-2, 6 = plant), waving top (8), leaves (16), water (32), AO level (bits 6-7). */
-    this.extra = new TypedArrayBuilder(Uint8Array, 1024);
-    /** Smoothed light per vertex ×16 (0–240), two bytes: sky and block light, the 4-corner averages on the face's outward side. */
-    this.lights = new TypedArrayBuilder(Uint8Array, 2 * 1024);
-    /** Atlas tile index per vertex: the layer of the texture array. */
-    this.tiles = new TypedArrayBuilder(Uint16Array, 1024);
-    this.indices = new TypedArrayBuilder(Uint32Array, 6 * 256);
+    this.data = new TypedArrayBuilder(Uint32Array, 2 * 1024);
+    /** Liquid passes only: the float32 chunk-local y of every vertex (liquid corner heights are not sixteenths). */
+    this.yf = new TypedArrayBuilder(Float32Array, 256);
     this.vertexCount = 0;
   }
 
-  reset() {
-    this.positions.reset(); this.uvs.reset(); this.colors.reset(); this.extra.reset(); this.lights.reset(); this.tiles.reset(); this.indices.reset();
-    this.vertexCount = 0;
+  reset() { this.data.reset(); this.yf.reset(); this.vertexCount = 0; }
+
+  /** One packed vertex: `a` the position / corner word, `b` the tile / light / flags word (PackedVertex.js). */
+  push(a, b) { this.data.push2(a, b); this.vertexCount++; }
+
+  /** A liquid vertex: the packed words plus the corner's float height (chunk-local y, as the old float position held it). */
+  pushLiquid(a, b, y) { this.data.push2(a, b); this.yf.push1(y); this.vertexCount++; }
+
+  /**
+   * Close the quad of the last four vertices. The renderer's shared index pattern (0,1,2, 0,2,3) splits every quad along
+   * the 0–2 diagonal; `flip` wants the 1–3 diagonal (the darkest AO corners on it), so the four vertices rotate one step:
+   * the pattern then yields the triangles (1,2,3) and (1,3,0) — the same two triangles, same winding, as the old index flip.
+   */
+  endQuad(flip) {
+    if (!flip) return;
+    const d = this.data.array, i = (this.vertexCount - 4) * 2;
+    const a0 = d[i], b0 = d[i + 1];
+    d[i] = d[i + 2]; d[i + 1] = d[i + 3]; d[i + 2] = d[i + 4]; d[i + 3] = d[i + 5]; d[i + 4] = d[i + 6]; d[i + 5] = d[i + 7]; d[i + 6] = a0; d[i + 7] = b0;
+    if (this.yf.length) { const y = this.yf.array, j = this.vertexCount - 4; const y0 = y[j]; y[j] = y[j + 1]; y[j + 1] = y[j + 2]; y[j + 2] = y[j + 3]; y[j + 3] = y0; }
   }
 
-  vertex(x, y, z, u, v, shade, extra = 0, light = 240, blockLight = 0, tile = 0) {
-    this.positions.push3(x, y, z);
-    this.uvs.push2(u, v);
-    const c = Math.round(shade * 255);
-    this.colors.push3(c, c, c);
-    this.extra.push1(extra);
-    this.lights.push2(light, blockLight);
-    this.tiles.push1(tile);
-    this.vertexCount++;
-  }
-
-  /** Two triangles over the last four vertices; `flip` selects the other diagonal. */
-  quadIndices(flip) {
-    const b = this.vertexCount - 4;
-    if (flip) this.indices.push6(b + 1, b + 2, b + 3, b + 1, b + 3, b);
-    else this.indices.push6(b, b + 1, b + 2, b, b + 2, b + 3);
-  }
-
-  /** Exact-size copies for transfer; null when the pass is empty. */
-  toResult() {
-    if (this.vertexCount === 0) return null;
-    const idx32 = this.indices.slice();
-    const indices = this.vertexCount < 65536 ? Uint16Array.from(idx32) : idx32;
-    return { positions: this.positions.slice(), uvs: this.uvs.slice(), colors: this.colors.slice(), extra: this.extra.slice(), light: this.lights.slice(), tiles: this.tiles.slice(), indices, vertexCount: this.vertexCount };
+  /**
+   * The pass as { data, yf, vertexCount } (null when empty). `pool` a BufferPool: the arrays are pooled copies for transfer
+   * (the worker); undefined: exact copies (tools); null: views into the builder, valid until the next reset (the instant remesh).
+   */
+  toResult(pool) {
+    const n = this.vertexCount;
+    if (!n) return null;
+    const words = n * 2, hasY = this.yf.length > 0;
+    let data, yf = null;
+    if (pool === null) { data = this.data.array.subarray(0, words); if (hasY) yf = this.yf.array.subarray(0, n); }
+    else if (pool) {
+      data = new Uint32Array(pool.acquire(words * 4), 0, words); data.set(this.data.array.subarray(0, words));
+      if (hasY) { yf = new Float32Array(pool.acquire(n * 4), 0, n); yf.set(this.yf.array.subarray(0, n)); }
+    } else { data = this.data.array.slice(0, words); if (hasY) yf = this.yf.array.slice(0, n); }
+    return { data, yf, vertexCount: n };
   }
 }
 
@@ -82,8 +84,9 @@ export class MeshBuilders {
     this.passes = [new PassBuilder(), new PassBuilder(), new PassBuilder(), new PassBuilder()]; // opaque, cutout, translucent, lava
   }
   reset() { for (const p of this.passes) p.reset(); }
-  results() {
-    return { opaque: this.passes[RenderPass.OPAQUE].toResult(), cutout: this.passes[RenderPass.CUTOUT].toResult(), translucent: this.passes[RenderPass.TRANSLUCENT].toResult(), lava: this.passes[RenderPass.LAVA].toResult() };
+  /** @param {import('../utils/ArrayPool.js').BufferPool|null|undefined} pool see PassBuilder.toResult */
+  results(pool) {
+    return { opaque: this.passes[RenderPass.OPAQUE].toResult(pool), cutout: this.passes[RenderPass.CUTOUT].toResult(pool), translucent: this.passes[RenderPass.TRANSLUCENT].toResult(pool), lava: this.passes[RenderPass.LAVA].toResult(pool) };
   }
 }
 
@@ -142,54 +145,51 @@ function faceCorners(padded, idx, f, useAO, light) {
   }
 }
 
-/** One face of one block with per-corner AO / light (the non-greedy path; cutout and translucent cubes, uneven faces). */
-function addFace(pb, padded, idx, x, ly, z, f, id, h, useAO, tileOverride = -1, light = null) {
+/** One face of one block with per-corner AO / light (the non-greedy path; cutout and translucent cubes). `y` is chunk-local. */
+function addFace(pb, padded, idx, x, y, z, f, id, useAO, tileOverride = -1, light = null) {
   const tile = tileOverride >= 0 ? tileOverride : FACE_TILE[id * 6 + f];
-  const bright = FACE_BRIGHTNESS[f];
   const corners = CORNER_POS[f];
   faceCorners(padded, idx, f, useAO, light);
-  const ao0 = cornerAO[0], ao1 = cornerAO[1], ao2 = cornerAO[2], ao3 = cornerAO[3];
-  const rot = FACE_ROT[id * 6 + f] === 1; // oriented logs: turn the texture 90° so the grain follows the axis
-  const flags = f | (id === B.LEAVES ? 16 : 0);
+  const flags = (FACE_ROT[id * 6 + f] === 1 ? FLAG_ROT : 0) | (id === B.LEAVES ? FLAG_LEAVES : 0); // oriented logs: the texture turns 90°
   for (let c = 0; c < 4; c++) {
     const cp = corners[c];
-    const uv = CORNER_UV[c];
-    const ao = cornerAO[c];
-    const iu = rot ? uv[1] : uv[0], iv = rot ? 1 - uv[0] : uv[1];
-    pb.vertex(x + cp[0], ly + (cp[1] ? h : 0), z + cp[2], iu ? 1 - INSET : INSET, iv ? 1 - INSET : INSET, bright * AO_BRIGHTNESS[ao], flags | (ao << 6), cornerLight[c], cornerBlock[c], tile);
+    pb.push(packA(x + cp[0], y + cp[1], z + cp[2], c, 1, 1, f), packB(tile, cornerLight[c], cornerBlock[c], cornerAO[c], flags));
   }
   // Flip the diagonal so the darkest corners lie on it (avoids anisotropic AO artifacts).
-  pb.quadIndices(ao0 + ao2 > ao1 + ao3);
+  pb.endQuad(cornerAO[0] + cornerAO[2] > cornerAO[1] + cornerAO[3]);
 }
 
-function addCross(pb, x, ly, z, id, ownLight = 240, ownBlock = 0) {
+/** The two crossed planes of a plant, each in both windings (seen from either side); corner c of a quad is CORNER_UV[c]. */
+const CROSS_QUADS = [
+  [[0, 0, 0], [1, 0, 1], [1, 1, 1], [0, 1, 0]],
+  [[1, 0, 1], [0, 0, 0], [0, 1, 0], [1, 1, 1]],
+  [[1, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 0]],
+  [[0, 0, 1], [1, 0, 0], [1, 1, 0], [0, 1, 1]],
+];
+
+function addCross(pb, x, y, z, id, ownLight = 240, ownBlock = 0) {
   const tile = FACE_TILE[id * 6 + Direction.SOUTH];
-  const s = 0.9; // brightness for plants
-  const quads = [
-    [[0, 0, 0], [1, 0, 1], [1, 1, 1], [0, 1, 0]],
-    [[1, 0, 1], [0, 0, 0], [0, 1, 0], [1, 1, 1]],
-    [[1, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 0]],
-    [[0, 0, 1], [1, 0, 0], [1, 1, 0], [0, 1, 1]],
-  ];
-  for (const q of quads) {
-    for (let c = 0; c < 4; c++) {
-      const p = q[c];
-      pb.vertex(x + p[0], ly + p[1], z + p[2], c === 1 || c === 2 ? 1 - INSET : INSET, c >= 2 ? 1 - INSET : INSET, s, 6 | (p[1] ? 8 : 0) | (3 << 6), ownLight, ownBlock, tile); // plant: top vertices wave
-    }
-    pb.quadIndices(false);
+  const b = packB(tile, ownLight, ownBlock, 3, 0), bTop = b | FLAG_TOPWAVE; // plant: top vertices wave; shade 0.9 is the plant face's
+  for (const q of CROSS_QUADS) {
+    for (let c = 0; c < 4; c++) { const p = q[c]; pb.push(packA(x + p[0], y + p[1], z + p[2], c, 1, 1, FACE_PLANT), p[1] ? bTop : b); }
+    pb.endQuad(false);
   }
 }
 
-/** A torch: the TorchModel stick, self-lit (full light on both channels), in the cutout pass; the top face uses torch_top. */
-function addTorch(pb, x, ly, z, id) {
+/**
+ * A torch: the TorchModel stick, self-lit (full light on both channels), in the cutout pass; the top face uses torch_top.
+ * Stored as the standing model in sixteenths plus the wall attach code: the vertex decoder applies the wall tilt.
+ */
+function addTorch(pb, x, y, z, id) {
   const sideTile = FACE_TILE[id * 6 + Direction.SOUTH], topTile = FACE_TILE[id * 6 + Direction.UP];
-  for (const quad of torchQuads(BlockRegistry.attachOf(id))) {
+  const attach = BlockRegistry.attachOf(id), code = attach ? ATTACH_CODE[attach] : 0;
+  for (const quad of torchQuads(null)) {
     const tile = quad.top ? topTile : sideTile;
     for (let c = 0; c < 4; c++) {
       const p = quad.corners[c];
-      pb.vertex(x + p[0], ly + p[1], z + p[2], p[3], p[4], 1, 6 | (3 << 6), 240, 240, tile);
+      pb.push(packModelA(x, y, z, Math.round(p[0] * 16), Math.round(p[1] * 16), Math.round(p[2] * 16)), packModelB(tile, Math.round(p[3] * 16), Math.round(p[4] * 16), code));
     }
-    pb.quadIndices(false);
+    pb.endQuad(false);
   }
 }
 
@@ -221,23 +221,20 @@ function gridCell(f, s, a, b) {
   coord[AXIS_V[f]] = SIGN_V[f] > 0 ? b : 15 - b;
 }
 
-/** A merged quad: w cells along the face's U axis, h along V, from grid cell (a, b); flat light / AO. */
-function addQuad(pb, f, x, ly, z, w, h, tile, rot, ao, leaf, sky, block) {
+/** A merged quad: w cells along the face's U axis, h along V, from the cell (x, y, z) (y chunk-local); flat light / AO. */
+function addQuad(pb, f, x, y, z, w, h, tile, rot, ao, leaf, sky, block) {
   const o = FACE_ORIGIN[f], u = FACE_U[f], v = FACE_V[f];
-  const shade = FACE_BRIGHTNESS[f] * AO_BRIGHTNESS[ao];
-  const extra = f | (leaf ? 16 : 0) | (ao << 6);
+  // Texture coordinates repeat over the quad (w × h tiles, decoded from the corner index and the size); a 90° turn for oriented logs.
+  const b = packB(tile, sky, block, ao, (rot ? FLAG_ROT : 0) | (leaf ? FLAG_LEAVES : 0));
   for (let c = 0; c < 4; c++) {
     const iu = CORNER_UV[c][0], iv = CORNER_UV[c][1];
-    const px = x + o[0] + iu * w * u[0] + iv * h * v[0];
-    const py = ly + o[1] + iu * w * u[1] + iv * h * v[1];
-    const pz = z + o[2] + iu * w * u[2] + iv * h * v[2];
-    // Texture coordinates repeat over the quad; a 90° turn for oriented logs (the same turn addFace applies to one face).
-    const tu = rot ? (iv ? h - INSET : INSET) : (iu ? w - INSET : INSET);
-    const tv = rot ? (iu ? INSET : w - INSET) : (iv ? h - INSET : INSET);
-    pb.vertex(px, py, pz, tu, tv, shade, extra, sky, block, tile);
+    pb.push(packA(x + o[0] + iu * w * u[0] + iv * h * v[0], y + o[1] + iu * w * u[1] + iv * h * v[1], z + o[2] + iu * w * u[2] + iv * h * v[2], c, w, h, f), b);
   }
-  pb.quadIndices(false);
+  pb.endQuad(false);
 }
+
+/** Mesher modes for the opaque pass: full 2D greedy merging, 1D strips (merge along U only), or one quad per face. */
+export const MESH_MODES = Object.freeze(['greedy', 'strips', 'faces']);
 
 /**
  * Mesh one 16×16×16 section into the builders' passes.
@@ -245,8 +242,9 @@ function addQuad(pb, f, x, ly, z, w, h, tile, rot, ao, leaf, sky, block) {
  * @param {number} sy section index 0..15
  * @param {boolean} useAO
  * @param {MeshBuilders} builders
+ * @param {'greedy'|'strips'|'faces'} mode how far flat opaque faces merge
  */
-export function meshSection(padded, sy, useAO, builders, fastLeaves = false, light = null) {
+export function meshSection(padded, sy, useAO, builders, fastLeaves = false, light = null, mode = 'greedy') {
   const passes = builders.passes;
   const yStart = sy * SECTION_SIZE;
   // Pass A: everything that is not a greedy opaque cube — plants, torches, liquids, cutout and translucent cubes.
@@ -265,9 +263,9 @@ export function meshSection(padded, sy, useAO, builders, fastLeaves = false, lig
         const fastLeaf = fastLeaves && id === B.LEAVES; // fast leaves: opaque pass, inner faces culled, holes filled
         if (rt === RenderType.CUBE && (fastLeaf || PASS[id] === RenderPass.OPAQUE)) { anyGreedy = true; continue; } // pass B
         const pb = passes[PASS[id]];
-        if (rt === RenderType.CROSS) { addCross(pb, x, ly, z, id, light ? (light[idx] & 15) * 16 : 240, light ? (light[idx] >> 4) * 16 : 0); continue; }
-        if (rt === RenderType.TORCH) { addTorch(pb, x, ly, z, id); continue; }
-        if (rt === RenderType.LIQUID) { meshLiquid(pb, padded, idx, x, ly, z, y, id, light); continue; }
+        if (rt === RenderType.CROSS) { addCross(pb, x, y, z, id, light ? (light[idx] & 15) * 16 : 240, light ? (light[idx] >> 4) * 16 : 0); continue; }
+        if (rt === RenderType.TORCH) { addTorch(pb, x, y, z, id); continue; }
+        if (rt === RenderType.LIQUID) { meshLiquid(pb, padded, idx, x, y, z, id, light); continue; }
         for (let f = 0; f < 6; f++) {
           let nb;
           if (f === Direction.UP) nb = y === WORLD_HEIGHT - 1 ? 0 : padded[idx + PADDED_STRIDE_Y];
@@ -277,7 +275,7 @@ export function meshSection(padded, sy, useAO, builders, fastLeaves = false, lig
             if (OPAQUE[nb] === 1) continue;
             if (nb === id && CULL_SAME[id] === 1) continue; // glass/ice-style; fancy leaves keep inner faces
           }
-          addFace(pb, padded, idx, x, ly, z, f, id, 1, useAO, -1, light);
+          addFace(pb, padded, idx, x, y, z, f, id, useAO, -1, light);
         }
       }
     }
@@ -313,16 +311,15 @@ export function meshSection(padded, sy, useAO, builders, fastLeaves = false, lig
             || cornerBlock[1] !== block || cornerBlock[2] !== block || cornerBlock[3] !== block) {
             // Uneven corners: its own quad with per-vertex AO / light, exactly as before.
             const tile = fastLeaf ? FAST_LEAVES_TILE : FACE_TILE[id * 6 + f];
-            const corners = CORNER_POS[f], bright = FACE_BRIGHTNESS[f];
-            const rot = FACE_ROT[id * 6 + f] === 1, flags = f | (id === B.LEAVES ? 16 : 0);
+            const corners = CORNER_POS[f];
+            const flags = (FACE_ROT[id * 6 + f] === 1 ? FLAG_ROT : 0) | (id === B.LEAVES ? FLAG_LEAVES : 0);
             gridCell(f, s, a, b);
-            const x = coord[0], ly = coord[1], z = coord[2];
+            const x = coord[0], cy = yStart + coord[1], z = coord[2];
             for (let c = 0; c < 4; c++) {
-              const cp = corners[c], uv = CORNER_UV[c], cao = cornerAO[c];
-              const iu = rot ? uv[1] : uv[0], iv = rot ? 1 - uv[0] : uv[1];
-              pb.vertex(x + cp[0], ly + cp[1], z + cp[2], iu ? 1 - INSET : INSET, iv ? 1 - INSET : INSET, bright * AO_BRIGHTNESS[cao], flags | (cao << 6), cornerLight[c], cornerBlock[c], tile);
+              const cp = corners[c];
+              pb.push(packA(x + cp[0], cy + cp[1], z + cp[2], c, 1, 1, f), packB(tile, cornerLight[c], cornerBlock[c], cornerAO[c], flags));
             }
-            pb.quadIndices(cornerAO[0] + cornerAO[2] > cornerAO[1] + cornerAO[3]);
+            pb.endQuad(cornerAO[0] + cornerAO[2] > cornerAO[1] + cornerAO[3]);
             continue;
           }
           const tile = fastLeaf ? FAST_LEAVES_TILE : FACE_TILE[id * 6 + f];
@@ -332,21 +329,25 @@ export function meshSection(padded, sy, useAO, builders, fastLeaves = false, lig
         }
       }
       if (!any) continue;
-      // Merge: grow each unclaimed flat face along +U as far as the key matches, then along +V while whole rows match.
+      // Merge: grow each unclaimed flat face along +U as far as the key matches ('strips' stops here), then along +V while
+      // whole rows match ('greedy'); 'faces' emits every face as its own 1×1 quad.
+      const growU = mode !== 'faces', growV = mode === 'greedy';
       for (let b = 0; b < 16; b++) {
         for (let a = 0; a < 16; a++) {
           const key = KEYS[b * 16 + a];
           if (!key) continue;
           let w = 1;
-          while (a + w < 16 && KEYS[b * 16 + a + w] === key) w++;
+          if (growU) while (a + w < 16 && KEYS[b * 16 + a + w] === key) w++;
           let h = 1;
-          outer: while (b + h < 16) {
-            for (let k = 0; k < w; k++) if (KEYS[(b + h) * 16 + a + k] !== key) break outer;
-            h++;
+          if (growV) {
+            outer: while (b + h < 16) {
+              for (let k = 0; k < w; k++) if (KEYS[(b + h) * 16 + a + k] !== key) break outer;
+              h++;
+            }
           }
           for (let j = 0; j < h; j++) for (let k = 0; k < w; k++) KEYS[(b + j) * 16 + a + k] = 0;
           gridCell(f, s, a, b);
-          addQuad(pb, f, coord[0], coord[1], coord[2], w, h, key & 1023, (key & 1024) !== 0, (key >> 12) & 3, (key & 2048) !== 0, (key >> 14) & 255, (key >> 22) & 255);
+          addQuad(pb, f, coord[0], yStart + coord[1], coord[2], w, h, key & 1023, (key & 1024) !== 0, (key >> 12) & 3, (key & 2048) !== 0, (key >> 14) & 255, (key >> 22) & 255);
         }
       }
     }
@@ -408,18 +409,21 @@ export function computeVisMask(padded, sy) {
  * Mesh every section flagged in `sectionMask`. Returns { sections, transfer } where each section
  * is { sy, opaque, cutout, translucent, lava, visMask } (passes null when empty).
  */
-export function meshChunk(padded, sectionMask, useAO, builders = new MeshBuilders(), fastLeaves = false, light = null) {
+export function meshChunk(padded, sectionMask, useAO, builders = new MeshBuilders(), fastLeaves = false, light = null, mode = 'greedy', pool = undefined, sectionMs = null) {
   const sections = [];
   const transfer = [];
   for (let sy = 0; sy < SECTION_COUNT; sy++) {
     if (!(sectionMask & (1 << sy))) continue;
+    const t0 = sectionMs ? performance.now() : 0;
     builders.reset();
-    meshSection(padded, sy, useAO, builders, fastLeaves, light);
-    const r = builders.results();
+    meshSection(padded, sy, useAO, builders, fastLeaves, light, mode);
+    const r = builders.results(pool);
     sections.push({ sy, opaque: r.opaque, cutout: r.cutout, translucent: r.translucent, lava: r.lava, visMask: computeVisMask(padded, sy) });
+    if (sectionMs) sectionMs.push(performance.now() - t0);
     for (const pass of [r.opaque, r.cutout, r.translucent, r.lava]) {
       if (!pass) continue;
-      transfer.push(pass.positions.buffer, pass.uvs.buffer, pass.colors.buffer, pass.extra.buffer, pass.light.buffer, pass.tiles.buffer, pass.indices.buffer);
+      transfer.push(pass.data.buffer);
+      if (pass.yf) transfer.push(pass.yf.buffer);
     }
   }
   return { sections, transfer };

@@ -1,7 +1,7 @@
 // Visibility.js — cave culling, Minecraft's visibility graph: every meshed section knows which pairs
 // of its six faces connect through non-opaque blocks (ChunkMesher.computeVisMask, stored on the chunk). Each frame a
 // breadth-first walk starts at the camera's section and crosses only connected faces, never back towards the camera
-// and never outside the view frustum or the render-distance circle. Sections the walk does not reach are not drawn:
+// and never outside the view frustum (each 16³ section's own box is tested) or the render-distance circle. Sections the walk does not reach are not drawn:
 // on the surface that hides the caves below, underground it hides the surface above. The result is applied as a
 // per-chunk range of sections (ChunkMeshManager.setVisibleRange: one index span per chunk pass).
 
@@ -14,7 +14,6 @@ import { blockIndex } from '../world/ChunkCoords.js';
 
 const OPPOSITE = [1, 0, 3, 2, 5, 4];
 const NX = [1, -1, 0, 0, 0, 0], NY = [0, 0, 1, -1, 0, 0], NZ = [0, 0, 0, 0, 1, -1];
-const SECTION_RADIUS = Math.sqrt(3) * SECTION_SIZE * 0.5 + 0.5;
 const MAX_NODES = 65536;
 
 export class ChunkVisibility {
@@ -24,7 +23,7 @@ export class ChunkVisibility {
     this.enabled = true;
     this.frustum = new THREE.Frustum();
     this._m = new THREE.Matrix4();
-    this._sphere = new THREE.Sphere();
+    this._box = new THREE.Box3();
     this.stamp = 0;
     this._qEntry = new Array(MAX_NODES).fill(null);
     this._qSy = new Uint8Array(MAX_NODES);
@@ -33,7 +32,7 @@ export class ChunkVisibility {
     this.lastVisited = 0;
     this.lastMs = 0;
     /** The camera's own air pocket inside its section: which faces it touches (cached per cell and chunk version). */
-    this._pocketKey = '';
+    this._pocketKey = -1; this._pocketCell = -1; // chunk key + packed (sy, lx, ly, lz, revision): no string per frame
     this._pocketFaces = 0x3f;
     this._seen = new Uint8Array(4096);
     this._stack = new Int16Array(4096);
@@ -45,9 +44,9 @@ export class ChunkVisibility {
    * six faces when the camera sits inside a solid block (noclip, the third-person camera in a wall).
    */
   _startFaces(chunk, sy, lx, ly, lz) {
-    const key = `${chunk.cx},${chunk.cz},${sy},${lx},${ly},${lz},${chunk.revision}`;
-    if (key === this._pocketKey) return this._pocketFaces;
-    this._pocketKey = key;
+    const key = chunkKey(chunk.cx, chunk.cz), cell = sy | (lx << 4) | (ly << 8) | (lz << 12) | ((chunk.revision & 0x7fff) << 16);
+    if (key === this._pocketKey && cell === this._pocketCell) return this._pocketFaces;
+    this._pocketKey = key; this._pocketCell = cell;
     const blocks = chunk.blocks, y0 = sy * SECTION_SIZE;
     const seen = this._seen, stack = this._stack;
     const start = lx + (lz << 4) + (ly << 8);
@@ -102,7 +101,7 @@ export class ChunkVisibility {
     if (!start || !start.chunk) { this.showAll(); this.lastMs = performance.now() - t0; return; }
     const cy = Math.floor(cam.y);
     const startFaces = cy >= 0 && cy < SECTION_COUNT * SECTION_SIZE ? this._startFaces(start.chunk, ssy, Math.floor(cam.x) & 15, cy & 15, Math.floor(cam.z) & 15) : 0x3f;
-    const qEntry = this._qEntry, qSy = this._qSy, qTravel = this._qTravel, qFrom = this._qFrom, sphere = this._sphere, frustum = this.frustum;
+    const qEntry = this._qEntry, qSy = this._qSy, qTravel = this._qTravel, qFrom = this._qFrom, box = this._box, frustum = this.frustum;
     const rd2 = rd * rd;
     let head = 0, tail = 0;
     qEntry[tail] = start; qSy[tail] = ssy; qTravel[tail] = 0; qFrom[tail] = -1; tail++;
@@ -130,22 +129,32 @@ export class ChunkVisibility {
           if (!ne || !ne.chunk) continue;
         }
         if (ne.visStamp[nsy] === stamp) continue;
-        sphere.center.set(ne.cx * CHUNK_SIZE + 8, nsy * SECTION_SIZE + 8, ne.cz * CHUNK_SIZE + 8);
-        sphere.radius = SECTION_RADIUS;
-        if (!frustum.intersectsSphere(sphere)) continue;
+        box.min.set(ne.cx * CHUNK_SIZE, nsy * SECTION_SIZE, ne.cz * CHUNK_SIZE);
+        box.max.set(box.min.x + CHUNK_SIZE, box.min.y + SECTION_SIZE, box.min.z + CHUNK_SIZE);
+        if (!frustum.intersectsBox(box)) continue; // the section's own 16³ box, not the whole chunk column
         ne.visStamp[nsy] = stamp;
         if (tail >= MAX_NODES) continue;
         qEntry[tail] = ne; qSy[tail] = nsy; qTravel[tail] = trav | (1 << d); qFrom[tail] = OPPOSITE[d]; tail++;
       }
     }
-    let chunksVisible = 0, sections = 0, visibleSections = 0;
+    let chunksVisible = 0, sections = 0, visibleSections = 0, spanIndices = 0, reachedIndices = 0;
     for (const e of mm.entries.values()) {
       sections += SECTION_COUNT;
-      if (e.visFrame === stamp) { chunksVisible++; visibleSections += e.visHi - e.visLo + 1; mm.setVisibleRange(e, e.visLo, e.visHi); }
-      else mm.setVisibleRange(e, 1, 0);
+      if (e.visFrame === stamp) {
+        chunksVisible++; visibleSections += e.visHi - e.visLo + 1; mm.setVisibleRange(e, e.visLo, e.visHi);
+        // How much the contiguous span draws beyond the sections the walk reached (the per-section culling that draw
+        // groups could add): the index counts of every pass over the span vs. over the reached sections only.
+        const r = e.ranges.opaque, rc = e.ranges.cutout;
+        for (let sy = e.visLo; sy <= e.visHi; sy++) {
+          const n = r[sy * 4 + 3] + rc[sy * 4 + 3];
+          spanIndices += n;
+          if (e.visStamp[sy] === stamp) reachedIndices += n;
+        }
+      } else mm.setVisibleRange(e, 1, 0);
     }
     this.lastVisited = visited;
     mm.stats.sections = sections; mm.stats.visible = visibleSections; mm.stats.chunksVisible = chunksVisible;
+    mm.stats.spanTriangles = spanIndices / 3; mm.stats.reachedTriangles = reachedIndices / 3;
     this.lastMs = performance.now() - t0;
   }
 }

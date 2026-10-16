@@ -144,7 +144,13 @@ export class HUD {
     if (showFps !== this._fpsShown) { this._fpsShown = showFps; this.fpsCounter.classList.toggle('hidden', !showFps); }
     if (showFps) {
       this.fpsTimer -= dt;
-      if (this.fpsTimer <= 0) { this.fpsTimer = 0.25; this.fpsCounter.textContent = `${this.game.loop.fps} fps`; }
+      if (this.fpsTimer <= 0) {
+        this.fpsTimer = 0.25;
+        // The real rate is capped by the display's refresh; "uncapped" is 1000 / max(CPU work, GPU time) (* = CPU-only estimate).
+        const u = this.game.renderer.uncapped(this.game.loop.cpuMs);
+        this.fpsCounter.textContent = `${this.game.loop.fps} fps (uncapped ≈ ${Math.round(u.fps)}${u.estimate ? '*' : ''})`;
+        this.fpsCounter.title = u.estimate ? '* CPU-only estimate (no GPU timer in this browser)' : 'uncapped = 1000 / max(CPU frame time, GPU frame time)';
+      }
     }
     this._updateHealth();
     const uw = this.game.player.headInWater;

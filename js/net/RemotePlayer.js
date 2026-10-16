@@ -161,6 +161,9 @@ export class RemotePlayer {
     }
     const dying = this.dead && this.deathTimer < PLAYER_DEATH_SECONDS;
     const visible = (!st.spectator || localPlayer.isSpectator) && inRange && (!this.dead || dying);
+    if (visible !== this.visible) { // a hidden player leaves the scene entirely (no matrix walk for players beyond the entity distance or dead)
+      if (visible) { this.scene.add(this.model.root); this.scene.add(this.nametag); } else { this.scene.remove(this.model.root); this.scene.remove(this.nametag); }
+    }
     this.visible = visible;
     this.model.root.visible = visible;
     if (visible) {

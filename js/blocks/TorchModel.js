@@ -31,7 +31,7 @@ function standingQuads() {
 }
 
 /** Move a standing-torch point onto the wall torch of `attach`: pivot at the base centre, lean TORCH_TILT into the room. */
-function toWall(p, attach) {
+export function toWall(p, attach) {
   const [wx, wz] = WALL_DIR[attach];
   const dx = -wx, dz = -wz;           // lean direction (away from the wall)
   const sx = -wz, sz = wx;            // the perpendicular
