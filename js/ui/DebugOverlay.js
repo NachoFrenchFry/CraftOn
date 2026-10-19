@@ -93,8 +93,9 @@ export class DebugOverlay {
     const t = g.interaction ? g.interaction.target : null;
     const f = (n) => n.toFixed(3);
     let i = 0;
-    const u = g.renderer.uncapped(g.loop.cpuMs), gt = g.renderer.gpuTimer;
-    this._set(i++, `CraftOn  ${g.loop.fps} fps  (${g.loop.fps > 0 ? (1000 / g.loop.fps).toFixed(1) : '-'} ms)   uncapped ≈ ${Math.round(u.fps)}${u.estimate ? '* (CPU-only estimate)' : ''}  cpu ${g.loop.cpuMs.toFixed(1)} ms  gpu ${gt.available ? gt.avgMs.toFixed(1) + ' ms' : 'n/a'}   Tick: ${g.tick.rate} TPS (${(g.tick.rate / 20).toFixed(2)}×)${g.tick.frozen ? ' FROZEN' : ''}`);
+    const u = g.renderer.uncapped(g.loop.cpuMs), gt = g.renderer.gpuTimer, unlimited = g.settings.get('maxFps') === 0;
+    const fps = unlimited && u.fps > 0 ? Math.round(u.fps) : g.loop.fps; // Unlimited: the rate without the refresh cap; else the measured rate
+    this._set(i++, `CraftOn  ${fps} fps${unlimited && u.estimate ? ' (est.)' : ''}  (${g.loop.fps > 0 ? (1000 / g.loop.fps).toFixed(1) : '-'} ms shown)   cpu ${g.loop.cpuMs.toFixed(1)} ms  gpu ${gt.available ? gt.avgMs.toFixed(1) + ' ms' : 'n/a'}   Tick: ${g.tick.rate} TPS (${(g.tick.rate / 20).toFixed(2)}×)${g.tick.frozen ? ' FROZEN' : ''}`);
     this._set(i++, `XYZ: ${f(pos.x)} / ${f(pos.y)} / ${f(pos.z)}`);
     this._set(i++, `Block: ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}   Chunk: ${Math.floor(pos.x) >> 4} ${Math.floor(pos.z) >> 4}  (${Math.floor(pos.x) & 15} ${Math.floor(pos.z) & 15})`);
     this._set(i++, `Facing: ${compassFromYaw(p.yaw)}  yaw ${radToDeg(p.yaw).toFixed(1)}  pitch ${radToDeg(p.pitch).toFixed(1)}`);

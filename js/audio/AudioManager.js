@@ -62,6 +62,8 @@ export class AudioManager {
     this._ambientTimer = 0;
     /** /tick: every buffer source plays at this rate, so sped-up footage sounds normal. */
     this.timeScale = 1;
+    /** Ids of the last sounds played (most recent last): what the headless checks read. */
+    this.recent = [];
     this._dripTimer = 20 + Math.random() * 40;
     this._enclosed = false;
     this._nearWater = false;
@@ -155,6 +157,7 @@ export class AudioManager {
   /** Non-positional playback. `name` is a sound id ("ui/click") or the old dotted name ("ui.click"); `rate` overrides the random pitch. */
   play(name, bus = 'ui', volume = 1, rate = null) {
     const id = soundId(name);
+    this.recent.push(id); if (this.recent.length > 48) this.recent.shift(); // the last ids asked for (tests read them)
     if (!this._canPlay(id)) return;
     const buffer = this.bank.get(id);
     if (!buffer) return;
@@ -174,6 +177,7 @@ export class AudioManager {
   /** Positional playback through the blocks bus. */
   playAt(name, x, y, z, bus = 'blocks', volume = 1, rate = null) {
     const id = soundId(name);
+    this.recent.push(id); if (this.recent.length > 48) this.recent.shift();
     if (!this._canPlay(id)) return;
     const buffer = this.bank.get(id);
     if (!buffer) return;

@@ -26,6 +26,9 @@ export class HUD {
     this.hbChip = this.healthBar.querySelector('.hb-chip');
     this.hbText = this.healthBar.querySelector('.hb-text');
     this.hurtOverlay = document.getElementById('hurt-overlay');
+    /** The white flash of a nearby explosion: opacity set at once, the CSS transition fades it. */
+    this.flashOverlay = document.getElementById('flash-overlay');
+    this._flashTimer = null;
     this._hbShown = null; this._hbHealth = -1; this._hbLow = false; this._hurtShown = false; this._chipTimer = null; this._hurtOpacity = -1; this._hotbarShown = null;
     game.events.on('player:damaged', () => { this.healthBar.classList.remove('hit'); void this.healthBar.offsetWidth; this.healthBar.classList.add('hit'); });
     this.fpsTimer = 0;
@@ -122,6 +125,18 @@ export class HUD {
     if (hurt) { const op = Math.round(Math.min(1, hs.hurtFlash / 0.35) * 50) / 50; if (op !== this._hurtOpacity) { this._hurtOpacity = op; this.hurtOverlay.style.opacity = String(op); } }
   }
 
+  /** A short white flash over the view (explosions), `strength` 0..1. */
+  flash(strength) {
+    const el = this.flashOverlay;
+    if (!el) return;
+    el.classList.remove('hidden');
+    el.style.transition = 'none'; el.style.opacity = String(Math.min(0.85, strength));
+    void el.offsetWidth; // apply the start opacity before the fade
+    el.style.transition = 'opacity 0.45s ease-out'; el.style.opacity = '0';
+    if (this._flashTimer) clearTimeout(this._flashTimer);
+    this._flashTimer = setTimeout(() => { el.classList.add('hidden'); this._flashTimer = null; }, 500);
+  }
+
   setCrosshairVisible(v) {
     if (v === this._crosshairShown) return;
     this._crosshairShown = v;
@@ -146,10 +161,12 @@ export class HUD {
       this.fpsTimer -= dt;
       if (this.fpsTimer <= 0) {
         this.fpsTimer = 0.25;
-        // The real rate is capped by the display's refresh; "uncapped" is 1000 / max(CPU work, GPU time) (* = CPU-only estimate).
-        const u = this.game.renderer.uncapped(this.game.loop.cpuMs);
-        this.fpsCounter.textContent = `${this.game.loop.fps} fps (uncapped ≈ ${Math.round(u.fps)}${u.estimate ? '*' : ''})`;
-        this.fpsCounter.title = u.estimate ? '* CPU-only estimate (no GPU timer in this browser)' : 'uncapped = 1000 / max(CPU frame time, GPU frame time)';
+        // With Max FPS "Unlimited" the number is the rate the game could reach without the display's refresh cap
+        // (1000 / max(CPU work, GPU time); a CPU-only estimate without a GPU timer); any other cap shows the measured rate.
+        const unlimited = this.game.settings.get('maxFps') === 0;
+        const u = unlimited ? this.game.renderer.uncapped(this.game.loop.cpuMs) : null;
+        this.fpsCounter.textContent = `${unlimited && u.fps > 0 ? Math.round(u.fps) : this.game.loop.fps} fps`;
+        this.fpsCounter.title = unlimited ? (u.estimate ? 'uncapped, CPU-only estimate (no GPU timer in this browser)' : 'uncapped: 1000 / max(CPU frame time, GPU frame time)') : 'measured frame rate';
       }
     }
     this._updateHealth();

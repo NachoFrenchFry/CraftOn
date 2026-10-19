@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { PlayerModel } from '../player/models/PlayerModel.js';
 import { BreakOverlay } from '../rendering/BreakOverlay.js';
 import { Interpolator } from './Interpolator.js';
-import { Pose } from './Protocol.js';
+import { Pose, bowFrameOf } from './Protocol.js';
 import { rayBox } from '../utils/RayBox.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { PLAYER_HEIGHT, PLAYER_WIDTH, SWIM_STROKE_INTERVAL, PLAYER_DEATH_SECONDS } from '../config/Constants.js';
@@ -142,6 +142,8 @@ export class RemotePlayer {
     st.onGround = !!(pose & Pose.ON_GROUND); st.sneaking = !!(pose & Pose.SNEAKING); st.swimming = !!(pose & Pose.SWIMMING); st.crawling = !!(pose & Pose.CRAWLING);
     st.flying = !!(pose & Pose.FLYING); st.inWater = !!(pose & Pose.IN_WATER); st.sprinting = !!(pose & Pose.SPRINTING); st.spectator = !!(pose & Pose.SPECTATOR);
     st.onFire = !!(pose & Pose.ON_FIRE); st.inLava = !!(pose & Pose.IN_LAVA);
+    st.bowFrame = bowFrameOf(pose); this.model.setAiming(st.bowFrame); // the bow draw frame (aiming pose + pulling frame)
+    st.dead = !!(pose & Pose.DEAD);
     st.velocity.x = o.vx; st.velocity.y = o.vy; st.velocity.z = o.vz;
     st.horizontalSpeed = Math.hypot(o.vx, o.vz);
     const s = o;

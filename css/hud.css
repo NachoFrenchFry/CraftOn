@@ -177,6 +177,8 @@
 @keyframes hb-pulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.6); } }
 #hurt-overlay { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(255, 0, 0, 0) 45%, rgba(200, 0, 0, 0.55) 100%); opacity: 0; transition: opacity 0.12s; }
 #hurt-overlay.hidden { display: none; }
+#flash-overlay { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#flash-overlay.hidden { display: none; }
 
 /* ---- Chat, after bloxd.io: top-left, one small translucent slate-blue box per message ---- */
 .chat {

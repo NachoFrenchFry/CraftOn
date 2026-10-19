@@ -117,6 +117,12 @@ columns are the variation the manifest gives each sound right now.
 | `items/drop` | an item is thrown (Q) | 0.2–0.3 s | no | 6 % | 5 % |
 | `items/bucket_fill` | a bucket scoops water or lava | 0.4–0.6 s | no | 6 % | 5 % |
 | `items/bucket_empty` | a bucket is poured out | 0.5–0.9 s | no | 6 % | 5 % |
+| `items/bow_draw` | the bow starts to draw (right click held) | 0.3–0.6 s | no | 6 % | 5 % |
+| `items/bow_shoot` | an arrow leaves the bow | 0.2–0.4 s | no | 6 % | 5 % |
+| `items/arrow_hit_block` | an arrow sticks into a block | 0.1–0.3 s | no | 6 % | 5 % |
+| `items/arrow_hit_entity` | an arrow hits a mob or a player | 0.1–0.3 s | no | 6 % | 5 % |
+| `explosives/fuse` | a placed explosive is primed and hisses (and again halfway through the fuse) | 0.8–1.5 s | no | 5 % | 5 % |
+| `explosives/explosion` | an explosive goes off | 1–2 s | no | 5 % | 5 % |
 | `mobs/cow/ambient` | a cow calls now and then (every 8–25 s) | 0.5–1.5 s | no | 10 % | 5 % |
 | `mobs/cow/hurt` | a cow is hit | 0.3–0.6 s | no | 10 % | 5 % |
 | `mobs/cow/death` | a cow dies | 0.8–2 s | no | 10 % | 5 % |
@@ -126,6 +132,9 @@ columns are the variation the manifest gives each sound right now.
 | `mobs/sheep/ambient` | a sheep calls now and then (every 8–25 s) | 0.5–1.5 s | no | 10 % | 5 % |
 | `mobs/sheep/hurt` | a sheep is hit | 0.3–0.6 s | no | 10 % | 5 % |
 | `mobs/sheep/death` | a sheep dies | 0.8–2 s | no | 10 % | 5 % |
+| `mobs/zombie/ambient` | a zombie groans (every 6–20 s) | 0.8–1.5 s | no | 10 % | 5 % |
+| `mobs/zombie/hurt` | a zombie is hit | 0.3–0.6 s | no | 10 % | 5 % |
+| `mobs/zombie/death` | a zombie dies | 1–2 s | no | 10 % | 5 % |
 | `liquids/lava_pop` | reserved for lava bubbles (not played yet) | 0.3–0.6 s | no | 5 % | 5 % |
 | `liquids/lava_sizzle` | lava meets water (cobblestone forms), an item burns | 0.5–1 s | no | 5 % | 5 % |
 | `ambient/wind` | the wind bed, always on, louder high up and quieter indoors or under water | 20–30 s | yes (seamless, stereo) | 0 % | 0 % |

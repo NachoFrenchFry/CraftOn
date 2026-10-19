@@ -47,6 +47,7 @@
       </div>
     </div>
     <div id="hurt-overlay" class="hidden"></div>
+    <div id="flash-overlay" class="hidden"></div>
     <div id="item-name-popup"></div>
     <div id="hotbar"></div>
     <div id="pointer-hint" class="hidden">Click to resume</div>
@@ -156,6 +157,7 @@
         <label>Game mode
           <select id="world-mode"><option value="survival">Survival</option><option value="creative">Creative</option></select>
         </label>
+        <label class="create-toggle"><span>Hostile mobs (zombies spawn in darkness)</span><input id="world-hostile" type="checkbox" checked></label>
       </div>
       <div class="menu-row">
         <button id="btn-create-world" class="mc-button">Create</button>
@@ -332,6 +334,9 @@
       </label>
       <label class="host-max srv-host-only"><span>PvP (players can hurt each other)</span><input id="srv-pvp" type="checkbox" checked></label>
       <label class="host-max"><span>Keep inventory on death</span><input id="srv-keep-inv" type="checkbox"></label>
+      <label class="host-max"><span>Hostile mobs (zombies)</span><input id="srv-hostile" type="checkbox" checked></label>
+      <label class="host-max"><span>Explosives</span><input id="srv-explosives" type="checkbox" checked></label>
+      <label class="host-max"><span>Explosions break blocks</span><input id="srv-explosions-break" type="checkbox" checked></label>
       <div class="srv-sub srv-host-only">Players</div>
       <div id="srv-players" class="srv-list srv-host-only"></div>
       <button id="btn-srv-back" class="mc-button">Done</button>

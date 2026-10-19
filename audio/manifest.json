@@ -91,6 +91,48 @@
    "volume": 1.0,
    "volumeVar": 0.1
   },
+  "explosives/explosion": {
+   "file": "explosion.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "explosives/fuse": {
+   "file": "fuse.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "items/arrow_hit_block": {
+   "file": "arrow_hit_block.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "items/arrow_hit_entity": {
+   "file": "arrow_hit_entity.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "items/bow_draw": {
+   "file": "bow_draw.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "items/bow_shoot": {
+   "file": "bow_shoot.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
   "items/bucket_empty": {
    "file": "bucket_empty.wav",
    "loop": false,
@@ -253,6 +295,27 @@
    "volumeVar": 0.05
   },
   "mobs/sheep/hurt": {
+   "file": "hurt.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "mobs/zombie/ambient": {
+   "file": "ambient.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "mobs/zombie/death": {
+   "file": "death.wav",
+   "loop": false,
+   "pitch": 0.1,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "mobs/zombie/hurt": {
    "file": "hurt.wav",
    "loop": false,
    "pitch": 0.1,

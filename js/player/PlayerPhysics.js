@@ -168,7 +168,7 @@ export class PlayerPhysics {
     else if (p.swimming) speed = C.SWIM_SPRINT_SPEED;
     else if (p.inLava) speed = C.SWIM_SPEED * C.LAVA_SPEED_FACTOR; // thick and slow
     else if (p.inWater) speed = C.SWIM_SPEED * (p.sprinting ? 1.3 : 1);
-    else if (p.sneaking || p.crawling) speed = C.SNEAK_SPEED;
+    else if (p.sneaking || p.crawling || p.drawProgress > 0) speed = C.SNEAK_SPEED; // drawing a bow slows to sneaking speed
     else speed = p.sprinting ? C.SPRINT_SPEED : C.WALK_SPEED;
 
     if (p.swimming) {
@@ -201,8 +201,9 @@ export class PlayerPhysics {
         v.y = stepFlyVertical(v.y, (intent.up ? 1 : 0) - (intent.down ? 1 : 0), speed * 0.8, dt);
         p.fallStartY = null;
       } else if (p.inLava) {
-        // Lava: sink slowly, climb slowly while holding jump, a weak hop out of a shallow pool.
-        if (intent.jump && p.onGround) { v.y = C.JUMP_VELOCITY * 0.55; p.onGround = false; }
+        // Lava: sink slowly, climb slowly while holding jump; standing on the bottom of shallow lava a normal (slightly
+        // reduced) jump gets you out, as in shallow water.
+        if (intent.jump && p.onGround) { v.y = C.JUMP_VELOCITY * C.WATER_JUMP_FACTOR; p.onGround = false; this.events.emit('player:jump'); }
         else {
           v.y -= C.WATER_GRAVITY * 0.6 * dt;
           if (intent.jump) v.y = Math.min(v.y + 10 * dt, C.LAVA_UP_SPEED);
@@ -236,13 +237,14 @@ export class PlayerPhysics {
       }
     }
 
-    // Climbing out of water: while pressing against a ledge with jump held, keep rising until the
-    // box clears the ledge. Only for ledges the player can stand on within reach.
-    if (!p.flying && intent.jump && p.blockedHorizontally && (p.inWater || p.climbTimer > 0)) {
+    // Climbing out of water or lava: while pressing against a ledge with jump held, keep rising until the
+    // box clears the ledge. Only for ledges the player can stand on within reach. Lava used to be left out (the
+    // grace timer was only ever set in water), so a 1-block shore could not be climbed from lava at all.
+    if (!p.flying && intent.jump && p.blockedHorizontally && (p.inWater || p.inLava || p.climbTimer > 0)) {
       const ledgeTop = this._ledgeTop(p);
       if (ledgeTop >= 0 && ledgeTop - p.position.y <= C.WATER_CLIMB_MAX_RISE && ledgeTop > p.position.y + 0.01) {
         v.y = Math.max(v.y, C.WATER_LEDGE_BOOST);
-        if (p.inWater) p.climbTimer = C.WATER_CLIMB_GRACE;
+        if (p.inWater || p.inLava) p.climbTimer = C.WATER_CLIMB_GRACE;
       }
     }
     if (p.climbTimer > 0) p.climbTimer -= dt;

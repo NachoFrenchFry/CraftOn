@@ -12,7 +12,7 @@ import { PointerLockController } from '../input/PointerLockController.js';
 import { KeyBindingStore } from './KeyBindingStore.js';
 import { PAUSE_CODE, CHAT_ENTER_CODE, CHAT_SLASH_CODE, DROP_STACK_MODIFIERS } from '../config/KeyBindings.js';
 import { createCommands } from '../commands/index.js';
-import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX } from '../config/Constants.js';
+import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX, EXPLOSION_KNOCKBACK } from '../config/Constants.js';
 import { Renderer } from '../rendering/Renderer.js';
 import { TextureAtlas } from '../rendering/TextureAtlas.js';
 import { ChunkMeshManager } from '../rendering/ChunkMeshManager.js';
@@ -58,6 +58,9 @@ import { BlockInteraction } from '../player/BlockInteraction.js';
 import { PlayerModel } from '../player/models/PlayerModel.js';
 import { FirstPersonHand } from '../player/models/FirstPersonHand.js';
 import { createModelLights } from '../player/models/ModelParts.js';
+import { zombieDamage, arrowPlayerDamage, explosionPlayerDamage } from '../player/Damage.js';
+import { ItemIds } from '../items/ItemDefinitions.js';
+import { INVENTORY_SIZE } from '../items/Inventory.js';
 import { EntityManager } from '../entities/EntityManager.js';
 import { AudioManager } from '../audio/AudioManager.js';
 import { UIManager } from '../ui/UIManager.js';
@@ -215,12 +218,32 @@ export class Game {
     });
     this.entities.mobs.waterSim = this.waterSim;
     this.entities.mobs.setRenderDistance(this.settings.get('renderDistance'));
-    // Natural respawns keep away from every player: the local one and, when hosting, the guests.
+    // Every player, for the mobs: natural respawns keep away from all of them, zombies pick their Survival targets among them
+    // (the local player and, when hosting, the guests with their game mode and death state).
     this.entities.mobs.playerPositions = () => {
-      const p = this.player, out = [{ x: p.position.x, y: p.position.y, z: p.position.z, dirX: -Math.sin(p.yaw), dirZ: -Math.cos(p.yaw) }];
-      if (this.remotePlayers) for (const rp of this.remotePlayers.players.values()) { const o = rp.state && rp.state.renderPosition ? rp.state.renderPosition : null; if (o) out.push({ x: o.x, y: o.y, z: o.z, dirX: -Math.sin(rp.state.yaw || 0), dirZ: -Math.cos(rp.state.yaw || 0) }); }
+      const p = this.player, out = [{ id: 'self', x: p.position.x, y: p.position.y, z: p.position.z, dirX: -Math.sin(p.yaw), dirZ: -Math.cos(p.yaw), mode: p.gameMode, dead: p.dead }];
+      if (this.remotePlayers) for (const rp of this.remotePlayers.players.values()) {
+        const o = rp.state && rp.state.renderPosition ? rp.state.renderPosition : null;
+        if (o) out.push({ id: rp.id, x: o.x, y: o.y, z: o.z, dirX: -Math.sin(rp.state.yaw || 0), dirZ: -Math.cos(rp.state.yaw || 0), mode: rp.mode || 'survival', dead: !!(rp.state && rp.state.dead) });
+      }
       return out;
     };
+    // A zombie's hit: the local player takes it through the health system (armor applies); a guest gets it from the host.
+    this.entities.mobs.hurtPlayer = (targetId, base, kx, kz) => {
+      if (targetId === 'self') { if (this.health.active && !this.player.dead) this.health.damage(zombieDamage(this.inventory.armorPoints(), base), { kind: 'zombie' }, { kx, kz }); return; }
+      if (this.net && this.net.isHost) this.net.zombieHit(targetId, base, kx, kz);
+    };
+    // Arrows and explosions: the voxel ray helper for sweeps / exposure, the other players, the effects and the player damage.
+    this.entities.raycaster = this.raycaster;
+    this.entities.effects = {
+      critTrail: (x, y, z) => this.particles.spawnCritSmall(x, y, z, 2),
+      arrowHitBlock: (x, y, z) => this.audio.playAt('items/arrow_hit_block', x, y, z, 'blocks', 0.7),
+      arrowHitEntity: (x, y, z) => this.audio.playAt('items/arrow_hit_entity', x, y, z, 'blocks', 0.8),
+      fuse: (x, y, z) => this.audio.playAt('explosives/fuse', x, y, z, 'blocks', 0.9),
+      debris: (x, y, z, blocks) => { const n = Math.min(blocks.length, 24); for (let i = 0; i < n; i++) { const b = blocks[Math.floor(i * blocks.length / n)]; this.particles.spawnBlockBreak(b[0], b[1], b[2], BlockIds.DIRT, 3); } },
+      explosion: (x, y, z, power) => this._explosionEffects(x, y, z, power),
+    };
+    this.entities.hurtPlayer = (shooter, hit) => this._projectileHurt(shooter, hit);
     // Instant crafting / smelting; results that do not fit drop at the player's feet.
     this.crafting = new CraftingSystem(this.inventory, this.events, (itemId, n) => {
       const p = this.player.position;
@@ -233,6 +256,7 @@ export class Game {
       isGuest: () => !!(this.net && !this.net.isHost),
       entityBlocks: (x, y, z) => remotePlayersBlockAt(this.remotePlayers, x, y, z) || mobBlocksAt(this.entities.mobs.mobs, x, y, z),
       canEat: () => this.health.canEat(),
+      explosivesAllowed: () => !this.worldMeta || this.worldMeta.explosives !== false,
     });
     this.health = new HealthSystem(this);
     this.blockModelMaterial = createBlockModelMaterial(this.atlas.texture, true);
@@ -246,6 +270,7 @@ export class Game {
     this.hand = new FirstPersonHand(this.renderer.handScene, this.handBlockMaterial, this.atlas, this.entityTextures);
     this.remotePlayers = new RemotePlayerManager(this);
     this.interaction.remotePlayers = this.remotePlayers;
+    this.entities.remotePlayers = this.remotePlayers;
     this.ui.init();
     this._wireEvents();
     this.perf = new PerformanceMonitor(this);
@@ -335,6 +360,16 @@ export class Game {
     });
     ev.on('player:ate', (itemId, heal) => { this.health.heal(heal); this.audio.playPlayer('eat_done', 0.8); });
     ev.on('player:jump', () => this.audio.playStep(this._blockUnderPlayer(), 0.18));
+    // The bow: the draw creak, then the shot (an arrow leaves the inventory in Survival; a guest asks the host to shoot it).
+    ev.on('player:drawStart', () => this.audio.playPlayer('bow_draw', 0.8));
+    ev.on('player:toast', (text) => this.ui.hud.showToast(text, false));
+    ev.on('player:shoot', (power) => this._shoot(power));
+    // Explosives: placing one primes an entity at once (the host does it for a guest).
+    ev.on('explosive:place', (x, y, z) => {
+      if (this.net && !this.net.isHost) { this.net.prime(x, y, z); return; }
+      if (this.worldMeta && this.worldMeta.explosives === false) return;
+      this.entities.primeExplosive(x, y, z);
+    });
     ev.on('player:splash', () => this.audio.playPlayer('splash', 0.8));
     ev.on('item:pickup', () => this.audio.playUI('pop', 0.9));
     ev.on('block:changed', (x, y, z) => { if (this.isGuest) return; this.waterSim.onBlockChanged(x, y, z); this.lavaSim.onBlockChanged(x, y, z); }); // guests only mirror the host's flow
@@ -524,6 +559,61 @@ export class Game {
     const id = s ? s.itemId : 0;
     this.hand.setHeldItem(id);
     this.playerModel.setHeldItem(id);
+  }
+
+  /** Shoot an arrow from the eyes along the view (power 0..1 from the draw); Survival uses one arrow up. */
+  _shoot(power) {
+    const p = this.player;
+    if (p.dead || p.isSpectator) return;
+    const creative = p.isCreative;
+    if (!creative) { const slot = this._findItemSlot(ItemIds.ARROW); if (slot < 0) return; this.inventory.removeFromSlot(slot, 1); }
+    const eye = p.getEyePosition(this._eye), dir = p.getLookDirection(this._dir);
+    this.audio.playPlayer('bow_shoot', 0.9);
+    this.events.emit('player:swing');
+    if (this.net && !this.net.isHost) { this.net.shoot(eye, dir, power); return; }
+    const origin = { x: eye.x + dir.x * 0.3, y: eye.y - 0.1 + dir.y * 0.3, z: eye.z + dir.z * 0.3 };
+    this.entities.shootArrow(origin, dir, power, 'self', { pickup: !creative });
+  }
+
+  /**
+   * An arrow or an explosion reached a player (EntityManager.hurtPlayer): the local player takes it through the health
+   * system (armor applies, ×5 like every player hit); a guest gets it from the host (which knows their armor).
+   */
+  _projectileHurt(shooter, hit) {
+    if (hit.id === 'self') {
+      if (!this.health.active || this.player.dead || this.player.isCreative || this.player.isSpectator) return;
+      const armor = this.inventory.armorPoints();
+      if (hit.kind === 'arrow') {
+        if (shooter !== 'self' && this.worldMeta && this.worldMeta.pvp === false) return;
+        const rp = shooter === 'self' ? null : this.remotePlayers.get(shooter);
+        const by = rp ? rp.name : 'another player';
+        this.health.damage(arrowPlayerDamage(hit.power, hit.bonus, armor), { kind: 'arrow', by }, { kx: hit.kx, kz: hit.kz, crit: hit.crit, ignoreInvuln: true });
+      } else {
+        const n = explosionPlayerDamage(hit.impact, hit.power, armor);
+        this.health.damage(n, { kind: 'explosion' }, { ignoreInvuln: true });
+        const k = EXPLOSION_KNOCKBACK * hit.impact, v = this.player.velocity;
+        v.x += hit.kx * k; v.z += hit.kz * k; v.y += hit.ky * k;
+        this.cameraController.shake(hit.impact);
+      }
+      return;
+    }
+    if (this.net && this.net.isHost) this.net.projectileHit(shooter, hit);
+  }
+
+  /** The flash, the smoke cloud, the boom (louder close by) and the camera shake of an explosion at (x, y, z). */
+  _explosionEffects(x, y, z, power) {
+    this.particles.spawnSmoke(x, y + 0.5, z, 24, 2.2);
+    this.particles.spawnPuff(x, y + 0.5, z, 20, BlockIds.SAND);
+    this.audio.playAt('explosives/explosion', x, y, z, 'blocks', 1.0);
+    const p = this.player.position, d = Math.hypot(p.x - x, p.y + 1 - y, p.z - z);
+    if (d < 24) { this.cameraController.shake((1 - d / 24) * 0.8); this.ui.hud.flash(Math.max(0.15, 1 - d / 16)); }
+  }
+
+  /** Index of the first inventory slot (hotbar first) holding `itemId`, or −1. */
+  _findItemSlot(itemId) {
+    const inv = this.inventory;
+    for (let i = 0; i < INVENTORY_SIZE; i++) { const s = inv.get(i); if (s && s.itemId === itemId) return i; }
+    return -1;
   }
 
   /** Water flowed into a plant: drop its item and show particles. */
@@ -862,6 +952,8 @@ export class Game {
       pr.begin('misc');
       this.hand.visible = first && !spectator && !p.dead;
       this.hand.eating = this.interaction.eatProgress;
+      this.hand.drawProgress = p.drawProgress;
+      this.playerModel.setAiming(p.bowFrame);
       this.hand.setLight(this.lightAt(this._eye.x, this._eye.y, this._eye.z));
       this.hand.update(dt, p, this.cameraController.bobPhase, this.cameraController.handBobFactor);
       this.health.update(dt);

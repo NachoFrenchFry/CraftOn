@@ -166,6 +166,46 @@ export const MOB_MAX_DROP = 3;
 export const MOB_JUMP_VELOCITY = 8.6;
 export const MOB_PX = 1 / 16;                // 1 texture pixel = 1/16 block
 
+// ---- Hostile mobs (zombies) ----
+export const HOSTILE_CAP_PER_PLAYER = 30;     // loaded zombies per player, separate from MOB_CAP
+export const HOSTILE_SPAWN_INTERVAL = 1;      // seconds between spawn rounds per player
+export const HOSTILE_SPAWN_ATTEMPTS = 8;      // random columns per round
+export const HOSTILE_SPAWN_MIN_DISTANCE = 24; // from every player
+export const HOSTILE_SPAWN_MAX_DISTANCE = 64;
+export const HOSTILE_GROUP_MIN = 1;
+export const HOSTILE_GROUP_MAX = 4;
+export const HOSTILE_DESPAWN_DISTANCE = 96;   // farther than this from every player: gone at once
+export const HOSTILE_DESPAWN_SOFT_DISTANCE = 48; // between this and the hard distance: a small chance each second
+export const HOSTILE_DESPAWN_CHANCE = 0.03;
+export const ZOMBIE_CHASE_RANGE = 24;
+export const ZOMBIE_ATTACK_RANGE = 1.2;
+export const ZOMBIE_ATTACK_DAMAGE = 15;       // 3 hearts × 5, before armor
+export const ZOMBIE_ATTACK_COOLDOWN = 1;
+export const ZOMBIE_PATH_INTERVAL = 0.5;      // at most two A* searches per second per zombie
+export const ZOMBIE_PATH_BUDGET_MS = 1;       // of main-thread time per physics step for every search together
+export const ZOMBIE_PATH_RADIUS = 16;
+
+// ---- Bow and arrows ----
+export const BOW_DRAW_SECONDS = 1.0;
+export const BOW_MIN_DRAW_SECONDS = 0.1;
+export const ARROW_SPEED = 60;                // blocks/s at full draw
+export const ARROW_GRAVITY = 20;
+export const ARROW_DRAG_PER_TICK = 0.99;      // per 20 Hz tick
+export const ARROW_STUCK_SECONDS = 60;
+export const ARROW_FLIGHT_SECONDS = 30;
+export const ARROW_BASE_DAMAGE = 9;           // × power, plus 0–4 when fully drawn (critical)
+export const BOW_ZOOM = 0.10;                 // FOV shrinks up to 10 % at full draw
+
+// ---- Explosives ----
+export const EXPLOSIVE_FUSE_SECONDS = 4;
+export const EXPLOSIVE_CHAIN_FUSE_MIN = 0.5;
+export const EXPLOSIVE_CHAIN_FUSE_MAX = 1.5;
+export const EXPLOSION_POWER = 4;
+export const EXPLOSION_RAY_STEP = 0.3;
+export const EXPLOSION_DROP_CHANCE = 0.25;
+export const EXPLOSIONS_PER_STEP = 2;         // a chain spreads over physics steps so nothing ever freezes
+export const EXPLOSION_KNOCKBACK = 9;         // × impact, outward
+
 // ---- Caves (Caves & Cliffs style) ----
 export const CAVE_CHUNK_CHANCE = 3;          // worm systems spawn in 1 of N source chunks
 export const CAVE_ROOM_CHANCE = 3;           // 1 in N systems start with a big room

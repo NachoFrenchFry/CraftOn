@@ -3,6 +3,7 @@
 import { ItemRegistry } from './ItemRegistry.js';
 import { BREAK_TIME, STONE_TYPE, WOOD_TYPE } from '../blocks/BlockRegistry.js';
 import { HAND_ATTACK_DAMAGE } from '../config/Constants.js';
+import { HAND_KNOCKBACK } from './ItemDefinitions.js';
 
 export const HAND_SPEED = 1;
 
@@ -32,6 +33,12 @@ export function isSword(itemId) {
   return !!(tool && tool.type === 'sword');
 }
 
+export function isBow(itemId) { return itemId != null && ItemRegistry.isBow(itemId); }
+
+/** Knockback points of a hit with the held item (hand 5, stick 10); the knockback strength is points / 5 times the usual. */
+export function knockbackPoints(itemId) { return itemId != null ? ItemRegistry.knockback(itemId) : HAND_KNOCKBACK; }
+export function knockbackScale(itemId) { return knockbackPoints(itemId) / HAND_KNOCKBACK; }
+
 /** Minecraft-style stat lines for tooltips: [{ text, color: 'green' | 'gray' }]. Empty for plain items. */
 export function itemStatLines(itemId) {
   const lines = [];
@@ -39,6 +46,9 @@ export function itemStatLines(itemId) {
   if (armor) lines.push({ text: `+${armor.points} Armor`, color: 'green' });
   const food = itemId != null ? ItemRegistry.food(itemId) : null;
   if (food) lines.push({ text: `Restores +${food.heal} Health (hold right click)`, color: 'green' });
+  const kb = knockbackPoints(itemId) - HAND_KNOCKBACK;
+  if (itemId != null && kb !== 0) lines.push({ text: `${kb > 0 ? '+' : ''}${kb} Knockback`, color: 'green' }); // only items whose knockback differs from the hand
+  if (isBow(itemId)) { lines.push({ text: 'Hold right click to draw, release to shoot', color: 'gray' }); lines.push({ text: 'Up to 9 damage (×5 to players), critical when fully drawn', color: 'gray' }); }
   const tool = itemId != null ? ItemRegistry.tool(itemId) : null;
   if (!tool) return lines;
   const bonus = (tool.damage || HAND_ATTACK_DAMAGE) - HAND_ATTACK_DAMAGE;

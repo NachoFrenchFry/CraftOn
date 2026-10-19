@@ -5,7 +5,9 @@
 // the crosshair.
 
 import * as THREE from 'three';
-import { createPart, COLORS, createModelLights, setToolHandleRotation, tintModelLight } from './ModelParts.js';
+import { createSkinPart, createModelLights, setToolHandleRotation, tintModelLight, PX } from './ModelParts.js';
+import { SKIN_PART_BY_NAME } from './SkinLayout.js';
+import { BOW_FRAMES } from '../../items/ItemDefinitions.js';
 import { buildFirstPersonArmor, applyWornArmor } from './ArmorModel.js';
 import { createBlockGeometry } from '../../rendering/BlockGeometry.js';
 import { BlockRegistry } from '../../blocks/BlockRegistry.js';
@@ -37,15 +39,19 @@ export class FirstPersonHand {
     this.lights = createModelLights(); // [hemi, dir]; the shader pipeline turns the dir light toward the sun
     for (const l of this.lights) handScene.add(l);
 
-    // Arm: 4×12×4 px box (sleeve + fist) whose local +Y runs from the shoulder (below the screen) to
-    // the fist. It gets a fixed Minecraft-like base transform: bottom right, pointing forward into the
-    // screen and slightly up toward the center, only ~20° from vertical.
+    // Arm: the skin's right arm (4×12×4 px, textures/entity/player.png) whose local +Y runs from the shoulder (below the
+    // screen) to the fist: the skin box hangs down from its pivot, so it is turned 180° about X like the armor boxes.
+    // It gets a fixed Minecraft-like base transform: bottom right, pointing forward into the screen and slightly up
+    // toward the center, only ~20° from vertical.
     this.armGroup = new THREE.Group();
-    const sleeve = createPart(4, 8, 4, COLORS.shirt, [0, 4, 0]);
-    const hand = createPart(4.05, 4.4, 4.05, COLORS.skin, [0, 10.2, 0]);
-    this.sleeveMesh = sleeve.mesh;
-    this.handMesh = hand.mesh;
-    this.armGroup.add(sleeve.mesh, hand.mesh);
+    const arm = createSkinPart(SKIN_PART_BY_NAME.rightArm, entityTextures ? entityTextures.get('player') || null : null);
+    arm.mesh.position.set(0, 6 * PX, 0); // the box centre 6 px up the local +Y (the fist ends at 12 px)
+    arm.mesh.rotation.x = Math.PI;
+    this.armMesh = arm.mesh;
+    /** Aliases kept for callers and checks that knew the two flat-colour boxes. */
+    this.sleeveMesh = arm.mesh;
+    this.handMesh = arm.mesh;
+    this.armGroup.add(arm.mesh);
     // Worn chestplate sleeve and gauntlet: textured boxes over the sleeve and the fist (hidden until worn).
     this.armorMeshes = buildFirstPersonArmor(this.armGroup);
     this.armor = { helmet: null, chestplate: null, gauntlets: null, leggings: null, boots: null };
@@ -71,6 +77,9 @@ export class FirstPersonHand {
     this.swingProgress = 1;
     /** Eating progress 0..1: the food bobs toward the mouth. */
     this.eating = 0;
+    /** Bow draw progress 0..1 (set by Game from the interaction): the bow turns upright toward the centre and the arm pulls back. */
+    this.drawProgress = 0;
+    this.heldFrameTexture = null;
     this.equipProgress = 1;
     this.pendingBlockId = 0;
     this.swayX = 0;
@@ -97,15 +106,22 @@ export class FirstPersonHand {
   /** @deprecated alias kept for callers that only know blocks */
   setHeldBlock(blockId) { this.setHeldItem(blockId); }
 
-  _applyBlock(itemId) {
+  /** The bow's pulling frame for a draw progress (null when not drawing): pulling_0 from the start, _1 at 65 %, _2 at 90 %. */
+  static bowFrameFor(progress) { return progress <= 0 ? null : BOW_FRAMES[progress >= 0.9 ? 2 : progress >= 0.65 ? 1 : 0]; }
+  /** The frame index carried in pose bits (0 none, 1–3). */
+  static bowFrameIndex(progress) { return progress <= 0 ? 0 : progress >= 0.9 ? 3 : progress >= 0.65 ? 2 : 1; }
+
+  _applyBlock(itemId, frameTexture = null) {
     this.heldBlockId = itemId;
+    this.heldFrameTexture = frameTexture;
     if (this.blockMesh) { this.blockMesh.removeFromParent(); this.blockMesh = null; } // tools hang off toolPivot, blocks off blockGroup (geometries are cached, so they are not disposed)
     const item = itemId ? ItemRegistry.get(itemId) : null;
     this.heldIsTool = !!(item && item.tool);
+    this.heldIsBow = !!(item && item.bow);
     if (item) {
       const asBlock = item.isBlock && !BlockRegistry.isTorch(item.blockId); // torches are held as their item sprite
       const size = asBlock ? 0.3 : 0.5;
-      const geom = asBlock ? createBlockGeometry(item.blockId, size) : createItemSpriteGeometry(this.atlas, item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture, size);
+      const geom = asBlock ? createBlockGeometry(item.blockId, size) : createItemSpriteGeometry(this.atlas, frameTexture || (item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture), size);
       this.blockMesh = new THREE.Mesh(geom, this.blockMaterial);
       this.blockMesh.userData.isBlock = asBlock;
       if (this.heldIsTool) {
@@ -118,7 +134,7 @@ export class FirstPersonHand {
         this.blockGroup.add(this.blockMesh);
       }
     }
-    this.armGroup.visible = !item;
+    this.armGroup.visible = !item || this.heldIsBow; // the bow hand shows the arm too (it pulls the string back)
     this.blockGroup.visible = !!item;
   }
 
@@ -191,9 +207,25 @@ export class FirstPersonHand {
     const bobY = -Math.abs(Math.cos(bobPhase)) * HAND_BOB * bobFactor;
     const breathe = Math.sin(this.time * 1.3) * 0.006 + swimBob;
 
+    // The bow: its pulling frame follows the draw progress (swapped without an equip dip).
+    if (this.heldIsBow && this.equipProgress >= 1) {
+      const frame = FirstPersonHand.bowFrameFor(this.drawProgress);
+      if (frame !== this.heldFrameTexture) this._applyBlock(this.heldBlockId, frame);
+    }
+    const draw = this.heldIsBow ? this.drawProgress : 0;
+
     // The swing punches forward: toward the crosshair (x and y move toward the screen centre), deeper
     // into the screen (-z), with the top tipping forward and slightly down; then it returns.
-    if (this.blockMesh && this.blockMesh.userData.isBlock) {
+    if (this.blockMesh && this.heldIsBow) {
+      // The bow: held upright toward the centre of the view (more so while drawing); the arm (the string hand) sits to the
+      // right and pulls back toward the face as the draw progresses.
+      const g = this.blockGroup;
+      g.position.set(0.34 - 0.16 * draw + bobX + this.swayX, -0.36 + 0.06 * draw + bobY + this.swayY - equipDip + breathe, -0.72 - s1 * 0.1);
+      g.rotation.set(0.1 + 0.15 * draw, -0.45 + 0.25 * draw, 0.78 - 0.1 * draw);
+      const a = this.armGroup;
+      a.position.set(0.62 + bobX + this.swayX - 0.05 * draw, -1.05 + bobY + this.swayY - equipDip + 0.18 * draw + breathe, -0.62 + 0.36 * draw);
+      a.rotation.set(-0.35 - 0.5 * draw, 0.25 - 0.1 * draw, 0.28, 'YXZ');
+    } else if (this.blockMesh && this.blockMesh.userData.isBlock) {
       const g = this.blockGroup;
       g.position.set(0.5 + bobX + this.swayX - s1 * 0.3, -0.46 + bobY + this.swayY - equipDip + s1 * 0.14 + breathe, -0.8 - s1 * 0.22);
       g.rotation.set(0.12 + s1 * 0.6, -0.72 - s1 * 0.9, 0.05 + s1 * 0.2);

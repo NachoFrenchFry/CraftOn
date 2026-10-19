@@ -23,6 +23,9 @@ import { SoundGroup as S } from './BlockSoundGroups.js';
  *  base / facing: rotated variants of a station block (only the base is an item)
  *  axis: 'x' | 'z' log variants (base 'log' is vertical); rotateFaces: faces whose texture turns 90° so the
  *  bark grain runs along the log's axis
+ *  blast: blast resistance against explosions (Minecraft's ray algorithm, see js/entities/Explosion.js); when
+ *  absent the registry uses 6 for stone-type blocks, 3 for wood-type, 0 for plants / torches, 100 for liquids and
+ *  0.5 for everything else; Infinity = immune (obsidian, bedrock)
  */
 
 /** The four facing variants of a block with a front texture; the base (facing south) is the item. */
@@ -62,7 +65,7 @@ export const BLOCK_DEFINITIONS = [
   { id: B.DIRT, name: 'dirt', displayName: 'Dirt', textures: { all: 'dirt' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 0.75, soundGroup: S.DIRT, drops: 'dirt', placeable: true },
   { id: B.COBBLESTONE, name: 'cobblestone', displayName: 'Cobblestone', textures: { all: 'cobblestone' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'cobblestone', placeable: true, stoneType: true },
   { id: B.PLANKS, name: 'planks', displayName: 'Planks', textures: { all: 'planks' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 3.0, soundGroup: S.WOOD, drops: 'planks', placeable: true, woodType: true },
-  { id: B.BEDROCK, name: 'bedrock', displayName: 'Bedrock', textures: { all: 'bedrock' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: Infinity, soundGroup: S.STONE, drops: null, placeable: true, creativeOnly: true },
+  { id: B.BEDROCK, name: 'bedrock', displayName: 'Bedrock', textures: { all: 'bedrock' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: Infinity, soundGroup: S.STONE, drops: null, placeable: true, creativeOnly: true, blast: Infinity },
   { id: B.WATER, name: 'water', displayName: 'Water', textures: { all: 'water' }, opaque: false, solid: false, renderType: 'liquid', pass: 'translucent', breakTime: Infinity, soundGroup: S.WATER, drops: null, placeable: true, creativeOnly: true },
   { id: B.SAND, name: 'sand', displayName: 'Sand', textures: { all: 'sand' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 0.75, soundGroup: S.SAND, drops: 'sand', placeable: true },
   { id: B.GRAVEL, name: 'gravel', displayName: 'Gravel', textures: { all: 'gravel' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 0.75, soundGroup: S.DIRT, drops: 'gravel', placeable: true },
@@ -74,8 +77,8 @@ export const BLOCK_DEFINITIONS = [
   // with the side texture rotated where the face's texture V axis is not the log axis.
   { id: B.LOG_X, name: 'log_x', displayName: 'Log', base: 'log', axis: 'x', textures: { east: 'log_top', west: 'log_top', top: 'log_side', bottom: 'log_side', north: 'log_side', south: 'log_side' }, rotateFaces: ['up', 'down', 'north', 'south'], opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 3.0, soundGroup: S.WOOD, drops: 'log', placeable: false, woodType: true },
   { id: B.LOG_Z, name: 'log_z', displayName: 'Log', base: 'log', axis: 'z', textures: { north: 'log_top', south: 'log_top', top: 'log_side', bottom: 'log_side', east: 'log_side', west: 'log_side' }, rotateFaces: ['east', 'west'], opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 3.0, soundGroup: S.WOOD, drops: 'log', placeable: false, woodType: true },
-  { id: B.LEAVES, name: 'leaves', displayName: 'Leaves', textures: { all: 'leaves' }, opaque: false, solid: true, renderType: 'cube', pass: 'cutout', cullSameType: false, breakTime: 0.35, soundGroup: S.PLANT, drops: 'leaves', placeable: true },
-  { id: B.GLASS, name: 'glass', displayName: 'Glass', textures: { all: 'glass' }, opaque: false, solid: true, renderType: 'cube', pass: 'cutout', lightOpacity: 0, breakTime: 1.0, soundGroup: S.GLASS, drops: null, placeable: true },
+  { id: B.LEAVES, name: 'leaves', displayName: 'Leaves', textures: { all: 'leaves' }, opaque: false, solid: true, renderType: 'cube', pass: 'cutout', cullSameType: false, breakTime: 0.35, soundGroup: S.PLANT, drops: 'leaves', placeable: true, blast: 0.2 },
+  { id: B.GLASS, name: 'glass', displayName: 'Glass', textures: { all: 'glass' }, opaque: false, solid: true, renderType: 'cube', pass: 'cutout', lightOpacity: 0, breakTime: 1.0, soundGroup: S.GLASS, drops: null, placeable: true, blast: 0.3 },
   { id: B.SANDSTONE, name: 'sandstone', displayName: 'Sandstone', textures: { top: 'sandstone_top', bottom: 'sandstone_top', side: 'sandstone_side' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'sandstone', placeable: true, stoneType: true },
   { id: B.GRASS, name: 'grass', displayName: 'Grass', textures: { all: 'grass' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: 'grass', placeable: true, needsSupport: true },
   { id: B.FLOWER_YELLOW, name: 'flower_yellow', displayName: 'Dandelion', textures: { all: 'flower_yellow' }, opaque: false, solid: false, renderType: 'cross', pass: 'cutout', breakTime: 0, soundGroup: S.PLANT, drops: 'flower_yellow', placeable: true, needsSupport: true },
@@ -92,7 +95,7 @@ export const BLOCK_DEFINITIONS = [
   // Decorative full cubes. Only mossy cobblestone appears in world generation (cave walls).
   { id: B.MOSSY_COBBLESTONE, name: 'mossy_cobblestone', displayName: 'Mossy Cobblestone', textures: { all: 'mossy_cobblestone' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'mossy_cobblestone', placeable: true, stoneType: true },
   { id: B.CRACKED_STONE_BRICKS, name: 'cracked_stone_bricks', displayName: 'Cracked Stone Bricks', textures: { all: 'cracked_stone_bricks' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'cracked_stone_bricks', placeable: true, stoneType: true },
-  { id: B.OBSIDIAN, name: 'obsidian', displayName: 'Obsidian', textures: { all: 'obsidian' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 30.0, soundGroup: S.STONE, drops: 'obsidian', placeable: true, stoneType: true },
+  { id: B.OBSIDIAN, name: 'obsidian', displayName: 'Obsidian', textures: { all: 'obsidian' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 30.0, soundGroup: S.STONE, drops: 'obsidian', placeable: true, stoneType: true, blast: Infinity },
   { id: B.CONCRETE, name: 'concrete', displayName: 'Concrete', textures: { all: 'concrete' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 6.0, soundGroup: S.STONE, drops: 'concrete', placeable: true, stoneType: true },
   { id: B.WOOL_WHITE, name: 'wool_white', displayName: 'White Wool', textures: { all: 'wool_white' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 1.0, soundGroup: S.SNOW, drops: 'wool_white', placeable: true },
   { id: B.WOOL_RED, name: 'wool_red', displayName: 'Red Wool', textures: { all: 'wool_red' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 1.0, soundGroup: S.SNOW, drops: 'wool_red', placeable: true },
@@ -121,4 +124,7 @@ export const BLOCK_DEFINITIONS = [
   storageBlock(B.IRON_BLOCK, 'iron_block', 'Block of Iron'),
   storageBlock(B.GOLD_BLOCK, 'gold_block', 'Block of Gold'),
   storageBlock(B.DIAMOND_BLOCK, 'diamond_block', 'Block of Diamond'),
+  // Explosives: placing one turns it into a primed explosive entity at once (BlockInteraction / EntityManager), so the
+  // block is an item and an icon first; a block set directly (tests, chain reactions) is primed by any blast that reaches it.
+  { id: B.EXPLOSIVES, name: 'explosives', displayName: 'Explosives', textures: { top: 'explosives_top', bottom: 'explosives_bottom', side: 'explosives_side' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 0, soundGroup: S.GRASS, drops: 'explosives', placeable: true, blast: 0 },
 ];

@@ -35,7 +35,16 @@ export const ItemIds = Object.freeze({
   LAVA_BUCKET: 299,
   GOLDEN_PICKAXE: 300, GOLDEN_AXE: 301, GOLDEN_SWORD: 302,
   GOLDEN_HELMET: 303, GOLDEN_CHESTPLATE: 304, GOLDEN_GAUNTLETS: 305, GOLDEN_LEGGINGS: 306, GOLDEN_BOOTS: 307,
+  // string, the bow and its arrows
+  STRING: 308,
+  BOW: 309,
+  ARROW: 310,
 });
+
+/** Knockback points of the empty hand; an item's `knockback` replaces it (a stick: 10). Knockback strength scales with points / 5. */
+export const HAND_KNOCKBACK = 5;
+/** The bow's draw frames (textures): pulling_0 from the start, pulling_1 at 65 %, pulling_2 at 90 % of the 1 s draw. */
+export const BOW_FRAMES = Object.freeze(['bow_pulling_0', 'bow_pulling_1', 'bow_pulling_2']);
 
 /** Armor slots in display order (the inventory's armor row). */
 export const ARMOR_SLOTS = Object.freeze(['helmet', 'chestplate', 'gauntlets', 'leggings', 'boots']);
@@ -80,7 +89,8 @@ export const TOOL_DAMAGE = Object.freeze({
  * Fields: id, name, displayName, texture (16×16 icon / held sprite), stackSize, placeable (always false),
  * tool: { type: 'pickaxe' | 'axe' | 'sword', speed (pickaxes / axes), damage } for tools and weapons;
  * armor: { slot, material, points } for armor; spawnEgg: mob type (creative-only, never dropped or crafted);
- * food: { heal } for things you can eat (hold right click 1.6 s).
+ * food: { heal } for things you can eat (hold right click 1.6 s); knockback: knockback points when hitting with it
+ * (the hand has HAND_KNOCKBACK); bow: true for the bow (hold right click to draw, release to shoot an arrow).
  */
 export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COAL, name: 'coal', displayName: 'Coal', texture: 'coal', stackSize: 64, placeable: false },
@@ -100,7 +110,10 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.BUCKET, name: 'bucket', displayName: 'Bucket', texture: 'bucket', stackSize: 16, placeable: false },
   { id: ItemIds.WATER_BUCKET, name: 'water_bucket', displayName: 'Water Bucket', texture: 'water_bucket', stackSize: 1, placeable: false },
   { id: ItemIds.LAVA_BUCKET, name: 'lava_bucket', displayName: 'Lava Bucket', texture: 'lava_bucket', stackSize: 1, placeable: false },
-  { id: ItemIds.STICK, name: 'stick', displayName: 'Stick', texture: 'stick', stackSize: 64, placeable: false },
+  { id: ItemIds.STICK, name: 'stick', displayName: 'Stick', texture: 'stick', stackSize: 1, placeable: false, knockback: HAND_KNOCKBACK + 5 }, // a knockback weapon: no extra damage, +5 knockback, does not stack
+  { id: ItemIds.STRING, name: 'string', displayName: 'String', texture: 'string', stackSize: 64, placeable: false },
+  { id: ItemIds.BOW, name: 'bow', displayName: 'Bow', texture: 'bow', stackSize: 1, placeable: false, bow: true },
+  { id: ItemIds.ARROW, name: 'arrow', displayName: 'Arrow', texture: 'arrow', stackSize: 64, placeable: false },
   { id: ItemIds.RAW_BEEF, name: 'raw_beef', displayName: 'Raw Beef', texture: 'raw_beef', stackSize: 64, placeable: false, food: { heal: 12 } },
   { id: ItemIds.RAW_PORKCHOP, name: 'raw_porkchop', displayName: 'Raw Porkchop', texture: 'raw_porkchop', stackSize: 64, placeable: false, food: { heal: 12 } },
   { id: ItemIds.RAW_MUTTON, name: 'raw_mutton', displayName: 'Raw Mutton', texture: 'raw_mutton', stackSize: 64, placeable: false, food: { heal: 10 } },

@@ -96,7 +96,7 @@ export class InventoryScreen {
     if (this.catalogBuilt) return;
     this.catalogBuilt = true;
     const t0 = performance.now();
-    for (const item of ItemRegistry.all()) {
+    for (const item of ItemRegistry.catalog()) { // catalog order: by category, then tier (wood → stone → gold → iron → diamond)
       const el = document.createElement('div');
       el.className = 'slot catalog-slot';
       el.dataset.item = String(item.id);

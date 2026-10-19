@@ -1,6 +1,9 @@
-// ModelParts.js — box parts with pivot groups for the character models. Flat colors, no skin texture.
+// ModelParts.js — box parts with pivot groups for the character models: flat-colour parts (the first-person fallbacks)
+// and skin-textured parts whose UVs follow the 64×64 Minecraft skin layout (SkinLayout.js) through the mobs' box-UV net.
 
 import * as THREE from 'three';
+import { applyNetUVs } from '../../entities/mobs/MobModel.js';
+import { SKIN_SIZE } from './SkinLayout.js';
 
 /** One model pixel in world units (32 px tall model = 1.8 blocks). */
 export const PX = 1.8 / 32;
@@ -47,6 +50,41 @@ export function createPart(w, h, d, color, offset = [0, 0, 0]) {
   const geom = new THREE.BoxGeometry(w * PX, h * PX, d * PX);
   const mesh = new THREE.Mesh(geom, partMaterial(color));
   mesh.position.set(offset[0] * PX, offset[1] * PX, offset[2] * PX);
+  const pivot = new THREE.Group();
+  pivot.add(mesh);
+  return { pivot, mesh };
+}
+
+const skinMaterials = new Map();
+/** The alpha-tested Lambert material of one skin sheet (shared; tintModelLight clones it per model, hurtVariant per flash). */
+export function skinMaterial(texture) {
+  let m = skinMaterials.get(texture);
+  if (!m) { m = new THREE.MeshLambertMaterial({ map: texture, alphaTest: 0.5, transparent: false, side: THREE.FrontSide }); if (!texture) m.color.set(0xff00ff); skinMaterials.set(texture, m); }
+  return m;
+}
+
+const skinGeometries = new Map();
+/** A box geometry with the skin layout's net for `part` (SkinLayout.js), inflated by `inflate` pixels; cached per part + inflate. */
+export function skinGeometry(part, inflate = 0) {
+  const key = `${part.name}:${inflate}`;
+  let geom = skinGeometries.get(key);
+  if (!geom) {
+    const [W, H, D] = part.size;
+    geom = new THREE.BoxGeometry((W + 2 * inflate) * PX, (H + 2 * inflate) * PX, (D + 2 * inflate) * PX);
+    applyNetUVs(geom, part.uv[0], part.uv[1], W, H, D, SKIN_SIZE[0], SKIN_SIZE[1]);
+    skinGeometries.set(key, geom);
+  }
+  return geom;
+}
+
+/**
+ * A skin-textured part from the layout table: the box with its net UVs inside a pivot group at the part's offset.
+ * `texture` is the 64×64 skin (textures/entity/player.png or a mob's); null paints it magenta like a missing mob sheet.
+ */
+export function createSkinPart(part, texture, inflate = 0) {
+  const mesh = new THREE.Mesh(skinGeometry(part, inflate), skinMaterial(texture));
+  mesh.position.set(part.offset[0] * PX, part.offset[1] * PX, part.offset[2] * PX);
+  mesh.name = part.name;
   const pivot = new THREE.Group();
   pivot.add(mesh);
   return { pivot, mesh };

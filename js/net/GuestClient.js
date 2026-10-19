@@ -124,7 +124,7 @@ export class GuestClient {
     on('inventory:changed', () => { this._sendMeta(); this.invDirty = true; });
     on('inventory:selected', () => this._sendMeta());
     on('gamemode:changed', () => this._sendMeta());
-    on('player:attack', (mobId, damage, crit) => this.link.send(Msg.ATTACK, { id: mobId, damage, crit }));
+    on('player:attack', (mobId, damage, crit, kb) => this.link.send(Msg.ATTACK, { id: mobId, damage, crit, kb: kb || 1 }));
     // Health: hits on other players go to the host; our health and deaths are reported.
     on('player:hitPlayer', (targetId, crit) => this.link.send(Msg.HIT, { target: targetId, crit }));
     on('player:damaged', () => { this.link.send(Msg.HEALTH, { hp: g.player.health, hurt: true }); this.healthDirty = false; });
@@ -141,6 +141,12 @@ export class GuestClient {
     const s = g.inventory.getSelected();
     this.link.send(Msg.META, { held: s ? s.itemId : 0, armor: g.inventory.armorMaterials(), mode: g.player.gameMode });
   }
+
+  /** Shoot through the host: it validates (origin near the eyes, power, cooldown, arrows) and spawns the arrow for everyone. */
+  shoot(eye, dir, power) { if (this.link && this.link.open) this.link.send(Msg.SHOOT, { ox: eye.x, oy: eye.y, oz: eye.z, dx: dir.x, dy: dir.y, dz: dir.z, power }); }
+
+  /** A placed explosive goes through the host (it primes the entity for everyone, or refuses when explosives are off). */
+  prime(x, y, z) { if (this.link && this.link.open) this.link.send(Msg.PRIME, { x, y, z }); }
 
   /** Ask the host to place us (a respawn, or a void jump): the host resets its movement baseline and answers with SPAWN_AT. */
   requestRespawn(reason = 'respawn') { if (this.link && this.link.open) this.link.send(Msg.RESPAWN, { reason }); }
@@ -168,17 +174,17 @@ export class GuestClient {
       case Msg.BLOCK: this._applyBlock(msg.x, msg.y, msg.z, msg.id, msg.by, msg.kind); return;
       case Msg.BLOCK_REJECT: { const p = this.pendingBlocks.get(msg.seq); this.pendingBlocks.delete(msg.seq); this._applyBlock(msg.x, msg.y, msg.z, msg.id, null, 'revert'); if (p) this._refund(p, msg.reason); return; }
       case Msg.PS: { const now = performance.now() / 1000; for (const row of msg.list) { const id = row[0]; if (id === this.userId) continue; const rp = this.remote.get(id) || this.remote.add(id, id === this.hostId && this.welcome ? this.welcome.hostName : 'player'); rp.snapshot(now, row.slice(1)); } return; }
-      case Msg.M: { if (g.entities.mobs) g.entities.mobs.applySnapshot(msg.mobs, performance.now() / 1000); g.entities.applySnapshot(msg.items); return; }
+      case Msg.M: { if (g.entities.mobs) g.entities.mobs.applySnapshot(msg.mobs, performance.now() / 1000); g.entities.applySnapshot(msg.items); if (msg.ex) g.entities.applyExplosiveSnapshot(msg.ex); return; }
       case Msg.JOIN: { const rp = this.remote.add(msg.id, msg.name); if (msg.held !== undefined) rp.setMeta(msg); return; } // the host's chat line announces the join
       case Msg.LEAVE: { this.remote.remove(msg.id); return; }
       case Msg.META: { const rp = this.remote.get(msg.id); if (rp) rp.setMeta(msg); return; }
       case Msg.MODE: { this.canChangeMode = !!msg.canChange; if (msg.mode && g.player.gameMode !== msg.mode) g.setGameMode(msg.mode, true); return; }
-      case Msg.DAMAGE: g.health.damage(msg.n, { kind: 'pvp', by: msg.by }, { kx: msg.kx || 0, kz: msg.kz || 0, crit: !!msg.crit, ignoreInvuln: true }); return;
+      case Msg.DAMAGE: { g.health.damage(msg.n, { kind: msg.kind || 'pvp', by: msg.by }, { kx: msg.kx || 0, kz: msg.kz || 0, crit: !!msg.crit, ignoreInvuln: true }); if (msg.ky) { g.player.velocity.y += Number(msg.ky) || 0; g.cameraController.shake(0.6); } return; }
       case Msg.HURT: { const rp = this.remote.get(msg.id); if (rp) rp.hurt(!!msg.crit, msg.n | 0); return; }
       case Msg.DEATH: if (msg.text) g.ui.chat.system(String(msg.text).slice(0, 256), 'yellow'); return;
       case Msg.CHAT: if (msg.system !== undefined) g.ui.chat.system(String(msg.system).slice(0, 256), msg.color === 'gray' || msg.color === 'red' ? msg.color : 'yellow'); else if (msg.name && msg.text) g.ui.chat.add({ name: String(msg.name).slice(0, 16), text: String(msg.text).slice(0, 256), host: !!msg.host }); return;
       case Msg.TICK: g.setTickRate(Number(msg.rate) || 20, true); g.setTickFrozen(!!msg.frozen, true); return;
-      case Msg.WORLD: if (g.worldMeta) { g.worldMeta.keepInventory = !!msg.keepInventory; g.worldMeta.pvp = msg.pvp !== false; } return;
+      case Msg.WORLD: if (g.worldMeta) { g.worldMeta.keepInventory = !!msg.keepInventory; g.worldMeta.pvp = msg.pvp !== false; g.worldMeta.hostileMobs = msg.hostileMobs !== false; g.worldMeta.explosives = msg.explosives !== false; g.worldMeta.explosionsBreakBlocks = msg.explosionsBreakBlocks !== false; } return;
       case Msg.SWING: { const rp = this.remote.get(msg.id); if (rp) rp.swing(); return; }
       case Msg.MINING: { const rp = this.remote.get(msg.id); if (rp) { if (msg.stop) rp.miningStop(); else rp.mining(msg.x, msg.y, msg.z, msg.p); } return; }
       case Msg.SOUND: g.audio.playAt(msg.name, msg.x, msg.y, msg.z, 'blocks', msg.vol || 0.8); return;
@@ -187,6 +193,11 @@ export class GuestClient {
       case Msg.MOB_HURT: g.entities.mobs.hurtRemote(msg); return;
       case Msg.ITEM_SPAWN: g.entities.spawnItem(msg.x, msg.y, msg.z, msg.item, msg.n, msg.vx, msg.vy, msg.vz, 0.25, msg.id); return;
       case Msg.ITEM_REMOVE: g.entities.removeById(msg.id); return;
+      case Msg.ARROW_SPAWN: { const len = Math.hypot(msg.vx, msg.vy, msg.vz) || 1; g.entities.shootArrow({ x: msg.x, y: msg.y, z: msg.z }, { x: msg.vx / len, y: msg.vy / len, z: msg.vz / len }, msg.power, msg.shooter === this.userId ? 'self' : msg.shooter, { pickup: !!msg.pickup, id: msg.id, remote: true, crit: !!msg.crit, vx: msg.vx, vy: msg.vy, vz: msg.vz }); return; }
+      case Msg.ARROW_STUCK: g.entities.stickArrowAt(msg.id, msg.x, msg.y, msg.z); return;
+      case Msg.ARROW_REMOVE: g.entities.removeArrow(g.entities.arrowById(msg.id)); return;
+      case Msg.EXPLOSIVE_SPAWN: g.entities.primeExplosive(msg.x, msg.y, msg.z, msg.fuse, { vx: msg.vx, vy: msg.vy, vz: msg.vz, id: msg.id, remote: true, exact: true }); return;
+      case Msg.EXPLOSION: g.entities.explodeRemote(msg.id, msg.x, msg.y, msg.z, msg.power); return;
       case Msg.ITEM_GRANT: { const left = g.inventory.addItem(msg.item, msg.n); if (left < msg.n) g.events.emit('item:pickup', msg.item, msg.n - left); return; }
       case Msg.SPAWN_AT: g.health.placeAt(Number(msg.x) || 0, Number(msg.y) || 0, Number(msg.z) || 0, msg.reason); return;
       case Msg.HOST_CLOSED: this._closed('host closed'); return;

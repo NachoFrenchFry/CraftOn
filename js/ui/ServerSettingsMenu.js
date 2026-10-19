@@ -18,12 +18,19 @@ export class ServerSettingsMenu {
     this.title = document.getElementById('srv-title');
     this.pvp = document.getElementById('srv-pvp');
     this.keepInv = document.getElementById('srv-keep-inv');
+    this.hostile = document.getElementById('srv-hostile');
+    this.explosives = document.getElementById('srv-explosives');
+    this.explosionsBreak = document.getElementById('srv-explosions-break');
     this.hostOnly = [...this.root.querySelectorAll('.srv-host-only')];
     this.onDone = null;
     this.timer = null;
     // World settings: PvP (hosting only) and keep inventory, saved in the world, sent to guests.
     this.pvp.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('pvp', this.pvp.checked); });
     this.keepInv.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('keepInventory', this.keepInv.checked); });
+    // Hostile mobs off despawns every zombie at once; the explosives toggles stop placing / block destruction (griefing protection).
+    this.hostile.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('hostileMobs', this.hostile.checked); if (game.entities.mobs) game.entities.mobs.setHostileEnabled(this.hostile.checked); });
+    this.explosives.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('explosives', this.explosives.checked); });
+    this.explosionsBreak.addEventListener('change', () => { game.audio.playUI('click'); this._setWorld('explosionsBreakBlocks', this.explosionsBreak.checked); });
     this.defaultSel.addEventListener('change', () => { game.audio.playUI('click'); if (game.net && game.net.isHost) game.net.setDefaultMode(this.defaultSel.value); });
     this.hostSel.addEventListener('change', () => { game.audio.playUI('click'); game.setGameMode(this.hostSel.value); });
     document.getElementById('btn-srv-back').addEventListener('click', () => { game.audio.playUI('click'); this.close(); });
@@ -56,6 +63,9 @@ export class ServerSettingsMenu {
     for (const el of this.hostOnly) el.classList.toggle('hidden', !hosting);
     this.pvp.checked = !meta || meta.pvp !== false;
     this.keepInv.checked = !!(meta && meta.keepInventory);
+    this.hostile.checked = !meta || meta.hostileMobs !== false;
+    this.explosives.checked = !meta || meta.explosives !== false;
+    this.explosionsBreak.checked = !meta || meta.explosionsBreakBlocks !== false;
     this.list.textContent = '';
     if (!hosting) return;
     this.defaultSel.value = net.defaultMode;

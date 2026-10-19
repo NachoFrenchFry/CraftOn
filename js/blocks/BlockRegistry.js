@@ -35,6 +35,12 @@ export const FACE_TILE = new Int16Array(BLOCK_COUNT * 6);
 export const FACE_TEXTURE = new Array(BLOCK_COUNT * 6).fill(null);
 /** 1 where a face's texture is turned 90° (oriented logs keep their grain along the axis). */
 export const FACE_ROT = new Uint8Array(BLOCK_COUNT * 6);
+/**
+ * Blast resistance per block (explosions, js/entities/Explosion.js): the definition's `blast`, else 6 for stone-type
+ * blocks, 3 for wood-type, 0 for plants / torches / air, 100 for liquids (a blast inside water breaks nothing) and 0.5
+ * for soils, sand, gravel, wool, ice and the rest. Infinity = immune (obsidian, bedrock).
+ */
+export const BLAST_RESISTANCE = new Float32Array(BLOCK_COUNT);
 const FACE_INDEX = { east: 0, west: 1, up: 2, down: 3, south: 4, north: 5 };
 
 const defsById = new Array(BLOCK_COUNT).fill(null);
@@ -73,6 +79,7 @@ for (const def of BLOCK_DEFINITIONS) {
   STONE_TYPE[id] = def.stoneType ? 1 : 0;
   WOOD_TYPE[id] = def.woodType ? 1 : 0;
   CULL_SAME[id] = def.cullSameType === false ? 0 : 1;
+  BLAST_RESISTANCE[id] = def.blast !== undefined ? def.blast : RENDER_TYPE[id] === RenderType.LIQUID ? 100 : (RENDER_TYPE[id] === RenderType.CROSS || RENDER_TYPE[id] === RenderType.TORCH || RENDER_TYPE[id] === RenderType.NONE) ? 0 : def.stoneType ? 6 : def.woodType ? 3 : 0.5;
   const names = faceTextureNames(def.textures);
   for (let f = 0; f < 6; f++) {
     FACE_TEXTURE[id * 6 + f] = names[f];
@@ -151,6 +158,8 @@ export const BlockRegistry = {
   /** [dx, dy, dz] of the block that must stay for this one to stay, or null. */
   supportDir(id) { const i = id * 3; return SUPPORT_DIR[i] || SUPPORT_DIR[i + 1] || SUPPORT_DIR[i + 2] ? [SUPPORT_DIR[i], SUPPORT_DIR[i + 1], SUPPORT_DIR[i + 2]] : null; },
   dropChance(id) { const d = defsById[id]; return d && d.dropChance !== undefined ? d.dropChance : 1; },
+  /** Blast resistance (Infinity = immune). */
+  blastResistance(id) { return BLAST_RESISTANCE[id]; },
   faceTexture(id, dir) { return FACE_TEXTURE[id * 6 + dir]; },
   faceTile(id, dir) { return FACE_TILE[id * 6 + dir]; },
   topTexture(id) { return FACE_TEXTURE[id * 6 + Direction.UP]; },

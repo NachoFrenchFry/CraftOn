@@ -59,6 +59,13 @@ export const RECIPES = Object.freeze([
   { id: 'grass_block', result: { item: 'grass_block', count: 1 }, inputs: [{ item: 'dirt', count: 1 }, { item: 'grass', count: 1 }], stations: ['crafting_table'] },
   { id: 'snowy_grass', result: { item: 'snowy_grass', count: 1 }, inputs: [{ item: 'dirt', count: 1 }, { item: 'snow', count: 1 }], stations: ['crafting_table'] },
   { id: 'dead_bush', result: { item: 'dead_bush', count: 1 }, inputs: [{ item: 'stick', count: 3 }], stations: ['crafting_table'] },
+  // String from any wool (9 per block), the bow, arrows (a placeholder recipe: easy to change) and explosives.
+  { id: 'string', result: { item: 'string', count: 9 }, inputs: [{ item: 'wool_white', count: 1 }], stations: ['crafting_table'] },
+  { id: 'string_red', result: { item: 'string', count: 9 }, inputs: [{ item: 'wool_red', count: 1 }], stations: ['crafting_table'] },
+  { id: 'string_blue', result: { item: 'string', count: 9 }, inputs: [{ item: 'wool_blue', count: 1 }], stations: ['crafting_table'] },
+  { id: 'bow', result: { item: 'bow', count: 1 }, inputs: [{ item: 'planks', count: 3 }, { item: 'string', count: 2 }], stations: ['crafting_table'] },
+  { id: 'arrow', result: { item: 'arrow', count: 4 }, inputs: [{ item: 'stick', count: 1 }, { item: 'gravel', count: 1 }], stations: ['crafting_table'] },
+  { id: 'explosives', result: { item: 'explosives', count: 1 }, inputs: [{ item: 'sand', count: 4 }, { item: 'gravel', count: 4 }, { item: 'iron_ingot', count: 2 }], stations: ['crafting_table'] },
   // Obsidian only comes from here: the two buckets are emptied and handed back (byproducts).
   { id: 'obsidian', result: { item: 'obsidian', count: 1 }, inputs: [{ item: 'lava_bucket', count: 1 }, { item: 'water_bucket', count: 1 }], byproducts: [{ item: 'bucket', count: 2 }], stations: ['crafting_table'] },
   // Smelting (instant): 1 coal + 1 ore block each.

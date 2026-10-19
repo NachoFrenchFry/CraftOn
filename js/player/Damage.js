@@ -51,7 +51,25 @@ export function pvpDamage(attackDamage, crit, victimArmorPoints = 0) {
   return Math.max(0, Math.round(attackDamage * PVP_DAMAGE_SCALE * (crit ? CRIT_MULTIPLIER : 1) * armorReduction(victimArmorPoints)));
 }
 
-/** Death causes: { kind: 'fall' | 'void' | 'pvp' | 'lava' | 'fire', by }. */
+// ---- Zombies, arrows and explosions ----
+/** A zombie's melee hit after the victim's armor (15 before it: Minecraft's 3 hearts × 5). */
+export function zombieDamage(armorPoints = 0, base = 15) { return Math.max(1, Math.round(base * armorReduction(armorPoints))); }
+
+/** Arrow damage against a mob at draw power `p` (0..1): round(9 × p), plus `bonus` (0–4, rolled by the caller) when fully drawn. */
+export function arrowMobDamage(power, bonus = 0) { return Math.round(9 * power) + (power >= 1 ? bonus : 0); }
+/** Arrow damage against a player: the mob damage × 5, reduced by armor. */
+export function arrowPlayerDamage(power, bonus = 0, victimArmorPoints = 0) { return Math.max(0, Math.round(arrowMobDamage(power, bonus) * PVP_DAMAGE_SCALE * armorReduction(victimArmorPoints))); }
+/** The bow's power curve: (t² + 2t) / 3 for the draw fraction t (1 at a full draw). */
+export function bowPower(t) { t = Math.max(0, Math.min(1, t)); return (t * t + 2 * t) / 3; }
+
+/** Minecraft's explosion damage before the player scale: impact = (1 − distance / (2 × power)) × exposure. */
+export function explosionImpact(distance, exposure, power) { return Math.max(0, Math.min(1, (1 - distance / (2 * power)) * exposure)); }
+export function explosionBaseDamage(impact, power) { return impact <= 0 ? 0 : ((impact * impact + impact) / 2) * 7 * power + 1; }
+/** A player's explosion damage: the base × 5 (the 100-health scale), reduced by armor (capped at 70 %). */
+export function explosionPlayerDamage(impact, power, victimArmorPoints = 0) { return impact <= 0 ? 0 : Math.max(0, Math.round(explosionBaseDamage(impact, power) * PVP_DAMAGE_SCALE * armorReduction(victimArmorPoints))); }
+export function explosionMobDamage(impact, power) { return impact <= 0 ? 0 : Math.round(explosionBaseDamage(impact, power) * 10) / 10; }
+
+/** Death causes: { kind: 'fall' | 'void' | 'pvp' | 'lava' | 'fire' | 'zombie' | 'arrow' | 'explosion', by }. */
 export function causeText(cause) {
   if (!cause) return 'Died';
   if (cause.kind === 'fall') return 'Fell from a high place';
@@ -59,6 +77,9 @@ export function causeText(cause) {
   if (cause.kind === 'pvp') return `Slain by ${cause.by || 'another player'}`;
   if (cause.kind === 'lava') return 'Tried to swim in lava';
   if (cause.kind === 'fire') return 'Burned to death';
+  if (cause.kind === 'zombie') return 'Slain by a Zombie';
+  if (cause.kind === 'arrow') return `Shot by ${cause.by || 'another player'}`;
+  if (cause.kind === 'explosion') return 'Blown up';
   return 'Died';
 }
 
@@ -70,5 +91,8 @@ export function deathMessage(name, cause) {
   if (cause.kind === 'pvp') return `${name} was slain by ${cause.by || 'another player'}`;
   if (cause.kind === 'lava') return `${name} tried to swim in lava`;
   if (cause.kind === 'fire') return `${name} burned to death`;
+  if (cause.kind === 'zombie') return `${name} was slain by a Zombie`;
+  if (cause.kind === 'arrow') return `${name} was shot by ${cause.by || 'another player'}`;
+  if (cause.kind === 'explosion') return `${name} was blown up`;
   return `${name} died`;
 }

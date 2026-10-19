@@ -101,7 +101,7 @@ export class WorldSession {
     for (const [key, data] of edits) g.world.edits.loadChunk(key, data);
     // Mobs must be registered before chunks stream in, so they reappear when their chunk loads.
     this.spawnedChunks = new Set(Array.isArray(meta.spawnedChunks) ? meta.spawnedChunks : []);
-    if (g.entities.mobs) g.entities.mobs.deserialize(meta.mobs);
+    if (g.entities.mobs) { g.entities.mobs.deserialize(meta.mobs); g.entities.mobs.setHostileEnabled(meta.hostileMobs !== false); }
 
     // Player, inventory and mode.
     const p = g.player;
@@ -169,7 +169,7 @@ export class WorldSession {
       return false;
     }
     if (g.sessionGuard) g.sessionGuard.claim();
-    const meta = { id: null, remote: true, name: w.worldName, seed: w.seed >>> 0, seedText: '', gameMode: w.gameMode, hostName: w.hostName, player: w.you ? w.you.player : null, inventory: w.you ? w.you.inventory : null, spawnedChunks: [], entities: [], mobs: [], guests: {} };
+    const meta = { id: null, remote: true, name: w.worldName, seed: w.seed >>> 0, seedText: '', gameMode: w.gameMode, hostName: w.hostName, player: w.you ? w.you.player : null, inventory: w.you ? w.you.inventory : null, spawnedChunks: [], entities: [], mobs: [], guests: {}, hostileMobs: w.hostileMobs !== false, explosives: w.explosives !== false, explosionsBreakBlocks: w.explosionsBreakBlocks !== false };
     this.meta = meta;
     g.worldMeta = meta;
     g.ui.loading.show('Generating terrain…');

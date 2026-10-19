@@ -67,8 +67,8 @@ export class CloudSaveManager {
     return (rows || []).map((r) => ({ id: r.id, name: r.name, seed: Number(r.seed), seedText: r.seedText || '', gameMode: r.game_mode, lastPlayed: r.updated_at ? Date.parse(r.updated_at) : 0 }));
   }
 
-  async createWorld({ name, seed, seedText, gameMode }) {
-    const row = check(await this.client.from('worlds').insert({ name, seed, game_mode: gameMode, data: { seedText: seedText || '' } }).select('id, name, seed, game_mode, data, created_at, updated_at').single(), 'create world');
+  async createWorld({ name, seed, seedText, gameMode, hostileMobs = true }) {
+    const row = check(await this.client.from('worlds').insert({ name, seed, game_mode: gameMode, data: { seedText: seedText || '', hostileMobs: hostileMobs !== false } }).select('id, name, seed, game_mode, data, created_at, updated_at').single(), 'create world');
     return { ...this._record(row), player: null, inventory: null, entities: [], mobs: [], spawnedChunks: [] };
   }
 

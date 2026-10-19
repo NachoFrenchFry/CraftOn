@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { MOB_PX } from '../../config/Constants.js';
-import { TEXTURE_FILES, ENTITY_TEXTURES, ENTITY_TEXTURE_SIZE, ARMOR_TEXTURES } from '../../config/TextureManifest.js';
+import { TEXTURE_FILES, ENTITY_TEXTURES, ENTITY_TEXTURE_SIZE, ENTITY_TEXTURE_SIZES, ARMOR_TEXTURES } from '../../config/TextureManifest.js';
 import { netRects } from './MobNet.js';
 
 // BoxGeometry face groups in order: +X, -X, +Y, -Y, +Z, -Z. Each face has 4 vertices whose UVs are
@@ -53,7 +53,8 @@ export async function loadEntityTextures() {
       tex = new THREE.CanvasTexture(c); // flipY = true is honoured for canvases
     } catch (e) {
       console.warn(`MobModel: entity texture ${name} failed to load (${e.message}); run "node tools/export-textures.mjs"`);
-      const c = document.createElement('canvas'); c.width = 64; c.height = 32;
+      const size = ENTITY_TEXTURE_SIZES[name] || ENTITY_TEXTURE_SIZE;
+      const c = document.createElement('canvas'); c.width = size[0]; c.height = size[1];
       const ctx = c.getContext('2d'); ctx.fillStyle = '#ff00ff'; ctx.fillRect(0, 0, 64, 32);
       tex = new THREE.CanvasTexture(c);
     }
@@ -79,7 +80,8 @@ function partGeometry(def, part) {
     const [W, H, D] = part.size;
     const inflate = part.inflate || 0;
     geom = new THREE.BoxGeometry((W + 2 * inflate) * MOB_PX, (H + 2 * inflate) * MOB_PX, (D + 2 * inflate) * MOB_PX);
-    applyNetUVs(geom, part.uv[0], part.uv[1], W, H, D);
+    const sheet = def.sheet || ENTITY_TEXTURE_SIZE; // the zombie uses the 64×64 skin layout
+    applyNetUVs(geom, part.uv[0], part.uv[1], W, H, D, sheet[0], sheet[1]);
     partGeometries.set(key, geom);
   }
   return geom;

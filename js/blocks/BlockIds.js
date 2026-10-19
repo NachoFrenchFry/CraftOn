@@ -79,9 +79,11 @@ export const BlockIds = Object.freeze({
   IRON_BLOCK: 70,
   GOLD_BLOCK: 71,
   DIAMOND_BLOCK: 72,
+  /** Explosives (bloxd-style TNT): placing one primes it at once, so the block itself only exists as an item / icon or when set directly. */
+  EXPLOSIVES: 73,
 });
 
-export const BLOCK_COUNT = 73;
+export const BLOCK_COUNT = 74;
 
 /** Ids of blocks that no longer exist. Saved chunk edits holding them are converted to stone on load. */
 export const REMOVED_BLOCK_IDS = Object.freeze([16, 28, 29]);

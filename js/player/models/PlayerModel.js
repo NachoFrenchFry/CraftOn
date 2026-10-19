@@ -1,15 +1,19 @@
-// PlayerModel.js — third-person body built from boxes: walk cycle, head look, body yaw lag,
-// sneaking tilt, forward arm swing while mining/placing, a held block in the right hand, worn armor as a
-// textured 3D layer (ArmorModel.js), and a horizontal swimming pose with still arms and a flutter kick.
+// PlayerModel.js — third-person body built from the six skin-textured boxes of the 64×64 Minecraft skin layout
+// (SkinLayout.js, textures/entity/player.png: the face is painted into the head's front pixels, so there are no eye
+// boxes): walk cycle, head look, body yaw lag, sneaking tilt, forward arm swing while mining/placing, a held item in the
+// right hand (with the bow's draw frames and an aiming pose), worn armor as a textured 3D layer (ArmorModel.js), and a
+// horizontal swimming pose with still arms and a flutter kick.
 
 import * as THREE from 'three';
-import { createPart, partMaterial, COLORS, PX, setToolHandleRotation, tintModelLight } from './ModelParts.js';
+import { createSkinPart, PX, setToolHandleRotation, tintModelLight } from './ModelParts.js';
+import { SKIN_PART_BY_NAME } from './SkinLayout.js';
 import { createBlockGeometry } from '../../rendering/BlockGeometry.js';
 import { BlockRegistry } from '../../blocks/BlockRegistry.js';
 import { Direction } from '../../utils/Direction.js';
 import { sameLight, copyLight } from '../../rendering/LightUniforms.js';
 import { createItemSpriteGeometry } from '../../rendering/ItemSpriteGeometry.js';
 import { ItemRegistry } from '../../items/ItemRegistry.js';
+import { BOW_FRAMES } from '../../items/ItemDefinitions.js';
 import { angleDelta, damp, clamp } from '../../utils/MathUtils.js';
 import { WALK_SPEED, POSE_TRANSITION_SECONDS, PLAYER_SWIM_HEIGHT } from '../../config/Constants.js';
 import { buildArmorLayer, applyWornArmor } from './ArmorModel.js';
@@ -56,8 +60,14 @@ export class PlayerModel {
     /** Hurt flash: seconds left with every part tinted red. */
     this.flashTimer = 0;
     this._hurtOn = false;
+    /** Bow: 0 = not drawing, 1–3 = the pulling frame shown (both arms raised in an aiming pose). */
+    this.bowFrame = 0;
+    this.heldFrameTexture = null;
     this._build();
   }
+
+  /** The skin sheet (textures/entity/player.png) when the entity textures are loaded. */
+  get skin() { return this.entityTextures ? this.entityTextures.get('player') || null : null; }
 
   flash(seconds = 0.35) { this.flashTimer = seconds; }
 
@@ -80,44 +90,38 @@ export class PlayerModel {
   }
 
   _build() {
+    const skin = this.skin;
+    const P = SKIN_PART_BY_NAME;
     // Everything hangs off the hips group so the whole body can rotate horizontal for swimming.
     this.hips = new THREE.Group();
     this.hips.position.set(0, HIP_HEIGHT, 0);
-    this.leftLeg = createPart(4, 12, 4, COLORS.pants, [0, -6, 0]);
-    this.rightLeg = createPart(4, 12, 4, COLORS.pants, [0, -6, 0]);
+    // The six textured boxes of the skin layout (the pivots keep the layout's joints: legs at the hips, arms 1 px below the shoulder top).
+    this.leftLeg = createSkinPart(P.leftLeg, skin);
+    this.rightLeg = createSkinPart(P.rightLeg, skin);
     // The model faces -Z, so its right-hand side is +X.
     this.leftLeg.pivot.position.set(-2 * PX, 0, 0);
     this.rightLeg.pivot.position.set(2 * PX, 0, 0);
-    for (const leg of [this.leftLeg, this.rightLeg]) {
-      const shoe = createPart(4.2, 2, 4.2, COLORS.shoes, [0, -11, 0]);
-      leg.pivot.add(shoe.mesh);
-    }
     // Body pivot at the hips; torso above it; head and arms attached to the torso top.
     this.bodyPivot = new THREE.Group();
     this.bodyPivot.position.set(0, 0, 0);
-    this.body = createPart(8, 12, 4, COLORS.shirt, [0, 6, 0]);
+    this.body = createSkinPart(P.body, skin);
     this.bodyPivot.add(this.body.mesh);
-    this.head = createPart(8, 8, 8, COLORS.skin, [0, 4, 0]);
+    this.head = createSkinPart(P.head, skin);
     this.head.pivot.position.set(0, 12 * PX, 0);
-    const hair = createPart(8.4, 2.4, 8.4, COLORS.hair, [0, 7.2, 0]);
-    this.head.pivot.add(hair.mesh);
-    const eyeL = createPart(2, 1, 0.6, COLORS.eyeWhite, [2, 4, -4]);
-    const eyeR = createPart(2, 1, 0.6, COLORS.eyeWhite, [-2, 4, -4]);
-    const pupilL = createPart(1, 1, 0.7, COLORS.pupil, [1.5, 4, -4]);
-    const pupilR = createPart(1, 1, 0.7, COLORS.pupil, [-1.5, 4, -4]);
-    this.head.pivot.add(eyeL.mesh, eyeR.mesh, pupilL.mesh, pupilR.mesh);
     this.bodyPivot.add(this.head.pivot);
-    // Arms: shoulder pivots at the torso top corners.
-    this.leftArm = createPart(4, 12, 4, COLORS.shirt, [0, -6, 0]);
-    this.rightArm = createPart(4, 12, 4, COLORS.shirt, [0, -6, 0]);
+    // Arms: shoulder pivots at the torso top corners (the hands are the skin's lower arm rows).
+    this.leftArm = createSkinPart(P.leftArm, skin);
+    this.rightArm = createSkinPart(P.rightArm, skin);
     this.leftArm.pivot.position.set(-6 * PX, 11 * PX, 0);
     this.rightArm.pivot.position.set(6 * PX, 11 * PX, 0);
+    /** Hand markers (empty objects at the fists) for poses and checks. */
     this.hands = [];
     for (const arm of [this.leftArm, this.rightArm]) {
-      const hand = createPart(4.1, 4, 4.1, COLORS.skin, [0, -10, 0]);
-      arm.pivot.add(hand.mesh);
-      arm.hand = hand.mesh;
-      this.hands.push(hand.mesh);
+      const hand = new THREE.Object3D();
+      hand.position.set(0, -10 * PX, 0);
+      arm.pivot.add(hand);
+      arm.hand = hand;
+      this.hands.push(hand);
     }
     this.bodyPivot.add(this.leftArm.pivot, this.rightArm.pivot);
     // Held block anchor at the right hand.
@@ -151,10 +155,14 @@ export class PlayerModel {
     if (changed) applyWornArmor(this.armorMeshes, this.armor, this.entityTextures);
   }
 
-  /** Show an item in the right hand: block items as a cube, other items as an extruded sprite. */
-  setHeldItem(itemId) {
-    if (itemId === this.heldBlockId) return;
+  /**
+   * Show an item in the right hand: block items as a cube, other items as an extruded sprite. `frameTexture` replaces the
+   * item's own texture for the sprite (the bow's pulling frames).
+   */
+  setHeldItem(itemId, frameTexture = null) {
+    if (itemId === this.heldBlockId && frameTexture === this.heldFrameTexture) return;
     this.heldBlockId = itemId;
+    this.heldFrameTexture = frameTexture;
     if (this.heldMesh) { this.heldMesh.removeFromParent(); this.heldMesh = null; } // a tool's heldMesh is its pivot group; either way leave the actual parent
     const item = itemId ? ItemRegistry.get(itemId) : null;
     if (!item) return;
@@ -164,7 +172,7 @@ export class PlayerModel {
       this.heldMesh.rotation.set(0, 0, 0);
     } else {
       const size = 0.6;
-      this.heldMesh = new THREE.Mesh(createItemSpriteGeometry(this.atlas, item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture, size), this.blockMaterial); // torches: their sprite
+      this.heldMesh = new THREE.Mesh(createItemSpriteGeometry(this.atlas, frameTexture || (item.isBlock ? BlockRegistry.faceTexture(item.blockId, Direction.SOUTH) : item.texture), size), this.blockMaterial); // torches: their sprite
       if (item.tool) {
         // Tools pivot at the grip (the sprite's bottom-left corner sits on the hand): the mesh is offset by
         // half its size inside a handle group (45° roll stands the diagonal up, then the edge turn about the
@@ -183,8 +191,18 @@ export class PlayerModel {
       }
       this.heldMesh.position.set(0, 0.16, 0);
       this.heldMesh.rotation.set(-0.2, 0, 0, 'ZYX');
+      if (item.bow) { this.heldMesh.position.set(0.05, 0.22, -0.05); this.heldMesh.rotation.set(-0.35, 0.3, 0.9, 'ZYX'); } // the bow stands upright in the fist
     }
     this.heldAnchor.add(this.heldMesh);
+  }
+
+  /** The bow draw: frame 0 = not drawing (arms down), 1–3 = both arms raised forward in an aiming pose with that pulling frame on the bow. */
+  setAiming(frame) {
+    frame = frame | 0;
+    if (frame === this.bowFrame) return;
+    this.bowFrame = frame;
+    const item = this.heldBlockId ? ItemRegistry.get(this.heldBlockId) : null;
+    if (item && item.bow) this.setHeldItem(this.heldBlockId, frame > 0 ? BOW_FRAMES[Math.min(2, frame - 1)] : null);
   }
 
   /** @deprecated alias */
@@ -243,6 +261,12 @@ export class PlayerModel {
     this.rightArm.pivot.rotation.x = rightArm;
     // A held item raises the arm slightly forward.
     if (this.heldMesh) this.rightArm.pivot.rotation.x += 0.35;
+    // Drawing a bow: both arms point forward along the look direction, the left a little across the chest.
+    if (this.bowFrame > 0 && sw < 0.5) {
+      this.rightArm.pivot.rotation.x = Math.PI / 2 + p.pitch * 0.6;
+      this.leftArm.pivot.rotation.x = Math.PI / 2 + p.pitch * 0.6;
+      this.rightArm.pivot.rotation.y = 0.12; this.leftArm.pivot.rotation.y = -0.35;
+    }
 
     // Sneak: the torso leans forward about 0.5 rad toward the look direction (the model faces -Z, so a
     // negative x rotation tips the chest forward), the head stays level.

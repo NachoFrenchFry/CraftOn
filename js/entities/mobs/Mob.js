@@ -1,10 +1,11 @@
-// Mob.js — a passive mob: health, AI, voxel physics (shared with the player), model animation,
-// hurt flash / knockback, death tip-over and serialization.
+// Mob.js — a mob (passive, or hostile with a ZombieAI): health, AI, voxel physics (shared with the player), model
+// animation (four-legged animals and the humanoid zombie), hurt flash / knockback, death tip-over and serialization.
 
 import * as THREE from 'three';
 import { AABB } from '../../utils/AABB.js';
 import { Random } from '../../utils/Random.js';
 import { MobAI, MobState } from './MobAI.js';
+import { ZombieAI } from './ZombieAI.js';
 import { createMobModel } from './MobModel.js';
 import { moveBox, hasSupport, isSolidAt } from '../EntityPhysics.js';
 import { isWater, isLava } from '../../world/WaterLevels.js';
@@ -31,8 +32,12 @@ export class Mob {
     this.headYaw = this.yaw;
     this.health = def.health;
     this.rng = new Random(seed);
-    this.ai = new MobAI(this.rng);
-    this.intent = { dirX: 0, dirZ: 0, speed: 0, headYaw: this.yaw };
+    this.ai = def.hostile ? new ZombieAI(this.rng) : new MobAI(this.rng);
+    this.intent = { dirX: 0, dirZ: 0, speed: 0, headYaw: this.yaw, attack: false, targetBelow: false, targetId: null };
+    /** Hostile: seconds left of the arm swing after a hit. */
+    this.attackTimer = 0;
+    /** The world the mob lives in (set by MobManager; the pathfinder reads blocks through it). */
+    this.world = null;
     this.aiTimer = this.rng.next() * C.MOB_AI_INTERVAL;
     this.onGround = false;
     this.inWater = false;
@@ -53,7 +58,8 @@ export class Mob {
     this.walkTime = 0;
     this.walkDistance = 0;
     this.lastStepDistance = 0;
-    this.ambientTimer = 8 + this.rng.next() * 17;
+    const amb = def.ambientInterval || [8, 25];
+    this.ambientTimer = amb[0] + this.rng.next() * (amb[1] - amb[0]);
     this.frozen = false;
     this.aabb = new AABB();
     this.model = createMobModel(def, textures);
@@ -69,8 +75,10 @@ export class Mob {
     return this.aabb.setFromFeet(this.position.x, this.position.y, this.position.z, this.def.hitbox[0], this.def.hitbox[1]);
   }
 
-  /** Take damage from a position (knockback away from it). Returns true if the mob died. */
-  hurt(damage, fromX, fromZ, knockback = true) {
+  get isHostile() { return !!this.def.hostile; }
+
+  /** Take damage from a position (knockback away from it, scaled by `knockbackScale`: a stick doubles it). Returns true if the mob died. */
+  hurt(damage, fromX, fromZ, knockback = true, knockbackScale = 1) {
     if (this.isDying || this.invulnTimer > 0) return false;
     this.health -= damage;
     this.invulnTimer = C.MOB_INVULNERABLE_SECONDS;
@@ -78,20 +86,22 @@ export class Mob {
     if (knockback) {
       const dx = this.position.x - fromX, dz = this.position.z - fromZ;
       const len = Math.hypot(dx, dz) || 1;
-      this.velocity.x += (dx / len) * C.MOB_KNOCKBACK;
-      this.velocity.z += (dz / len) * C.MOB_KNOCKBACK;
-      this.velocity.y = Math.max(this.velocity.y, C.MOB_KNOCKBACK_UP);
+      this.velocity.x += (dx / len) * C.MOB_KNOCKBACK * knockbackScale;
+      this.velocity.z += (dz / len) * C.MOB_KNOCKBACK * knockbackScale;
+      this.velocity.y = Math.max(this.velocity.y, C.MOB_KNOCKBACK_UP * Math.min(1.5, knockbackScale));
     }
     if (this.health <= 0) { this.deathTimer = 0; this.ai.state = MobState.DEAD; return true; }
     this.ai.panic(fromX, fromZ);
     return false;
   }
 
-  /** Physics + AI at the fixed step. `world` needs getBlock / isLoadedAt; `waterSim` may be null. */
-  fixedUpdate(dt, world, waterSim) {
+  /** Physics + AI at the fixed step. `world` needs getBlock / isLoadedAt; `waterSim` may be null; `ctx` (hostile mobs) carries the targets and the path budget. */
+  fixedUpdate(dt, world, waterSim, ctx = null) {
     const p = this.position, v = this.velocity;
+    this.world = world;
     this.prevPosition.copy(p);
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
+    if (this.attackTimer > 0) this.attackTimer -= dt;
     if (this.isDying) {
       this.deathTimer += dt;
       if (this.deathTimer >= C.MOB_DEATH_SECONDS) this.dead = true;
@@ -102,8 +112,8 @@ export class Mob {
     // AI decisions a few times per second.
     if (!this.isDying) {
       this.aiTimer -= dt;
-      if (this.aiTimer <= 0) { this.aiTimer += C.MOB_AI_INTERVAL; this.ai.decide(this, C.MOB_AI_INTERVAL, this.intent); }
-    } else { this.intent.speed = 0; }
+      if (this.aiTimer <= 0) { this.aiTimer += C.MOB_AI_INTERVAL; this.ai.decide(this, C.MOB_AI_INTERVAL, this.intent, ctx); }
+    } else { this.intent.speed = 0; this.intent.attack = false; }
 
     const box = this.updateAABB();
     const feet = world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z));
@@ -113,7 +123,7 @@ export class Mob {
 
     // Movement intent → velocity (avoid walking off drops higher than MOB_MAX_DROP, and never into lava).
     let dirX = this.intent.dirX, dirZ = this.intent.dirZ, speed = this.intent.speed;
-    if (speed > 0 && this.onGround && !this.inWater && !this.inLava && this._dropAhead(world, dirX, dirZ)) { speed = 0; this.stuckTimer += 0.5; }
+    if (speed > 0 && this.onGround && !this.inWater && !this.inLava && !this.intent.targetBelow && this._dropAhead(world, dirX, dirZ)) { speed = 0; this.stuckTimer += 0.5; }
     if (this.inWater || this.inLava) {
       // Float (slowly in lava), and paddle toward the nearest land.
       v.y += (this.inLava ? 9 : 18) * dt; if (v.y > (this.inLava ? 0.6 : 1.5)) v.y = this.inLava ? 0.6 : 1.5;
@@ -184,7 +194,7 @@ export class Mob {
     return best;
   }
 
-  /** Visual update: interpolation, leg/head animation, hurt flash, death tip-over. */
+  /** Visual update: interpolation, leg / arm / head animation, hurt flash, death tip-over. */
   render(alpha, dt, light = 1) {
     const root = this.root;
     root.position.lerpVectors(this.prevPosition, this.position, alpha);
@@ -194,6 +204,19 @@ export class Mob {
     if (!this._legs) this._legs = [pivots.get('leg0') || null, pivots.get('leg1') || null, pivots.get('leg2') || null, pivots.get('leg3') || null];
     const legs = this._legs;
     for (let i = 0; i < 4; i++) { const pv = legs[i]; if (pv) pv.rotation.x = (i === 0 || i === 3) ? swing : -swing; }
+    // Humanoids (the zombie): legs alternate, both arms stretch forward (the Minecraft zombie pose) with a slow sway,
+    // and swing down and back up over the 0.3 s after a hit.
+    const leftLeg = pivots.get('leftLeg');
+    if (leftLeg) {
+      leftLeg.rotation.x = swing; pivots.get('rightLeg').rotation.x = -swing;
+      const la = pivots.get('leftArm'), ra = pivots.get('rightArm');
+      if (this.isHostile) {
+        const sway = Math.sin(this.walkTime * 3) * 0.08;
+        const hit = this.attackTimer > 0 ? Math.sin((1 - this.attackTimer / 0.3) * Math.PI) * 0.9 : 0; // down and back up
+        la.rotation.x = Math.PI / 2 - 0.1 + sway - hit; ra.rotation.x = Math.PI / 2 - 0.1 - sway - hit;
+        la.rotation.z = -0.05; ra.rotation.z = 0.05;
+      } else { la.rotation.x = -swing; ra.rotation.x = swing; }
+    }
     const head = pivots.get('head');
     if (head) {
       const target = this.intent.speed > 0 ? this.yaw : (this.intent.headYaw ?? this.yaw);

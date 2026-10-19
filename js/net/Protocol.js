@@ -44,6 +44,12 @@ export const Msg = Object.freeze({
   RESPAWN: 'respawn', SPAWN_AT: 'spawnAt',
   // CHAT guest → host { text } and host → all { name, text, host } or { system, color }; TICK host → guests { rate, frozen }
   CHAT: 'chat', TICK: 'tick',
+  // Bows: SHOOT guest → host { ox, oy, oz, dx, dy, dz, power }; ARROW_SPAWN host → all { id, shooter, x, y, z, vx, vy, vz, power, crit, pickup };
+  // ARROW_STUCK host → all { id, x, y, z }; ARROW_REMOVE host → all { id } (hit something, picked up, expired)
+  SHOOT: 'shoot', ARROW_SPAWN: 'arrowSpawn', ARROW_STUCK: 'arrowStuck', ARROW_REMOVE: 'arrowRemove',
+  // Explosives: PRIME guest → host { x, y, z } (a placed explosive); EXPLOSIVE_SPAWN host → all { id, x, y, z, vx, vy, vz, fuse };
+  // EXPLOSION host → all { id, x, y, z, power } (effects; the block changes travel as a BLOCKS batch, damage as DAMAGE)
+  PRIME: 'prime', EXPLOSIVE_SPAWN: 'explosiveSpawn', EXPLOSION: 'explosion',
   // state channel
   P: 'p', PS: 'ps', M: 'm',
 });
@@ -57,15 +63,17 @@ export const RejectReason = Object.freeze({
   UNREACHABLE: "Couldn't connect. The host's network may be blocking connections.",
 });
 
-/** Pose bits in player snapshots. */
-export const Pose = Object.freeze({ ON_GROUND: 1, SNEAKING: 2, SWIMMING: 4, CRAWLING: 8, FLYING: 16, IN_WATER: 32, SPRINTING: 64, SPECTATOR: 128, ON_FIRE: 256, IN_LAVA: 512, DEAD: 1024 });
+/** Pose bits in player snapshots. BOW_SHIFT: two bits holding the bow draw frame (0 = not drawing, 1–3 = pulling_0/1/2). */
+export const Pose = Object.freeze({ ON_GROUND: 1, SNEAKING: 2, SWIMMING: 4, CRAWLING: 8, FLYING: 16, IN_WATER: 32, SPRINTING: 64, SPECTATOR: 128, ON_FIRE: 256, IN_LAVA: 512, DEAD: 1024, BOW_SHIFT: 11, BOW_MASK: 3 << 11 });
 
 /** Pose bits of a local Player. */
 export function poseBits(p) {
   return (p.onGround ? Pose.ON_GROUND : 0) | (p.sneaking ? Pose.SNEAKING : 0) | (p.swimming ? Pose.SWIMMING : 0) | (p.crawling ? Pose.CRAWLING : 0)
     | (p.flying ? Pose.FLYING : 0) | (p.inWater ? Pose.IN_WATER : 0) | (p.sprinting ? Pose.SPRINTING : 0) | (p.isSpectator ? Pose.SPECTATOR : 0)
-    | (p.onFire ? Pose.ON_FIRE : 0) | (p.inLava ? Pose.IN_LAVA : 0) | (p.dead ? Pose.DEAD : 0);
+    | (p.onFire ? Pose.ON_FIRE : 0) | (p.inLava ? Pose.IN_LAVA : 0) | (p.dead ? Pose.DEAD : 0) | (((p.bowFrame | 0) & 3) << Pose.BOW_SHIFT);
 }
+/** The bow draw frame carried in pose bits (0 when not drawing). */
+export function bowFrameOf(pose) { return (pose >> Pose.BOW_SHIFT) & 3; }
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
 
@@ -81,7 +89,7 @@ export function decodePlayerState(a) {
     x: a[0], y: a[1], z: a[2], vx: a[3], vy: a[4], vz: a[5], yaw: a[6], pitch: a[7], pose,
     onGround: !!(pose & Pose.ON_GROUND), sneaking: !!(pose & Pose.SNEAKING), swimming: !!(pose & Pose.SWIMMING), crawling: !!(pose & Pose.CRAWLING),
     flying: !!(pose & Pose.FLYING), inWater: !!(pose & Pose.IN_WATER), sprinting: !!(pose & Pose.SPRINTING), spectator: !!(pose & Pose.SPECTATOR),
-    onFire: !!(pose & Pose.ON_FIRE), inLava: !!(pose & Pose.IN_LAVA), dead: !!(pose & Pose.DEAD),
+    onFire: !!(pose & Pose.ON_FIRE), inLava: !!(pose & Pose.IN_LAVA), dead: !!(pose & Pose.DEAD), bowFrame: bowFrameOf(pose),
   };
 }
 

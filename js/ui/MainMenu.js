@@ -18,6 +18,7 @@ export class MainMenu {
     this.nameInput = document.getElementById('world-name');
     this.seedInput = document.getElementById('world-seed');
     this.modeSelect = document.getElementById('world-mode');
+    this.hostileToggle = document.getElementById('world-hostile');
     this.accountLine = document.getElementById('menu-account');
     this.worldError = document.getElementById('world-error');
     this.worldRetry = document.getElementById('btn-worlds-retry');
@@ -164,10 +165,11 @@ export class MainMenu {
     const seedText = this.seedInput.value.trim();
     const seed = seedText ? hashSeed(seedText) : randomSeed();
     const gameMode = this.modeSelect.value;
+    const hostileMobs = !this.hostileToggle || this.hostileToggle.checked;
     this._showCreateError('');
     this._setBusy(true, 'Creating…');
     let record;
-    try { record = await this.game.saveManager.createWorld({ name, seed, seedText, gameMode }); } catch (e) { this._setBusy(false); this._showCreateError("Couldn't create the world. Check your connection."); return; }
+    try { record = await this.game.saveManager.createWorld({ name, seed, seedText, gameMode, hostileMobs }); } catch (e) { this._setBusy(false); this._showCreateError("Couldn't create the world. Check your connection."); return; }
     this._setBusy(false);
     this.hideWorlds();
     this.game.startWorld(record.id);

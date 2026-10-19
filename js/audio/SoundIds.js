@@ -7,7 +7,7 @@ import { SOUND_GROUP_LIST } from '../blocks/BlockSoundGroups.js';
 
 /** Block material kinds → folders. */
 export const KIND_FOLDERS = Object.freeze({ step: 'walking', break: 'breaking', place: 'placing', hit: 'mining' });
-export const MOB_TYPES = Object.freeze(['cow', 'pig', 'sheep']);
+export const MOB_TYPES = Object.freeze(['cow', 'pig', 'sheep', 'zombie']);
 export const MOB_VOICES = Object.freeze(['ambient', 'hurt', 'death']);
 /** Old dotted names that do not follow the generic rules. */
 const RENAMES = Object.freeze({
@@ -17,6 +17,8 @@ const RENAMES = Object.freeze({
   'ui.inv_close': 'ui/inventory_close',
   'player.bucket_fill': 'items/bucket_fill',
   'player.bucket_empty': 'items/bucket_empty',
+  'player.bow_draw': 'items/bow_draw',
+  'player.bow_shoot': 'items/bow_shoot',
   'lava.sizzle': 'liquids/lava_sizzle',
   'lava.pop': 'liquids/lava_pop',
 });
@@ -64,6 +66,12 @@ export const SOUND_CATALOG = (() => {
   add('items/drop', 'an item is thrown (Q)', '0.2–0.3 s');
   add('items/bucket_fill', 'a bucket scoops water or lava', '0.4–0.6 s');
   add('items/bucket_empty', 'a bucket is poured out', '0.5–0.9 s');
+  add('items/bow_draw', 'the bow starts to draw (right click held)', '0.3–0.6 s');
+  add('items/bow_shoot', 'an arrow leaves the bow', '0.2–0.4 s');
+  add('items/arrow_hit_block', 'an arrow sticks into a block', '0.1–0.3 s');
+  add('items/arrow_hit_entity', 'an arrow hits a mob or a player', '0.1–0.3 s');
+  add('explosives/fuse', 'a placed explosive is primed and hisses (and again halfway through the fuse)', '0.8–1.5 s');
+  add('explosives/explosion', 'an explosive goes off', '1–2 s');
   for (const m of MOB_TYPES) {
     add(`mobs/${m}/ambient`, `a ${m} calls now and then (every 8–25 s)`, '0.5–1.5 s');
     add(`mobs/${m}/hurt`, `a ${m} is hit`, '0.3–0.6 s');

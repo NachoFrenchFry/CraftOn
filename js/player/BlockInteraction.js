@@ -7,8 +7,10 @@ import { ItemRegistry } from '../items/ItemRegistry.js';
 import { EAT_SECONDS } from './Damage.js';
 import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemStack } from '../items/ItemStack.js';
-import { effectiveBreakTime, attackDamage, isSword } from '../items/Tools.js';
+import { effectiveBreakTime, attackDamage, isSword, isBow, knockbackScale } from '../items/Tools.js';
 import { ItemIds } from '../items/ItemDefinitions.js';
+import { BOW_DRAW_SECONDS, BOW_MIN_DRAW_SECONDS } from '../config/Constants.js';
+import { bowPower } from './Damage.js';
 import { RaycastHit } from './BlockRaycaster.js';
 import { isSource, isLavaSource, isLiquid } from '../world/WaterLevels.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
@@ -49,9 +51,34 @@ export class BlockInteraction {
     this.chewTimer = 0;
     /** Other player under the crosshair (multiplayer), or null. */
     this.targetPlayer = null;
+    /** Bow: seconds the use button has been held with a bow (0 = not drawing). */
+    this.drawTimer = 0;
   }
 
   get eatProgress() { return this.eatTimer > 0 ? Math.min(1, this.eatTimer / EAT_SECONDS) : 0; }
+  /** Bow draw fraction 0..1 (1 = a full draw after BOW_DRAW_SECONDS). */
+  get drawProgress() { return this.drawTimer > 0 ? Math.min(1, this.drawTimer / BOW_DRAW_SECONDS) : 0; }
+  /** True when the player may shoot: Creative needs no arrows, Survival at least one. */
+  get hasAmmo() { return this.player.isCreative || this.inventory.countOf(ItemIds.ARROW) > 0; }
+
+  /** Stop drawing without shooting (the bow was put away, the screen changed, the player died). */
+  _stopDrawing() { this.drawTimer = 0; this.player.drawProgress = 0; this.player.bowFrame = 0; }
+
+  /** The bow: hold use to draw (slows movement, zooms the view, the frames advance), release to shoot; a release before 0.1 s shoots nothing. */
+  _updateBow(dt, use) {
+    const p = this.player;
+    if (use && (this.drawTimer > 0 || this.actions.wasPressed('use'))) {
+      if (this.drawTimer === 0) { if (!this.hasAmmo) return; this.events.emit('player:drawStart'); }
+      this.drawTimer += dt;
+    } else if (this.drawTimer > 0) {
+      const t = this.drawTimer;
+      this._stopDrawing();
+      if (t >= BOW_MIN_DRAW_SECONDS && this.hasAmmo) this.events.emit('player:shoot', bowPower(Math.min(1, t / BOW_DRAW_SECONDS)));
+      return;
+    }
+    p.drawProgress = this.drawProgress;
+    p.bowFrame = p.drawProgress <= 0 ? 0 : p.drawProgress >= 0.9 ? 3 : p.drawProgress >= 0.65 ? 2 : 1;
+  }
 
   get heldItemId() { const s = this.inventory.getSelected(); return s ? s.itemId : null; }
   /** Guest of a LAN server: the host owns mobs and drops (deps.isGuest is optional). */
@@ -78,10 +105,11 @@ export class BlockInteraction {
     const key = t.hit ? `${t.blockPos.x},${t.blockPos.y},${t.blockPos.z}` : null;
     if (key !== this.lastTargetKey) { this.progress = 0; this.lastTargetKey = key; }
 
-    if (!this.enabled || !this.input.pointerLocked || this.player.isSpectator) {
+    if (!this.enabled || !this.input.pointerLocked || this.player.isSpectator || this.player.dead) {
       this._stopMining();
       this.placeTimer = 0; this.placeRepeating = false;
       this.eatTimer = 0;
+      this._stopDrawing();
       return;
     }
 
@@ -100,6 +128,10 @@ export class BlockInteraction {
       if (this.actions.wasPressed('attack')) this._attackMob(this.targetMob);
     } else if (attack && t.hit && !this.attackLatched && this.attackLockTimer <= 0 && !(this.player.isCreative && isSword(held))) this._mine(dt); // swords never break blocks in Creative
     else this._stopMining();
+
+    // The bow: hold use to draw, release to shoot (nothing else happens with a bow on the use button).
+    if (isBow(held)) { this._updateBow(dt, use); this.placeTimer = 0; this.eatTimer = 0; if (this.actions.wasPressed('pick') && t.hit) this._pickBlock(t.blockId); return; }
+    if (this.drawTimer > 0) this._stopDrawing(); // the bow was swapped away mid-draw
 
     // Eating: hold use with food while below max health; 1.6 s with chewing sounds and crumbs.
     const food = held != null ? ItemRegistry.food(held) : null;
@@ -142,8 +174,9 @@ export class BlockInteraction {
     this.attackLockTimer = ATTACK_BLOCK_SECONDS;
     this.attackLatched = true; // holding the button through a kill must not start mining the block behind
     const damage = attackDamage(this.heldItemId) * (crit ? 1.5 : 1);
-    if (this.guest) { this.events.emit('player:attack', mob.id, damage, crit); return; } // the host applies it and tells everyone
-    this.entities.mobs.hit(mob, damage, p.position.x, p.position.z, crit);
+    const kb = knockbackScale(this.heldItemId); // a stick doubles the knockback (no extra damage)
+    if (this.guest) { this.events.emit('player:attack', mob.id, damage, crit, kb); return; } // the host applies it and tells everyone
+    this.entities.mobs.hit(mob, damage, p.position.x, p.position.z, crit, true, kb);
   }
 
   /** Hit another player (multiplayer): the host validates and applies the damage; the swing shows at once. */
@@ -293,6 +326,8 @@ export class BlockInteraction {
     if (item && item.spawnEgg) { this._useSpawnEgg(item.spawnEgg); return; }
     if (!item || !item.isBlock) return; // non-block items (coal, ingots, pickaxes) never place anything
     let id = item.blockId;
+    // Explosives never become a block: placing one primes an explosive entity at the cell (the host does it on a server).
+    if (id === BlockIds.EXPLOSIVES) { if (!repeat) this._placeExplosive(t, stack); return; }
     if (BlockRegistry.hasFacing(id)) id = BlockRegistry.facingVariant(id, this._facingTowardPlayer());
     // Logs lie along the axis of the clicked face (top/bottom → vertical, east/west → X, north/south → Z).
     if (BlockRegistry.hasAxis(id)) { const n = t.faceNormal; id = BlockRegistry.axisVariant(id, n.x !== 0 ? 'x' : n.z !== 0 ? 'z' : 'y'); }
@@ -329,6 +364,21 @@ export class BlockInteraction {
       consumed = { itemId: consumedId, slot };
     }
     this.events.emit('block:placed', px, py, pz, id, consumed);
+  }
+
+  /** Explosives: the placement cell must be free and loaded; the item is used (Survival) and the entity primed at once (4 s fuse). */
+  _placeExplosive(t, stack) {
+    if (this.explosivesAllowed && !this.explosivesAllowed()) { this.events.emit('player:toast', 'Explosives are turned off in this world.'); return; }
+    const p = t.placePos;
+    let px = p.x, py = p.y, pz = p.z;
+    if (RENDER_TYPE[t.blockId] === RenderType.CROSS) { px = t.blockPos.x; py = t.blockPos.y; pz = t.blockPos.z; }
+    if (py < 0 || py > 255 || !this.world.isLoadedAt(px, pz)) return;
+    const cur = this.world.getBlock(px, py, pz);
+    if (!BlockRegistry.isReplaceable(cur)) return;
+    if (this.player.aabb.intersectsBox(px, py, pz, px + 1, py + 1, pz + 1) || (this.entityBlocks && this.entityBlocks(px, py, pz))) return;
+    if (!this.player.isCreative) this.inventory.removeFromSlot(this.inventory.selectedIndex, 1);
+    this.events.emit('player:swing');
+    this.events.emit('explosive:place', px, py, pz);
   }
 
   /** Held armor → its armor slot (swapping with the worn piece), with a wooden clunk or a metal clink and a swing. */

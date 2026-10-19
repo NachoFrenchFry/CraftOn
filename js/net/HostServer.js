@@ -13,7 +13,7 @@
 import { PeerLink } from './PeerLink.js';
 import { getIceServers } from './IceServers.js';
 import { playerBlocksAt, playerHeightForPose, mobBlocksAt } from '../player/PlacementRules.js';
-import { pvpDamage, PVP_REACH, PVP_REACH_SLACK, deathMessage } from '../player/Damage.js';
+import { pvpDamage, PVP_REACH, PVP_REACH_SLACK, deathMessage, zombieDamage, arrowPlayerDamage, explosionPlayerDamage } from '../player/Damage.js';
 import { cleanChatText } from '../ui/Chat.js';
 
 /** Chat rate limit per guest: at most this many messages per window. */
@@ -29,7 +29,7 @@ import { BlockRegistry, BREAK_TIME, SOLID } from '../blocks/BlockRegistry.js';
 import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
 import { isWater, isLiquid } from '../world/WaterLevels.js';
-import { REACH_CREATIVE, ITEM_PICKUP_EXPAND_XZ, ITEM_PICKUP_EXPAND_Y, PLAYER_WIDTH, PLAYER_HEIGHT } from '../config/Constants.js';
+import { REACH_CREATIVE, ITEM_PICKUP_EXPAND_XZ, ITEM_PICKUP_EXPAND_Y, PLAYER_WIDTH, PLAYER_HEIGHT, EXPLOSION_KNOCKBACK } from '../config/Constants.js';
 import { ITEM_HALF } from '../entities/ItemEntity.js';
 
 const LOBBY_HEARTBEAT_MS = 10000;
@@ -108,7 +108,7 @@ export class HostServer {
     const on = (name, fn) => this._unsubs.push(ev.on(name, fn));
     on('block:changed', (x, y, z, info) => {
       const by = this.applyingFor ? this.applyingFor.by : this.userId;
-      const kind = isLiquid(info.id) || isLiquid(info.old) ? 'flow' : info.id === 0 ? 'break' : 'place';
+      const kind = this.game.entities.exploding ? 'blast' : isLiquid(info.id) || isLiquid(info.old) ? 'flow' : info.id === 0 ? 'break' : 'place'; // 'blast': no per-block effects on the guests (the EXPLOSION message brings them)
       this.blockQueue.push([x, y, z, info.id, by, kind]);
     });
     on('player:swing', () => this.broadcast(Msg.SWING, { id: this.userId }));
@@ -121,10 +121,17 @@ export class HostServer {
     const mobs = this.game.entities.mobs;
     mobs.onSpawn = (m) => this.broadcast(Msg.MOB_SPAWN, this._mobRow(m));
     mobs.onRemove = (m) => this.broadcast(Msg.MOB_REMOVE, { id: m.id });
-    mobs.onHurt = (m, died, crit, fromX, fromZ) => this.broadcast(Msg.MOB_HURT, { id: m.id, health: m.health, fromX, fromZ, crit, died });
+    mobs.onHurt = (m, died, crit, fromX, fromZ, kb) => this.broadcast(Msg.MOB_HURT, { id: m.id, health: m.health, fromX, fromZ, crit, died, kb: kb || 1 });
     const items = this.game.entities;
     items.onSpawn = (it) => this.broadcast(Msg.ITEM_SPAWN, this._itemRow(it));
     items.onRemove = (it) => this.broadcast(Msg.ITEM_REMOVE, { id: it.id });
+    // Arrows and explosives: the host simulates, the guests mirror (spawn with the same velocity, corrections when stuck).
+    items.onArrowSpawn = (a) => this.broadcast(Msg.ARROW_SPAWN, { id: a.id, shooter: a.shooter === 'self' ? this.userId : a.shooter, x: a.position.x, y: a.position.y, z: a.position.z, vx: a.velocity.x, vy: a.velocity.y, vz: a.velocity.z, power: a.power, crit: a.crit, pickup: a.pickup });
+    items.onArrowStuck = (a) => this.broadcast(Msg.ARROW_STUCK, { id: a.id, x: a.position.x, y: a.position.y, z: a.position.z });
+    items.onArrowRemove = (a) => this.broadcast(Msg.ARROW_REMOVE, { id: a.id });
+    items.onArrowPickup = (a) => this._arrowPickup(a);
+    items.onExplosiveSpawn = (e) => this.broadcast(Msg.EXPLOSIVE_SPAWN, { id: e.id, x: e.position.x, y: e.position.y, z: e.position.z, vx: e.velocity.x, vy: e.velocity.y, vz: e.velocity.z, fuse: e.fuse });
+    items.onExplosion = (e, x, y, z, power) => this.broadcast(Msg.EXPLOSION, { id: e.id, x, y, z, power });
   }
 
   _unwire() {
@@ -199,6 +206,8 @@ export class HostServer {
       case Msg.P: return this._playerState(peer, msg);
       case Msg.BLOCK: return this._blockRequest(peer, msg);
       case Msg.ATTACK: return this._attack(peer, msg);
+      case Msg.SHOOT: return this._shoot(peer, msg);
+      case Msg.PRIME: return this._prime(peer, msg);
       case Msg.PICKUP: return this._pickup(peer, msg);
       case Msg.THROW: return this._throw(peer, msg);
       case Msg.META: return this._meta(peer, msg);
@@ -245,7 +254,7 @@ export class HostServer {
       tick: { rate: g.tick.rate, frozen: g.tick.frozen },
       spawn: { x: g.player.spawn.x, y: g.player.spawn.y, z: g.player.spawn.z },
       you: { player: saved ? saved.player : null, inventory: saved ? saved.inventory : null, mode: peer.mode, canChangeMode: peer.canChangeMode },
-      keepInventory: !!meta.keepInventory, pvp: meta.pvp !== false,
+      keepInventory: !!meta.keepInventory, pvp: meta.pvp !== false, hostileMobs: meta.hostileMobs !== false, explosives: meta.explosives !== false, explosionsBreakBlocks: meta.explosionsBreakBlocks !== false,
       players, mobs: g.entities.mobs.mobs.filter((m) => !m.isDying).map((m) => this._mobRow(m)), items: g.entities.items.map((it) => this._itemRow(it)), chunkCount: count,
     });
     for (let i = 0; i < batches.length; i++) {
@@ -474,8 +483,21 @@ export class HostServer {
   /** /tick: guests follow the host's rate and freeze state. */
   broadcastTick(tick) { this.broadcast(Msg.TICK, { rate: tick.rate, frozen: !!tick.frozen }); }
 
-  /** PvP / keep inventory changed in Server Settings: guests follow. */
-  broadcastWorldSettings() { const m = this.game.worldMeta; this.broadcast(Msg.WORLD, { keepInventory: !!(m && m.keepInventory), pvp: !m || m.pvp !== false }); }
+  /** PvP / keep inventory / hostile mobs / explosives changed in Server Settings: guests follow. */
+  broadcastWorldSettings() { const m = this.game.worldMeta; this.broadcast(Msg.WORLD, { keepInventory: !!(m && m.keepInventory), pvp: !m || m.pvp !== false, hostileMobs: !m || m.hostileMobs !== false, explosives: !m || m.explosives !== false, explosionsBreakBlocks: !m || m.explosionsBreakBlocks !== false }); }
+
+  /** A zombie hit a guest (MobManager.hurtPlayer): the base damage reduced by the guest's replicated armor, knockback away from the zombie, everyone sees the flash. */
+  zombieHit(userId, base, kx, kz) {
+    const peer = this.peers.get(userId);
+    if (!peer || !peer.state || peer.dead || peer.mode !== 'survival') return;
+    const now = performance.now() / 1000;
+    if (now - (peer.lastHurt || 0) < 0.45) return;
+    peer.lastHurt = now;
+    const n = zombieDamage(this._peerArmorPoints(peer), base);
+    peer.link.send(Msg.DAMAGE, { n, kind: 'zombie', kx, kz });
+    if (peer.remote) peer.remote.hurt(false, n);
+    this.broadcast(Msg.HURT, { id: userId, crit: false, n }, peer);
+  }
 
   _attack(peer, msg) {
     const mobs = this.game.entities.mobs;
@@ -484,7 +506,81 @@ export class HostServer {
     const d = Math.hypot(mob.position.x - peer.state[0], mob.position.z - peer.state[2]);
     if (d > 6) return;
     const damage = Math.max(1, Math.min(10, Number(msg.damage) || 1));
-    mobs.hit(mob, damage, peer.state[0], peer.state[2], !!msg.crit);
+    const kb = Math.max(0.5, Math.min(3, Number(msg.kb) || 1)); // a stick: ×2
+    mobs.hit(mob, damage, peer.state[0], peer.state[2], !!msg.crit, true, kb);
+  }
+
+  /**
+   * A guest shot an arrow (SHOOT { ox, oy, oz, dx, dy, dz, power }): the origin must be near the guest's eyes, the power
+   * 0.05..1, at most one shot every 0.15 s, and a Survival guest needs an arrow (its replicated inventory count); then the
+   * host simulates the arrow and everyone gets ARROW_SPAWN.
+   */
+  _shoot(peer, msg) {
+    if (!peer.state || peer.dead || peer.mode === 'spectator') return;
+    const now = performance.now() / 1000;
+    if (now - (peer.lastShot || 0) < 0.15) return;
+    const ox = Number(msg.ox), oy = Number(msg.oy), oz = Number(msg.oz);
+    let dx = Number(msg.dx), dy = Number(msg.dy), dz = Number(msg.dz);
+    const power = Math.max(0.05, Math.min(1, Number(msg.power) || 0));
+    if (![ox, oy, oz, dx, dy, dz].every(Number.isFinite)) return;
+    if (Math.hypot(ox - peer.state[0], oy - (peer.state[1] + 1.6), oz - peer.state[2]) > 2.5) return; // not from the eyes
+    const len = Math.hypot(dx, dy, dz); if (len < 1e-3) return; dx /= len; dy /= len; dz /= len;
+    const survival = peer.mode === 'survival';
+    if (survival && !this._peerHasArrow(peer)) return;
+    peer.lastShot = now;
+    this.game.entities.shootArrow({ x: ox, y: oy, z: oz }, { x: dx, y: dy, z: dz }, power, peer.userId, { pickup: survival });
+  }
+
+  /** The guest's replicated inventory (its last INV / META sync) holds at least one arrow; unknown inventories pass. */
+  _peerHasArrow(peer) {
+    const row = this._guestRow(peer.userId);
+    const inv = row && row.inventory;
+    if (!inv || !Array.isArray(inv.slots)) return true;
+    return inv.slots.some((s) => s && s.id === ItemIds.ARROW && s.n > 0);
+  }
+
+  /** A guest placed an explosive (PRIME { x, y, z }): within reach of its position, the cell free, explosives allowed → primed and announced. */
+  _prime(peer, msg) {
+    const m = this.game.worldMeta;
+    if (m && m.explosives === false) { peer.link.send(Msg.CHAT, { system: 'Explosives are turned off in this world.', color: 'gray' }); return; }
+    if (!peer.state || peer.dead || peer.mode === 'spectator') return;
+    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    if (Math.hypot(x + 0.5 - peer.state[0], y - peer.state[1], z + 0.5 - peer.state[2]) > 8) return;
+    const w = this.game.world;
+    if (!w.isLoadedAt(x, z) || !BlockRegistry.isReplaceable(w.getBlock(x, y, z))) return;
+    this.game.entities.primeExplosive(x, y, z);
+  }
+
+  /** A guest's stuck Survival arrow: granted back when the guest stands at it. */
+  _arrowPickup(a) {
+    const peer = this.peers.get(a.shooter);
+    if (!peer || !peer.state || peer.dead || peer.mode !== 'survival') return;
+    const e = 0.6 + PLAYER_WIDTH / 2, q = a.position, px = peer.state[0], py = peer.state[1], pz = peer.state[2];
+    if (q.x < px - e || q.x > px + e || q.y < py - 0.6 || q.y > py + PLAYER_HEIGHT + 0.6 || q.z < pz - e || q.z > pz + e) return;
+    this.game.entities.removeArrow(a);
+    peer.link.send(Msg.ITEM_GRANT, { item: ItemIds.ARROW, n: 1 });
+  }
+
+  /**
+   * An arrow or an explosion of the host's simulation reached a guest (EntityManager.hurtPlayer): PvP applies to arrows,
+   * the damage uses the guest's replicated armor, the guest gets DAMAGE (with the knockback) and everyone the flash.
+   */
+  projectileHit(shooter, hit) {
+    const peer = this.peers.get(hit.id);
+    if (!peer || !peer.state || peer.dead || peer.mode !== 'survival') return;
+    const armor = this._peerArmorPoints(peer);
+    let n, cause;
+    if (hit.kind === 'arrow') {
+      if (!this.pvp) return;
+      const by = shooter === 'self' ? this.name : (this.peers.get(shooter) || {}).name || 'another player';
+      n = arrowPlayerDamage(hit.power, hit.bonus, armor); cause = { kind: 'arrow', by };
+    } else { n = explosionPlayerDamage(hit.impact, hit.power, armor); cause = { kind: 'explosion' }; }
+    if (n <= 0) return;
+    peer.lastHurt = performance.now() / 1000;
+    const k = hit.kind === 'explosion' ? EXPLOSION_KNOCKBACK * hit.impact / 6 : 1; // DAMAGE knockback is kx × 6
+    peer.link.send(Msg.DAMAGE, { n, kind: cause.kind, by: cause.by, kx: hit.kx * k, kz: hit.kz * k, ky: hit.kind === 'explosion' ? hit.ky * EXPLOSION_KNOCKBACK * hit.impact : 0, crit: !!hit.crit });
+    if (peer.remote) peer.remote.hurt(!!hit.crit, n);
+    this.broadcast(Msg.HURT, { id: peer.userId, crit: !!hit.crit, n }, peer);
   }
 
   _pickup(peer, msg) {
@@ -660,7 +756,8 @@ export class HostServer {
       this.mobTimer = 0;
       const mobs = this.game.entities.mobs.mobs.filter((m) => !m.frozen).map((m) => [m.id, +m.position.x.toFixed(3), +m.position.y.toFixed(3), +m.position.z.toFixed(3), +m.yaw.toFixed(3), +m.headYaw.toFixed(3), +m.velocity.x.toFixed(2), +m.velocity.z.toFixed(2)]);
       const items = this.game.entities.items.map((it) => [it.id, +it.position.x.toFixed(3), +it.position.y.toFixed(3), +it.position.z.toFixed(3)]);
-      this.broadcast(Msg.M, { mobs, items }, null, 'state');
+      const ex = this.game.entities.explosives.map((e) => [e.id, +e.position.x.toFixed(3), +e.position.y.toFixed(3), +e.position.z.toFixed(3)]);
+      this.broadcast(Msg.M, { mobs, items, ex: ex.length ? ex : undefined }, null, 'state');
     }
   }
 

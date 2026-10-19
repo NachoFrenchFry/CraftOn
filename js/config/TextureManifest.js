@@ -41,6 +41,8 @@ export const GENERATED_TEXTURES = Object.freeze([
   'lava', 'lava_bucket', 'stick', 'torch_side', 'torch_top', 'flower_blue',
   'golden_pickaxe', 'golden_axe', 'golden_sword', 'golden_helmet', 'golden_chestplate', 'golden_gauntlets', 'golden_leggings', 'golden_boots',
   'coal_block', 'iron_block', 'gold_block', 'diamond_block',
+  // string, the bow and its draw frames, arrows, explosives
+  'string', 'bow', 'bow_pulling_0', 'bow_pulling_1', 'bow_pulling_2', 'arrow', 'explosives_top', 'explosives_side', 'explosives_bottom',
 ]);
 
 /**
@@ -49,13 +51,21 @@ export const GENERATED_TEXTURES = Object.freeze([
  * for the checkerboard crit stars).
  */
 export const PARTICLE_TEXTURES = Object.freeze(['crit_star']);
+/** Held-item frames that are not an item's own icon (the bow's pulling frames): packed into the atlas for the held sprites. */
+export const HELD_FRAME_TEXTURES = Object.freeze(['bow_pulling_0', 'bow_pulling_1', 'bow_pulling_2']);
 /** Tiles the atlas derives from other tiles at load time (no file): fast leaves = leaves with the holes filled. */
 export const DERIVED_TEXTURES = Object.freeze(['leaves_fast']);
-export const EXTRA_ATLAS_TEXTURES = Object.freeze([...PARTICLE_TEXTURES, ...DERIVED_TEXTURES]);
+export const EXTRA_ATLAS_TEXTURES = Object.freeze([...PARTICLE_TEXTURES, ...HELD_FRAME_TEXTURES, ...DERIVED_TEXTURES]);
 
-/** Mob texture sheets (64×32 Minecraft-style box-UV nets) in textures/entity/. Not part of the atlas. */
-export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool']);
+/**
+ * Entity sheets in textures/entity/ (not part of the atlas): the mob sheets (64×32 Minecraft-style box-UV nets), the
+ * player skin and the zombie (64×64, the standard Minecraft skin layout, see js/player/models/SkinLayout.js) and the arrow.
+ */
+export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool', 'zombie', 'player', 'arrow']);
 export const ENTITY_TEXTURE_SIZE = Object.freeze([64, 32]);
+/** Sheets that are not 64×32. */
+export const ENTITY_TEXTURE_SIZES = Object.freeze({ zombie: [64, 64], player: [64, 64], arrow: [16, 16] });
+export const SKIN_SIZE = Object.freeze([64, 64]);
 /**
  * Armor sheets in textures/entity/armor/: per material `<m>_layer_1.png` holds the helmet,
  * chestplate (+ sleeves), gauntlets and boots nets, `<m>_layer_2.png` the leggings (waist + upper legs).

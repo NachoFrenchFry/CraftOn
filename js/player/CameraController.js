@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { clamp, damp } from '../utils/MathUtils.js';
-import { WALK_SPEED, POSE_TRANSITION_SECONDS, BOB_SIDE, BOB_VERTICAL, BOB_ROLL, BOB_DEFAULT_INTENSITY, BOB_PHASE_PER_BLOCK } from '../config/Constants.js';
+import { WALK_SPEED, POSE_TRANSITION_SECONDS, BOB_SIDE, BOB_VERTICAL, BOB_ROLL, BOB_DEFAULT_INTENSITY, BOB_PHASE_PER_BLOCK, BOW_ZOOM } from '../config/Constants.js';
 
 export const Perspective = Object.freeze({ FIRST: 0, THIRD_BACK: 1, THIRD_FRONT: 2 });
 const THIRD_PERSON_DISTANCE = 4;
@@ -18,6 +18,8 @@ export class CameraController {
    */
   constructor(camera, player, raycaster, settings) {
     this.hurtTilt = 0; this.hurtSide = 1;
+    /** Explosion shake: amplitude in blocks, decaying. */
+    this.shakeAmp = 0;
     this.camera = camera;
     this.player = player;
     this.raycaster = raycaster;
@@ -50,6 +52,9 @@ export class CameraController {
     this.hurtSide = right < 0 ? -1 : 1;
   }
 
+  /** A nearby explosion: a short camera shake of `strength` (0..1). */
+  shake(strength) { this.shakeAmp = Math.max(this.shakeAmp, Math.min(1, strength) * 0.25); }
+
   update(dt) {
     const p = this.player;
     const cam = this.camera;
@@ -70,10 +75,12 @@ export class CameraController {
     this.hurtTilt = damp(this.hurtTilt, 0, 7, dt);
     const hurtRoll = Math.sin(Math.min(1, this.hurtTilt) * Math.PI) * 0.14 * this.hurtSide;
 
-    // FOV: +10% sprinting, a bit more when flying fast.
+    // FOV: +10% sprinting, a bit more when flying fast; drawing a bow zooms in up to BOW_ZOOM.
     let targetScale = 1;
     if (p.sprinting) targetScale = p.flying ? 1.15 : 1.1;
+    if (p.drawProgress > 0) targetScale *= 1 - BOW_ZOOM * Math.min(1, p.drawProgress);
     this.fovScale = damp(this.fovScale, targetScale, 8, dt);
+    this.shakeAmp = damp(this.shakeAmp, 0, 6, dt);
     const fov = this.settings.get('fov') * this.fovScale;
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
 
@@ -85,7 +92,8 @@ export class CameraController {
         cam.position.addScaledVector(this._right, Math.sin(this.bobPhase) * BOB_SIDE * f);
         cam.position.y += Math.abs(Math.cos(this.bobPhase)) * BOB_VERTICAL * f;
       }
-      this._euler.set(p.pitch, p.yaw, (f > 0.001 ? Math.sin(this.bobPhase) * BOB_ROLL * f : 0) + hurtRoll);
+      if (this.shakeAmp > 0.001) { cam.position.x += (Math.random() - 0.5) * this.shakeAmp; cam.position.y += (Math.random() - 0.5) * this.shakeAmp; cam.position.z += (Math.random() - 0.5) * this.shakeAmp; }
+      this._euler.set(p.pitch, p.yaw, (f > 0.001 ? Math.sin(this.bobPhase) * BOB_ROLL * f : 0) + hurtRoll + (this.shakeAmp > 0.001 ? (Math.random() - 0.5) * this.shakeAmp * 0.5 : 0));
       cam.quaternion.setFromEuler(this._euler);
     } else if (this.perspective === Perspective.THIRD_BACK) {
       const d = this._collide(-this.dir.x, -this.dir.y, -this.dir.z);

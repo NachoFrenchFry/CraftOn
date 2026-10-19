@@ -49,9 +49,10 @@ export class CraftingSystem {
   hasAnyMaterial(recipe) { return recipe.inputs.some((i) => this.inventory.countOf(i.itemId) > 0); }
 
   /**
-   * The recipe browser's list for a station. Creative: every recipe in data order. Survival: craftable
-   * recipes first (data order), then partly affordable ones from most to least complete (ties keep the data order);
-   * recipes with none of their materials are left out. Rows: { recipe, craftable, completeness }.
+   * The recipe browser's list for a station, in the item catalog order (ItemRegistry.catalog: by category, then tier, so
+   * gold comes before iron everywhere). Creative: every recipe in that order. Survival: craftable recipes first, then partly
+   * affordable ones from most to least complete (ties in catalog order); recipes with none of their materials are left out.
+   * Rows: { recipe, craftable, completeness }.
    */
   visibleRecipes(station, creative = false) {
     const rows = [];
@@ -61,7 +62,9 @@ export class CraftingSystem {
       if (!creative && !craftable && !this.hasAnyMaterial(recipe)) return;
       rows.push({ recipe, craftable, completeness, index });
     });
-    if (!creative) rows.sort((a, b) => (b.craftable - a.craftable) || (b.completeness - a.completeness) || (a.index - b.index));
+    const order = (a, b) => ItemRegistry.compareCatalog(a.recipe.result.itemId, b.recipe.result.itemId) || (a.index - b.index);
+    if (!creative) rows.sort((a, b) => (b.craftable - a.craftable) || (b.completeness - a.completeness) || order(a, b));
+    else rows.sort(order);
     for (const r of rows) delete r.index;
     return rows;
   }
