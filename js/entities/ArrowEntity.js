@@ -2,25 +2,39 @@
 // drag 0.99 per 20 Hz tick, and every step's movement is swept against blocks (voxel DDA) and the entity boxes the owner
 // hands in (mobs, other players, the local player), so a fast arrow never passes through anything. A hit on a block
 // sticks the arrow where it landed for ARROW_STUCK_SECONDS (the shooter picks it up in Survival); a hit on a mob or a
-// player removes it. The model is two crossed planes sampling the arrow sheet (textures/entity/arrow.png), rotated along
-// the flight. Pure physics apart from the Three.js mesh; the damage is applied by EntityManager through callbacks.
+// player removes it. The model is Minecraft's: two crossed planes along the shaft (the sheet's 16×5 strip, rows 0–4 of
+// textures/entity/arrow.png) and a square back cap at the nock end carrying the fletching seen from behind (the 5×5 at
+// rows 5–9), about 0.8 blocks long and 0.25 tall, rotated along the flight. The material is unlit (MeshBasicMaterial,
+// alpha-tested, double-sided) and tinted by the light at the arrow like the dropped items, so thin planes never go dark
+// from their normals. Pure physics apart from the Three.js mesh; the damage is applied by EntityManager through callbacks.
 
 import * as THREE from 'three';
 import { ARROW_GRAVITY, ARROW_DRAG_PER_TICK, ARROW_STUCK_SECONDS, ARROW_FLIGHT_SECONDS, VOID_Y } from '../config/Constants.js';
+import { sameLight, copyLight, applyLight } from '../rendering/LightUniforms.js';
 
-const LENGTH = 0.56, HEIGHT = 0.175;
+export const ARROW_LENGTH = 0.8, ARROW_HEIGHT = 0.25;
 let sharedGeometry = null;
-/** The crossed planes along +X (the arrow points toward +X in model space); the strip is the sheet's rows 0–4. */
-function arrowGeometry() {
+/**
+ * The crossed planes along +X (the arrow points toward +X in model space) sampling the strip (rows 0–4) and the back cap
+ * at −X in the YZ plane sampling the 5×5 at rows 5–9, columns 0–4. One winding per quad: the material is double-sided.
+ */
+export function arrowGeometry() {
   if (sharedGeometry) return sharedGeometry;
   const g = new THREE.BufferGeometry();
-  const h = HEIGHT / 2, l = LENGTH / 2, v1 = 1 - 5 / 16; // rows 0–4 of a 16-row sheet (flipY)
+  const h = ARROW_HEIGHT / 2, l = ARROW_LENGTH / 2;
+  const vStrip = 1 - 5 / 16;                       // rows 0–4 of a 16-row sheet (flipY: v = 1 − row / 16)
+  const uCap = 5 / 16, vCapTop = 1 - 5 / 16, vCapBottom = 1 - 10 / 16; // rows 5–9, columns 0–4
   const pos = [
-    -l, -h, 0, l, -h, 0, l, h, 0, -l, h, 0,   // vertical plane
-    -l, 0, -h, l, 0, -h, l, 0, h, -l, 0, h,   // horizontal plane
+    -l, -h, 0, l, -h, 0, l, h, 0, -l, h, 0,       // vertical plane
+    -l, 0, -h, l, 0, -h, l, 0, h, -l, 0, h,       // horizontal plane
+    -l, -h, -h, -l, -h, h, -l, h, h, -l, h, -h,   // the back cap (nock end), facing −X
   ];
-  const uv = [0, v1, 1, v1, 1, 1, 0, 1, 0, v1, 1, v1, 1, 1, 0, 1];
-  const idx = [0, 1, 2, 0, 2, 3, 2, 1, 0, 3, 2, 0, 4, 5, 6, 4, 6, 7, 6, 5, 4, 7, 6, 4]; // both windings: visible from every side
+  const uv = [
+    0, vStrip, 1, vStrip, 1, 1, 0, 1,
+    0, vStrip, 1, vStrip, 1, 1, 0, 1,
+    0, vCapBottom, uCap, vCapBottom, uCap, vCapTop, 0, vCapTop,
+  ];
+  const idx = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11];
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
@@ -31,7 +45,7 @@ function arrowGeometry() {
 
 export class ArrowEntity {
   /**
-   * @param {THREE.Material} material alpha-tested material over the arrow sheet (shared)
+   * @param {THREE.Material} material this arrow's own unlit, alpha-tested material over the arrow sheet (tinted per arrow)
    * @param {object} o { x, y, z, vx, vy, vz, shooter ('self' | user id | null), power, crit, pickup, id, remote }
    */
   constructor(material, o) {
@@ -54,6 +68,7 @@ export class ArrowEntity {
     this.mesh.frustumCulled = true;
     this.mesh.userData.noShadow = true;
     this._dir = new THREE.Vector3();
+    this._light = null;
     this._orient();
   }
 
@@ -106,8 +121,11 @@ export class ArrowEntity {
     this.velocity.multiplyScalar(0.001);
   }
 
-  /** Visual update: interpolated position. */
-  render(alpha) {
+  /** Visual update: interpolated position and the tint of the light where the arrow is (a factor or an [r, g, b]). */
+  render(alpha, light = 1) {
     this.mesh.position.lerpVectors(this.prevPosition, this.position, alpha);
+    if (!sameLight(light, this._light)) { this._light = copyLight(light, this._light); applyLight(this.mesh.material.color, light); }
   }
+
+  dispose() { this.mesh.material.dispose(); }
 }

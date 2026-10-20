@@ -70,7 +70,6 @@ export const SOUND_CATALOG = (() => {
   add('items/bow_shoot', 'an arrow leaves the bow', '0.2–0.4 s');
   add('items/arrow_hit_block', 'an arrow sticks into a block', '0.1–0.3 s');
   add('items/arrow_hit_entity', 'an arrow hits a mob or a player', '0.1–0.3 s');
-  add('explosives/fuse', 'a placed explosive is primed and hisses (and again halfway through the fuse)', '0.8–1.5 s');
   add('explosives/explosion', 'an explosive goes off', '1–2 s');
   for (const m of MOB_TYPES) {
     add(`mobs/${m}/ambient`, `a ${m} calls now and then (every 8–25 s)`, '0.5–1.5 s');

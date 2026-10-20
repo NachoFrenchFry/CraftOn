@@ -77,7 +77,8 @@ export class EntityManager {
     this.nextExplosiveId = 1;
     /** Explosions waiting for a physics step (at most EXPLOSIONS_PER_STEP per step, so a chain never freezes a frame). */
     this.explosionQueue = [];
-    /** Set by Game: the voxel ray helper, the mobs, the remote players, world settings and the effect / damage callbacks. */
+    /** Set by Game: the entity sheets (the arrow texture), the voxel ray helper, the mobs, the remote players, world settings and the effect / damage callbacks. */
+    this.entityTextures = null;
     this.raycaster = null;
     this.remotePlayers = null;
     this.explosionsBreakBlocks = true;
@@ -97,7 +98,7 @@ export class EntityManager {
 
   /** Remove every arrow and primed explosive (not saved with the world). */
   clearProjectiles() {
-    for (const a of this.arrows) this.scene.remove(a.mesh);
+    for (const a of this.arrows) { this.scene.remove(a.mesh); a.dispose(); }
     for (const e of this.explosives) this.scene.remove(e.group);
     this.arrows.length = 0; this.explosives.length = 0; this.explosionQueue.length = 0;
   }
@@ -180,11 +181,17 @@ export class EntityManager {
 
   // ---- Arrows ----
 
+  /**
+   * The base arrow material: unlit (MeshBasicMaterial), alpha-tested, double-sided, over the arrow sheet; every arrow gets a
+   * clone so its colour can follow the light where it flies. Built on the first shot and rebuilt if the sheet arrived
+   * later (the existing arrows get the map too; magenta only while it is missing).
+   */
   _arrowMat() {
-    if (!this.arrowMaterial) {
-      const tex = this.entityTextures ? this.entityTextures.get('arrow') || null : null;
-      this.arrowMaterial = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, transparent: false, side: THREE.DoubleSide });
+    const tex = this.entityTextures ? this.entityTextures.get('arrow') || null : null;
+    if (!this.arrowMaterial || (tex && this.arrowMaterial.map !== tex)) {
+      this.arrowMaterial = new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, transparent: false, side: THREE.DoubleSide });
       if (!tex) this.arrowMaterial.color.set(0xff00ff);
+      for (const a of this.arrows) { a.mesh.material.map = tex; a.mesh.material.needsUpdate = true; if (tex) a.mesh.material.color.set(0xffffff); }
     }
     return this.arrowMaterial;
   }
@@ -195,7 +202,7 @@ export class EntityManager {
    */
   shootArrow(origin, dir, power, shooter = 'self', { pickup = true, id = null, remote = false, crit = null, vx = null, vy = null, vz = null } = {}) {
     const speed = ARROW_SPEED * Math.max(0.05, Math.min(1, power));
-    const a = new ArrowEntity(this._arrowMat(), {
+    const a = new ArrowEntity(this._arrowMat().clone(), {
       x: origin.x, y: origin.y, z: origin.z,
       vx: vx ?? dir.x * speed, vy: vy ?? dir.y * speed, vz: vz ?? dir.z * speed,
       shooter, power, crit: crit ?? power >= 1, pickup, id: id !== null ? id : this.remote ? null : this.nextArrowId++, remote,
@@ -215,6 +222,7 @@ export class EntityManager {
     const i = this.arrows.indexOf(a);
     if (i >= 0) this.arrows.splice(i, 1);
     this.scene.remove(a.mesh);
+    a.dispose();
     if (this.onArrowRemove && !this.remote && a.id !== null) this.onArrowRemove(a);
   }
 
@@ -246,7 +254,6 @@ export class EntityManager {
       const a = arrows[i];
       const hit = a.fixedUpdate(dt, (ox, oy, oz, dx, dy, dz, len) => this._sweep(a, ox, oy, oz, dx, dy, dz, len));
       if (a.dead) { this.removeArrow(a); continue; }
-      if (a.crit && !a.stuck && this.effects && this.effects.critTrail && (Math.random() < 0.5)) this.effects.critTrail(a.position.x, a.position.y, a.position.z);
       if (!hit) { this._arrowPickup(a); continue; }
       if (hit.kind === 'block') {
         a.land();
@@ -289,7 +296,6 @@ export class EntityManager {
     const e = new PrimedExplosive(this.material, { x: exact ? x : x + 0.5, y, z: exact ? z : z + 0.5, vx, vy, vz, fuse, id: id !== null ? id : this.remote ? null : this.nextExplosiveId++, remote });
     this.explosives.push(e);
     this.scene.add(e.group);
-    if (this.effects) this.effects.fuse(e.position.x, e.position.y + 0.5, e.position.z);
     if (this.onExplosiveSpawn && !this.remote && e.id !== null) this.onExplosiveSpawn(e);
     return e;
   }
@@ -326,7 +332,6 @@ export class EntityManager {
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];
       const done = e.fixedUpdate(dt, this.world);
-      if (!e.hissed && e.fuseTotal - e.fuse > 2 && this.effects) { e.hissed = true; this.effects.fuse(e.position.x, e.position.y + 0.5, e.position.z); } // the hiss again halfway
       if (done && !e.remote) { this.removeExplosive(e); this.explosionQueue.push(e); }
       else if (done && e.remote && e.fuse < -1.5) this.removeExplosive(e); // the host's EXPLOSION never came (lost link): drop it quietly
     }
@@ -464,7 +469,7 @@ export class EntityManager {
 
   render(alpha, dt, frustum = null) {
     this.time += dt;
-    for (const a of this.arrows) a.render(alpha);
+    for (const a of this.arrows) a.render(alpha, this.lightAt ? this.lightAt(a.position.x, a.position.y, a.position.z) : 1);
     for (const e of this.explosives) e.render(alpha, this.time);
     const far = this.entityDistanceBlocks, p = this.player.position;
     for (const it of this.items) {

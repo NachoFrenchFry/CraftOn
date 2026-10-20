@@ -1,7 +1,7 @@
 // PrimedExplosive.js — a placed explosive turned into an entity: a block-sized box with gravity and voxel collisions
-// (so it falls, slides off edges and gets pushed by other blasts), flashing white about four times a second and faster
-// toward the end of its 4 s fuse, then it explodes (EntityManager runs the blast). Guests mirror the host's entity with
-// the same local physics and get the explosion from the host.
+// (so it falls, slides off edges and gets pushed by other blasts), flashing white every 0.5 s for 0.2 s — exactly eight
+// times over its 4 s fuse, silently — then it explodes (EntityManager runs the blast). Guests mirror the host's entity
+// with the same local physics and get the explosion from the host.
 
 import * as THREE from 'three';
 import { AABB } from '../utils/AABB.js';
@@ -11,6 +11,7 @@ import { BlockIds } from '../blocks/BlockIds.js';
 import { GRAVITY, TERMINAL_VELOCITY, EXPLOSIVE_FUSE_SECONDS } from '../config/Constants.js';
 
 const SIZE = 0.98;
+const FLASH_PERIOD = 0.5, FLASH_ON = 0.2;
 let flashMaterial = null;
 
 export class PrimedExplosive {
@@ -29,7 +30,6 @@ export class PrimedExplosive {
     this.onGround = false;
     this.dead = false;
     this.exploded = false;
-    this.hissed = false;
     this.aabb = new AABB();
     this.group = new THREE.Group();
     this.mesh = new THREE.Mesh(createBlockGeometry(BlockIds.EXPLOSIVES, SIZE), blockMaterial);
@@ -75,10 +75,10 @@ export class PrimedExplosive {
     return this.fuse <= 0;
   }
 
-  /** Visual update: interpolated position and the quickening flash. */
-  render(alpha, time) {
+  /** Visual update: interpolated position and the flash — white for 0.2 s at every half second of the fuse (8 flashes in 4 s). */
+  render(alpha) {
     this.group.position.lerpVectors(this.prevPosition, this.position, alpha);
-    const left = Math.max(0, this.fuse), rate = left < 1 ? 10 : left < 2 ? 6 : 4; // flashes per second, faster near the end
-    this.flash.visible = Math.sin(time * Math.PI * 2 * rate) > 0;
+    const elapsed = this.fuseTotal - this.fuse;
+    this.flash.visible = elapsed >= 0 && elapsed % FLASH_PERIOD < FLASH_ON;
   }
 }

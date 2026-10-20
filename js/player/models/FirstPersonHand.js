@@ -131,10 +131,13 @@ export class FirstPersonHand {
         this.toolHandle.add(this.blockMesh);
       } else {
         this.blockMesh.position.set(0, 0, 0);
+        // The bow: the 45° roll stands the sprite's diagonal stave up, the −57° yaw turns the wooden curve toward the
+        // crosshair and the string toward the player (the face still visible); the group adds the lean (update).
+        if (this.heldIsBow) this.blockMesh.rotation.set(0, -1.0, Math.PI / 4, 'XYZ');
         this.blockGroup.add(this.blockMesh);
       }
     }
-    this.armGroup.visible = !item || this.heldIsBow; // the bow hand shows the arm too (it pulls the string back)
+    this.armGroup.visible = !item; // every held item, the bow included, hides the arm
     this.blockGroup.visible = !!item;
   }
 
@@ -217,14 +220,12 @@ export class FirstPersonHand {
     // The swing punches forward: toward the crosshair (x and y move toward the screen centre), deeper
     // into the screen (-z), with the top tipping forward and slightly down; then it returns.
     if (this.blockMesh && this.heldIsBow) {
-      // The bow: held upright toward the centre of the view (more so while drawing); the arm (the string hand) sits to the
-      // right and pulls back toward the face as the draw progresses.
+      // The bow (its roll + yaw sit on the mesh, see _applyBlock): the group leans its top toward the screen centre by
+      // about 26° (Minecraft's diagonal hold) and tips it up a little; the draw moves it toward the centre, leans a touch
+      // less and tilts up a bit more while the frames advance.
       const g = this.blockGroup;
-      g.position.set(0.34 - 0.16 * draw + bobX + this.swayX, -0.36 + 0.06 * draw + bobY + this.swayY - equipDip + breathe, -0.72 - s1 * 0.1);
-      g.rotation.set(0.1 + 0.15 * draw, -0.45 + 0.25 * draw, 0.78 - 0.1 * draw);
-      const a = this.armGroup;
-      a.position.set(0.62 + bobX + this.swayX - 0.05 * draw, -1.05 + bobY + this.swayY - equipDip + 0.18 * draw + breathe, -0.62 + 0.36 * draw);
-      a.rotation.set(-0.35 - 0.5 * draw, 0.25 - 0.1 * draw, 0.28, 'YXZ');
+      g.position.set(0.36 - 0.14 * draw + bobX + this.swayX, -0.3 + 0.04 * draw + bobY + this.swayY - equipDip + breathe, -0.9 - 0.05 * draw - s1 * 0.1); // a little farther than other items: less perspective skew on the turned bow
+      g.rotation.set(0.08 + 0.08 * draw, 0, 0.45 - 0.05 * draw, 'XYZ');
     } else if (this.blockMesh && this.blockMesh.userData.isBlock) {
       const g = this.blockGroup;
       g.position.set(0.5 + bobX + this.swayX - s1 * 0.3, -0.46 + bobY + this.swayY - equipDip + s1 * 0.14 + breathe, -0.8 - s1 * 0.22);

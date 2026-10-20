@@ -198,6 +198,7 @@ export class Game {
     this.breakOverlay = new BreakOverlay(scene, this.atlas.texture);
     this.particles = new ParticleSystem(scene, this.atlas.texture, this.world);
     this.entities = new EntityManager(scene, this.world, this.atlas, this.player, this.inventory, this.events);
+    this.entities.entityTextures = this.entityTextures; // the arrow sheet (textures/entity/arrow.png) for the arrow material
     // Flowing water: scheduled updates driven from block changes; plants it floods drop their items.
     this.waterSim = new WaterSimulation(this.world, (x, y, z, id) => this._onWaterDestroys(x, y, z, id));
     this.physics.waterSim = this.waterSim;
@@ -236,10 +237,8 @@ export class Game {
     // Arrows and explosions: the voxel ray helper for sweeps / exposure, the other players, the effects and the player damage.
     this.entities.raycaster = this.raycaster;
     this.entities.effects = {
-      critTrail: (x, y, z) => this.particles.spawnCritSmall(x, y, z, 2),
       arrowHitBlock: (x, y, z) => this.audio.playAt('items/arrow_hit_block', x, y, z, 'blocks', 0.7),
       arrowHitEntity: (x, y, z) => this.audio.playAt('items/arrow_hit_entity', x, y, z, 'blocks', 0.8),
-      fuse: (x, y, z) => this.audio.playAt('explosives/fuse', x, y, z, 'blocks', 0.9),
       debris: (x, y, z, blocks) => { const n = Math.min(blocks.length, 24); for (let i = 0; i < n; i++) { const b = blocks[Math.floor(i * blocks.length / n)]; this.particles.spawnBlockBreak(b[0], b[1], b[2], BlockIds.DIRT, 3); } },
       explosion: (x, y, z, power) => this._explosionEffects(x, y, z, power),
     };

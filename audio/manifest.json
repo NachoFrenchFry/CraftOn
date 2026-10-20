@@ -98,13 +98,6 @@
    "volume": 1.0,
    "volumeVar": 0.05
   },
-  "explosives/fuse": {
-   "file": "fuse.wav",
-   "loop": false,
-   "pitch": 0.05,
-   "volume": 1.0,
-   "volumeVar": 0.05
-  },
   "items/arrow_hit_block": {
    "file": "arrow_hit_block.wav",
    "loop": false,

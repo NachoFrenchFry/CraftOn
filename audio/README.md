@@ -121,7 +121,6 @@ columns are the variation the manifest gives each sound right now.
 | `items/bow_shoot` | an arrow leaves the bow | 0.2–0.4 s | no | 6 % | 5 % |
 | `items/arrow_hit_block` | an arrow sticks into a block | 0.1–0.3 s | no | 6 % | 5 % |
 | `items/arrow_hit_entity` | an arrow hits a mob or a player | 0.1–0.3 s | no | 6 % | 5 % |
-| `explosives/fuse` | a placed explosive is primed and hisses (and again halfway through the fuse) | 0.8–1.5 s | no | 5 % | 5 % |
 | `explosives/explosion` | an explosive goes off | 1–2 s | no | 5 % | 5 % |
 | `mobs/cow/ambient` | a cow calls now and then (every 8–25 s) | 0.5–1.5 s | no | 10 % | 5 % |
 | `mobs/cow/hurt` | a cow is hit | 0.3–0.6 s | no | 10 % | 5 % |

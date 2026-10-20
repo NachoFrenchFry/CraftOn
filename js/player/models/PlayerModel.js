@@ -129,6 +129,10 @@ export class PlayerModel {
     this.heldAnchor.position.set(0, -12 * PX, -3 * PX);
     this.heldAnchor.rotation.set(0.3, -0.6, 0);
     this.rightArm.pivot.add(this.heldAnchor);
+    // The bow hangs off an unrotated anchor at the same hand, so its pose can be reasoned about in the arm's own frame.
+    this.bowAnchor = new THREE.Group();
+    this.bowAnchor.position.set(0, -12 * PX, -3 * PX);
+    this.rightArm.pivot.add(this.bowAnchor);
     this.heldMesh = null;
     this.hips.add(this.leftLeg.pivot, this.rightLeg.pivot, this.bodyPivot);
     this.root.add(this.hips);
@@ -191,7 +195,20 @@ export class PlayerModel {
       }
       this.heldMesh.position.set(0, 0.16, 0);
       this.heldMesh.rotation.set(-0.2, 0, 0, 'ZYX');
-      if (item.bow) { this.heldMesh.position.set(0.05, 0.22, -0.05); this.heldMesh.rotation.set(-0.35, 0.3, 0.9, 'ZYX'); } // the bow stands upright in the fist
+      if (item.bow) {
+        // The bow stands upright in the fist (roll 45°: the sprite's diagonal stave up) with the wooden curve forward (−Z)
+        // and the string toward the body, turned −57° about the stave so the face stays visible; the small −0.15 pitch
+        // offsets part of the hanging arm's held-item lift. Aiming (the arm raised forward, rotated +90° about X): the arm's −Z is up and
+        // −Y is forward, so a −90° pitch after the yaw stands it up again. Lives on the unrotated bow anchor.
+        this.heldMesh.position.set(0, 0.08, 0);
+        if (this.bowFrame > 0) this.heldMesh.rotation.set(-Math.PI / 2, -1.0, Math.PI / 4, 'XYZ');
+        else this.heldMesh.rotation.set(-0.15, -1.0, Math.PI / 4, 'XYZ');
+        // The lean: the top of the bow tips about 26° toward the body's centre (Minecraft's diagonal hold) — about the arm's
+        // Z (the forward axis) with the arm hanging, about its Y (the forward axis once the arm is raised) when aiming.
+        if (this.bowFrame > 0) this.bowAnchor.rotation.set(0, 0.45, 0); else this.bowAnchor.rotation.set(0, 0, 0.45);
+        this.bowAnchor.add(this.heldMesh);
+        return;
+      }
     }
     this.heldAnchor.add(this.heldMesh);
   }
