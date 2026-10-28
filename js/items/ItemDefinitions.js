@@ -39,6 +39,10 @@ export const ItemIds = Object.freeze({
   STRING: 308,
   BOW: 309,
   ARROW: 310,
+  FEATHER: 311,
+  RAW_CHICKEN: 312,
+  COOKED_CHICKEN: 313,
+  CHICKEN_SPAWN_EGG: 314,
 });
 
 /** Knockback points of the empty hand; an item's `knockback` replaces it (a stick: 10). Knockback strength scales with points / 5. */
