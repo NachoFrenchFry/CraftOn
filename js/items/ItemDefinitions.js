@@ -124,6 +124,9 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COOKED_BEEF, name: 'cooked_beef', displayName: 'Cooked Beef', texture: 'cooked_beef', stackSize: 64, placeable: false, food: { heal: 30 } },
   { id: ItemIds.COOKED_PORKCHOP, name: 'cooked_porkchop', displayName: 'Cooked Porkchop', texture: 'cooked_porkchop', stackSize: 64, placeable: false, food: { heal: 30 } },
   { id: ItemIds.COOKED_MUTTON, name: 'cooked_mutton', displayName: 'Cooked Mutton', texture: 'cooked_mutton', stackSize: 64, placeable: false, food: { heal: 25 } },
+  { id: ItemIds.RAW_CHICKEN, name: 'raw_chicken', displayName: 'Raw Chicken', texture: 'raw_chicken', stackSize: 64, placeable: false, food: { heal: 10 } },
+  { id: ItemIds.COOKED_CHICKEN, name: 'cooked_chicken', displayName: 'Cooked Chicken', texture: 'cooked_chicken', stackSize: 64, placeable: false, food: { heal: 20 } },
+  { id: ItemIds.FEATHER, name: 'feather', displayName: 'Feather', texture: 'feather', stackSize: 64, placeable: false },
   // axes (wood-type blocks)
   { id: ItemIds.WOODEN_AXE, name: 'wooden_axe', displayName: 'Wooden Axe', texture: 'wooden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.wooden, damage: TOOL_DAMAGE.axe.wooden } },
   { id: ItemIds.STONE_AXE, name: 'stone_axe', displayName: 'Stone Axe', texture: 'stone_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.stone, damage: TOOL_DAMAGE.axe.stone } },
@@ -135,4 +138,5 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COW_SPAWN_EGG, name: 'cow_spawn_egg', displayName: 'Cow Spawn Egg', texture: 'cow_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'cow' },
   { id: ItemIds.PIG_SPAWN_EGG, name: 'pig_spawn_egg', displayName: 'Pig Spawn Egg', texture: 'pig_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'pig' },
   { id: ItemIds.SHEEP_SPAWN_EGG, name: 'sheep_spawn_egg', displayName: 'Sheep Spawn Egg', texture: 'sheep_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'sheep' },
+  { id: ItemIds.CHICKEN_SPAWN_EGG, name: 'chicken_spawn_egg', displayName: 'Chicken Spawn Egg', texture: 'chicken_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'chicken' },
 ]);
