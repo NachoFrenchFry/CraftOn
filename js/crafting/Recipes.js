@@ -79,4 +79,5 @@ export const RECIPES = Object.freeze([
   { id: 'cooked_beef', result: { item: 'cooked_beef', count: 1 }, inputs: [{ item: 'raw_beef', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
   { id: 'cooked_porkchop', result: { item: 'cooked_porkchop', count: 1 }, inputs: [{ item: 'raw_porkchop', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
   { id: 'cooked_mutton', result: { item: 'cooked_mutton', count: 1 }, inputs: [{ item: 'raw_mutton', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
+  { id: 'cooked_chicken', result: { item: 'cooked_chicken', count: 1 }, inputs: [{ item: 'raw_chicken', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
 ]);
