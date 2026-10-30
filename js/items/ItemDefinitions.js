@@ -39,16 +39,13 @@ export const ItemIds = Object.freeze({
   STRING: 308,
   BOW: 309,
   ARROW: 310,
-<<<<<<< HEAD
   ZOMBIE_SPAWN_EGG: 311,
   GLIDER: 312,
   ROCKET: 313,
-=======
-  FEATHER: 311,
-  RAW_CHICKEN: 312,
-  COOKED_CHICKEN: 313,
-  CHICKEN_SPAWN_EGG: 314,
->>>>>>> 311ebb9572c8a574395ce27011a6a72c3cd38c78
+  FEATHER: 314,
+  RAW_CHICKEN: 315,
+  COOKED_CHICKEN: 316,
+  CHICKEN_SPAWN_EGG: 317,
 });
 
 /** Knockback points of the empty hand; an item's `knockback` replaces it (a stick: 10). Knockback strength scales with points / 5. */
