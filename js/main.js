@@ -15,6 +15,21 @@
 // the account screen or the main menu replaces it.
 
 import { Game } from './core/Game.js';
+import { Settings } from './core/Settings.js';
+
+/**
+ * The far-terrain feature (removed Oct 25 2026) cached its data in the IndexedDB database `crafton-farlod`. Delete it
+ * once; a localStorage flag remembers that it is gone. World saves and every other store are untouched.
+ */
+function removeFarTerrainCache() {
+  const FLAG = 'crafton.farlodCleared.v1';
+  try {
+    if (typeof indexedDB === 'undefined' || localStorage.getItem(FLAG)) return;
+    const req = indexedDB.deleteDatabase('crafton-farlod');
+    req.onsuccess = () => { try { localStorage.setItem(FLAG, '1'); } catch (e) { /* no storage: tried again next time */ } };
+    req.onerror = () => console.warn('CraftOn: could not delete the old far-terrain cache; trying again next start');
+  } catch (e) { /* no IndexedDB here */ }
+}
 import { State } from './core/GameState.js';
 import { hashSeed, randomSeed } from './utils/Random.js';
 
@@ -55,6 +70,8 @@ async function main() {
     return;
   }
   const canvas = document.getElementById('game-canvas');
+  { const p = new URLSearchParams(location.search); if (p.has('aa')) Settings.urlOverrides = { antialias: p.get('aa') }; } // anti-aliasing is fixed when the WebGL context is created
+  removeFarTerrainCache(); // the far terrain (removed Oct 25 2026) kept a cache in IndexedDB: dropped once
   const game = new Game(canvas);
   window.crafton = game; // handy for debugging in the console
   const params = new URLSearchParams(location.search);
@@ -102,6 +119,7 @@ async function main() {
   game.state.set(loggedIn ? State.MENU : State.ACCOUNT);
   T.add('total: navigation → first screen', performance.now());
   if (params.has('atlas')) game.ui.toggleAtlasView();
+  if (params.has('chunkmap')) game.ui.debug.toggle(); // the F3 screen with the chunk-state map from the start
   if (bench) {
     game.ignoreHidden = true;
     game.settings.transient = true; // never persist the benchmark's settings

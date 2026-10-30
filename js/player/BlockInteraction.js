@@ -18,6 +18,8 @@ import { REACH_SURVIVAL, REACH_CREATIVE, PLACE_REPEAT_SECONDS, CREATIVE_REPEAT_D
 
 const HIT_SOUND_INTERVAL = 0.25;
 const ATTACK_BLOCK_SECONDS = 0.3;
+
+/** While mining, the swing (and its chips) repeats this often; air punches never repeat. */
 const SWING_INTERVAL = 0.25;
 
 export class BlockInteraction {
@@ -53,6 +55,8 @@ export class BlockInteraction {
     this.targetPlayer = null;
     /** Bow: seconds the use button has been held with a bow (0 = not drawing). */
     this.drawTimer = 0;
+    /** Swinging at air: a click with nothing targeted swings once (no hold-to-repeat; SWING_INTERVAL only paces mining). */
+    this.airSwinging = false;
   }
 
   get eatProgress() { return this.eatTimer > 0 ? Math.min(1, this.eatTimer / EAT_SECONDS) : 0; }
@@ -110,6 +114,7 @@ export class BlockInteraction {
       this.placeTimer = 0; this.placeRepeating = false;
       this.eatTimer = 0;
       this._stopDrawing();
+      this.airSwinging = false;
       return;
     }
 
@@ -128,6 +133,11 @@ export class BlockInteraction {
       if (this.actions.wasPressed('attack')) this._attackMob(this.targetMob);
     } else if (attack && t.hit && !this.attackLatched && this.attackLockTimer <= 0 && !(this.player.isCreative && isSword(held))) this._mine(dt); // swords never break blocks in Creative
     else this._stopMining();
+    // Swinging at air: a click with nothing under the crosshair still swings, once per click (holding does not repeat it;
+    // holding while mining still works as before).
+    if (attack && !t.hit && !this.targetMob && !this.targetPlayer && !this.attackLatched && this.attackLockTimer <= 0) {
+      if (!this.airSwinging) { this.airSwinging = true; this.events.emit('player:swing'); }
+    } else this.airSwinging = false;
 
     // The bow: hold use to draw, release to shoot (nothing else happens with a bow on the use button).
     if (isBow(held)) { this._updateBow(dt, use); this.placeTimer = 0; this.eatTimer = 0; if (this.actions.wasPressed('pick') && t.hit) this._pickBlock(t.blockId); return; }
@@ -190,15 +200,19 @@ export class BlockInteraction {
   }
 
   /** Spawn egg (Creative catalog only): the mob appears on top of the clicked face. */
+  /** A spawn egg: the mob appears on the clicked face, ignoring the darkness rule and the population caps (like Minecraft); a guest asks the host. */
   _useSpawnEgg(type) {
     const def = MOB_BY_TYPE[type];
     const t = this.target;
     if (!def || !t.hit || !this.entities.mobs) return;
     const p = t.placePos;
-    if (!this.world.isLoadedAt(p.x, p.z)) return;
-    this.entities.mobs._add(def, p.x + 0.5, p.y, p.z + 0.5, (Math.random() * 4294967296) >>> 0, Math.random() * Math.PI * 2, def.health);
+    if (!this.world.isLoadedAt(p.x, p.z)) { this.events.emit('player:toast', 'That spot is not loaded yet.'); return; }
+    if (def.hostile && !this.entities.mobs.hostileEnabled) { this.events.emit('player:toast', 'Hostile mobs are turned off in this world.'); return; }
     this.events.emit('player:swing');
     this.audio.playUI('pop', 0.6);
+    if (this.guest) { this.events.emit('player:spawnEgg', type, p.x, p.y, p.z); return; } // the host spawns it and tells everyone
+    const mob = this.entities.mobs._add(def, p.x + 0.5, p.y, p.z + 0.5, (Math.random() * 4294967296) >>> 0, Math.random() * Math.PI * 2, def.health, null, true);
+    if (!mob) this.events.emit('player:toast', 'The mob could not be spawned here.');
   }
 
   _stopMining() {
@@ -214,9 +228,9 @@ export class BlockInteraction {
   _mine(dt) {
     const t = this.target;
     const id = t.blockId;
-    if (!this.mining) { this.mining = true; this.events.emit('player:swing'); this.swingTimer = 0; this.creativeBreaks = 0; this.creativeCooldown = 0; } // the click itself breaks at once
+    if (!this.mining) { this.mining = true; this.events.emit('player:swing'); this.swingTimer = 0; this.creativeBreaks = 0; this.creativeCooldown = 0; this._hitChips(t); } // the click itself breaks at once
     this.swingTimer += dt;
-    if (this.swingTimer >= SWING_INTERVAL) { this.swingTimer = 0; this.events.emit('player:swing'); }
+    if (this.swingTimer >= SWING_INTERVAL) { this.swingTimer = 0; this.events.emit('player:swing'); this._hitChips(t); }
 
     if (this.player.isCreative) {
       // Keyboard-auto-repeat timing: the first break is immediate, the next waits CREATIVE_REPEAT_DELAY, the rest come every
@@ -265,6 +279,13 @@ export class BlockInteraction {
     // Plants and standing torches above, wall torches beside: whatever this block held up breaks too.
     breakDependents(this.world, x, y, z, (nx, ny, nz) => this.breakBlock(nx, ny, nz));
     this.events.emit('block:broken', x, y, z, id);
+  }
+
+  /** A few chips fly off the hit face with every mining hit. */
+  _hitChips(t) {
+    if (!t.hit || !this.particles || !this.particles.spawnMiningHit) return;
+    const n = t.faceNormal;
+    this.particles.spawnMiningHit(t.blockPos.x, t.blockPos.y, t.blockPos.z, n.x, n.y, n.z, t.blockId);
   }
 
   /** Cardinal direction a placed block's front should face so it looks at the player. */
@@ -320,6 +341,8 @@ export class BlockInteraction {
     if (!stack) return;
     const armor = ItemRegistry.armor(stack.itemId);
     if (armor) { if (!repeat) this._equipArmor(armor); return; }
+    // The glider: right click while gliding fires a rocket from the inventory (Game checks the rockets and the cooldown).
+    if (ItemRegistry.isGlider(stack.itemId)) { if (!repeat && this.player.gliding) this.events.emit('player:rocket'); return; }
     if (!t.hit) return;
     if (stack.itemId === ItemIds.BUCKET || stack.itemId === ItemIds.WATER_BUCKET || stack.itemId === ItemIds.LAVA_BUCKET) { this._useBucket(stack.itemId); return; }
     const item = ItemRegistry.get(stack.itemId);

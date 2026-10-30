@@ -34,6 +34,8 @@ export function isSword(itemId) {
 }
 
 export function isBow(itemId) { return itemId != null && ItemRegistry.isBow(itemId); }
+export function isGlider(itemId) { return itemId != null && ItemRegistry.isGlider(itemId); }
+export function isRocket(itemId) { return itemId != null && ItemRegistry.isRocket(itemId); }
 
 /** Knockback points of a hit with the held item (hand 5, stick 10); the knockback strength is points / 5 times the usual. */
 export function knockbackPoints(itemId) { return itemId != null ? ItemRegistry.knockback(itemId) : HAND_KNOCKBACK; }
@@ -49,6 +51,8 @@ export function itemStatLines(itemId) {
   const kb = knockbackPoints(itemId) - HAND_KNOCKBACK;
   if (itemId != null && kb !== 0) lines.push({ text: `${kb > 0 ? '+' : ''}${kb} Knockback`, color: 'green' }); // only items whose knockback differs from the hand
   if (isBow(itemId)) { lines.push({ text: 'Hold right click to draw, release to shoot', color: 'gray' }); lines.push({ text: 'Up to 9 damage (×5 to players), critical when fully drawn', color: 'gray' }); }
+  if (isGlider(itemId)) { lines.push({ text: 'Hold it and fall (or press jump in mid-air) to glide', color: 'gray' }); lines.push({ text: 'Right click with rockets in the inventory to boost', color: 'gray' }); }
+  if (isRocket(itemId)) lines.push({ text: 'Boosts a glide for about a second (right click while gliding)', color: 'gray' });
   const tool = itemId != null ? ItemRegistry.tool(itemId) : null;
   if (!tool) return lines;
   const bonus = (tool.damage || HAND_ATTACK_DAMAGE) - HAND_ATTACK_DAMAGE;

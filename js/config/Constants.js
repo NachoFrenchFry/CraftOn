@@ -196,6 +196,27 @@ export const ARROW_FLIGHT_SECONDS = 30;
 export const ARROW_BASE_DAMAGE = 9;           // × power, plus 0–4 when fully drawn (critical)
 export const BOW_ZOOM = 0.10;                 // FOV shrinks up to 10 % at full draw
 
+// ---- FOV effects (scaled by the "FOV effects" option, 0–100 %) ----
+export const FOV_SPRINT = 0.20;               // +20 % while sprinting
+export const FOV_SPEED_START = 15;            // blocks/s where the speed widening begins (falling fast, flying fast, gliding)
+export const FOV_SPEED_FULL = 50;             // blocks/s where it reaches FOV_SPEED_MAX
+export const FOV_SPEED_MAX = 0.50;            // +50 %
+export const FOV_ROCKET_PUNCH = 0.17;         // the quick extra punch-in of a rocket boost (decays over ~0.5 s)
+export const FOV_MAX_DEGREES = 140;           // the shown FOV never exceeds this, whatever the base setting and the effects
+export const FOV_EASE_IN = 0.3;               // time constant (s, game time) toward a wider FOV — also the bow zoom easing back
+export const FOV_EASE_OUT = 0.45;             // time constant toward a narrower FOV
+
+// ---- Gliders and rockets (Minecraft's elytra / firework numbers, per 20 Hz tick, in blocks per tick) ----
+export const GLIDE_TICK = 1 / 20;
+export const GLIDE_START_FALL_SPEED = 4;      // blocks/s of falling that starts a glide while holding the glider
+export const GLIDE_CRASH_SPEED = 0.5;         // blocks per tick lost against a wall before the crash damage starts ((lost × 10 − 3) × 5)
+export const ROCKET_SECONDS = 1.1;            // the boost lasts this long
+export const ROCKET_COOLDOWN = 0.2;           // seconds of game time between rockets
+export const ROCKET_RECIPE_COUNT = 3;
+
+// ---- Chests ----
+export const CHEST_SLOTS = 36;                // 6 × 6
+
 // ---- Explosives ----
 export const EXPLOSIVE_FUSE_SECONDS = 4;
 export const EXPLOSIVE_CHAIN_FUSE_MIN = 0.5;

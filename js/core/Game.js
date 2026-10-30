@@ -12,8 +12,9 @@ import { PointerLockController } from '../input/PointerLockController.js';
 import { KeyBindingStore } from './KeyBindingStore.js';
 import { PAUSE_CODE, CHAT_ENTER_CODE, CHAT_SLASH_CODE, DROP_STACK_MODIFIERS } from '../config/KeyBindings.js';
 import { createCommands } from '../commands/index.js';
-import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX, EXPLOSION_KNOCKBACK } from '../config/Constants.js';
-import { Renderer } from '../rendering/Renderer.js';
+import { LOCATE_MAX_DISTANCE } from '../generation/Locate.js';
+import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX, EXPLOSION_KNOCKBACK, ROCKET_SECONDS, ROCKET_COOLDOWN } from '../config/Constants.js';
+import { Renderer, msaaSamplesOf } from '../rendering/Renderer.js';
 import { TextureAtlas } from '../rendering/TextureAtlas.js';
 import { ChunkMeshManager } from '../rendering/ChunkMeshManager.js';
 import { Sky } from '../rendering/Sky.js';
@@ -58,8 +59,9 @@ import { BlockInteraction } from '../player/BlockInteraction.js';
 import { PlayerModel } from '../player/models/PlayerModel.js';
 import { FirstPersonHand } from '../player/models/FirstPersonHand.js';
 import { createModelLights } from '../player/models/ModelParts.js';
-import { zombieDamage, arrowPlayerDamage, explosionPlayerDamage } from '../player/Damage.js';
+import { zombieDamage, armorReduction, arrowPlayerDamage, explosionPlayerDamage } from '../player/Damage.js';
 import { ItemIds } from '../items/ItemDefinitions.js';
+import { ChestManager } from '../items/ChestManager.js';
 import { INVENTORY_SIZE } from '../items/Inventory.js';
 import { EntityManager } from '../entities/EntityManager.js';
 import { AudioManager } from '../audio/AudioManager.js';
@@ -131,6 +133,9 @@ export class Game {
     /** /tick: Minecraft's scale, 20 = normal; never saved, reset when a world loads. */
     this.tick = { rate: TICK_RATE_DEFAULT, frozen: false };
     this.commands = createCommands(this);
+    /** The structure names of structures/index.json (for /locate and its suggestions); loaded once in the background. */
+    this.structureNames = [];
+    fetch('structures/index.json', { cache: 'reload' }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (j && Array.isArray(j.structures)) this.structureNames = j.structures.map((f) => String(f).replace(/\.json$/, '')).sort(); }).catch(() => {});
     this.worldMeta = null;
     this._eye = new THREE.Vector3();
     this._dir = new THREE.Vector3();
@@ -199,6 +204,8 @@ export class Game {
     this.particles = new ParticleSystem(scene, this.atlas.texture, this.world);
     this.entities = new EntityManager(scene, this.world, this.atlas, this.player, this.inventory, this.events);
     this.entities.entityTextures = this.entityTextures; // the arrow sheet (textures/entity/arrow.png) for the arrow material
+    /** Chests: their contents live in the chunk edit data; the host owns them on a server. */
+    this.chests = new ChestManager(this);
     // Flowing water: scheduled updates driven from block changes; plants it floods drop their items.
     this.waterSim = new WaterSimulation(this.world, (x, y, z, id) => this._onWaterDestroys(x, y, z, id));
     this.physics.waterSim = this.waterSim;
@@ -206,6 +213,7 @@ export class Game {
     // Lava: the same scheduler at a slower tick; lava meeting water sizzles into cobblestone.
     this.lavaSim = new WaterSimulation(this.world, (x, y, z, id) => this._onWaterDestroys(x, y, z, id), LIQUID_KINDS.lava);
     this.waterSim.onConvert = this.lavaSim.onConvert = (x, y, z) => this._sizzle(x + 0.5, y + 0.5, z + 0.5);
+    this.entities.lavaSim = this.lavaSim; // primed explosives drift with lava currents too
     this.entities.onBurn = (x, y, z) => this._sizzle(x, y, z);
     // Passive mobs (cows, pigs, sheep).
     this.entities.mobs = new MobManager(scene, this.world, this.entityTextures, {
@@ -257,6 +265,7 @@ export class Game {
       canEat: () => this.health.canEat(),
       explosivesAllowed: () => !this.worldMeta || this.worldMeta.explosives !== false,
     });
+    this.entities.explosivesAllowed = () => !this.worldMeta || this.worldMeta.explosives !== false; // arrows set explosives off only while they are on
     this.health = new HealthSystem(this);
     this.blockModelMaterial = createBlockModelMaterial(this.atlas.texture, true);
     this.handBlockMaterial = createBlockModelMaterial(this.atlas.texture, false);
@@ -331,7 +340,8 @@ export class Game {
   _wireEvents() {
     const ev = this.events;
     ev.on('settings:changed', (key, value) => {
-      if (key === 'renderDistance') { this.sky.setRenderDistance(value); this.chunkManager.invalidate(); this.entities.mobs.setRenderDistance(value); this._applyPerformanceSettings(); }
+      if (key === 'renderDistance') { this.sky.setRenderDistance(value); this.renderer.setRenderDistance(value); this.chunkManager.invalidate(); this.entities.mobs.setRenderDistance(value); this._applyPerformanceSettings(); }
+      else if (key === 'antialias') this._applyAntialias();
       else if (key === 'smoothLighting' || key === 'fancyLeaves') this.chunkManager.remeshAll();
       else if (key === 'renderScale' || key === 'hiDpi') { this.renderer.autoScale = 1; this.renderer.resize(); }
       else if (key === 'maxFps' || key === 'simulationDistance' || key === 'entityDistance' || key === 'particles') this._applyPerformanceSettings();
@@ -361,6 +371,9 @@ export class Game {
     ev.on('player:jump', () => this.audio.playStep(this._blockUnderPlayer(), 0.18));
     // The bow: the draw creak, then the shot (an arrow leaves the inventory in Survival; a guest asks the host to shoot it).
     ev.on('player:drawStart', () => this.audio.playPlayer('bow_draw', 0.8));
+    // Gliding: a crash into a wall hurts ((lost speed × 10 − 3) × 5 before armor); a rocket boosts the glide.
+    ev.on('player:crash', (dmg) => { if (this.health.active && !this.player.dead) this.health.damage(Math.round(dmg * armorReduction(this.inventory.armorPoints())), { kind: 'crash' }, { ignoreInvuln: true }); });
+    ev.on('player:rocket', () => this._useRocket());
     ev.on('player:toast', (text) => this.ui.hud.showToast(text, false));
     ev.on('player:shoot', (power) => this._shoot(power));
     // Explosives: placing one primes an entity at once (the host does it for a guest).
@@ -386,7 +399,8 @@ export class Game {
       }
     });
     ev.on('chunk:unloading', (cx, cz) => this.entities.mobs.onChunkUnloading(cx, cz));
-    ev.on('station:open', (station) => this.openInventory(station));
+    ev.on('station:open', (station, pos) => this.openInventory(station, pos));
+    ev.on('block:changed', (x, y, z, info) => this.chests.onBlockChanged(x, y, z, info.old, info.id)); // a broken chest drops its contents
     ev.on('craft:done', (recipe) => this.audio.playUI(recipe.stations.includes('furnace') ? 'smelt' : 'craft', 0.8));
     ev.on('item:thrown', () => this.audio.playUI('drop', 0.7));
     this.canvas.addEventListener('mousedown', () => {
@@ -426,6 +440,14 @@ export class Game {
     if (this.selectionBox) add(this.selectionBox.lines && this.selectionBox.lines.material);
     if (this.playerModel) walk(this.playerModel.root);
     return out;
+  }
+
+  /** The anti-aliasing setting changed: FXAA / Off apply live; an MSAA change needs the WebGL context recreated, i.e. a reload. */
+  _applyAntialias() {
+    const r = this.renderer;
+    r.setAntialias(this.settings.get('antialias'));
+    if (r.aaNeedsReload) this.ui.hud.showToast('Reload the page to apply the MSAA setting', false);
+    else if (r.msaaUnsupported && msaaSamplesOf(this.settings.get('antialias')) > 0) this.ui.hud.showToast('MSAA is not available here; FXAA is used instead', false);
   }
 
   /** Load one of my worlds and host it (Multiplayer → Host New Server). `opts`: { maxPlayers, visibility } or just the player limit. */
@@ -490,15 +512,14 @@ export class Game {
     return true;
   }
 
-  /** Leave the server (pause menu "Leave Server", a lost host, a kick). */
+  /** Leave the server (pause menu "Leave Server", a lost host, a kick): back to the multiplayer server list, the reason on it. */
   leaveServer(message = null) {
     const client = this.net;
     if (!client || client.isHost) return;
     this.net = null;
     client.close(true);
     if (this.state.inWorld || this.state.is(State.LOADING)) this.session.abandon();
-    if (!this.state.is(State.KICKED)) this.state.set(State.MENU);
-    if (message) this.ui.multiplayer.showDisconnected(message);
+    if (!this.state.is(State.KICKED)) { this.state.set(State.MENU); this.ui.multiplayer.showMain(message); }
     this._netChanged();
   }
 
@@ -558,6 +579,36 @@ export class Game {
     const id = s ? s.itemId : 0;
     this.hand.setHeldItem(id);
     this.playerModel.setHeldItem(id);
+    this.player.holdingGlider = ItemRegistry.isGlider(id); // gliding needs the glider in the hand (bloxd style)
+  }
+
+  /** A rocket while gliding: one from the inventory (none in Creative), 0.2 s of game time apart; a guest asks the host first. */
+  _useRocket() {
+    const p = this.player;
+    if (!p.gliding || p.rocketCooldown > 0 || p.dead) return;
+    if (!p.isCreative && this._findItemSlot(ItemIds.ROCKET) < 0) return;
+    if (this.net && !this.net.isHost) { this.net.rocket(); return; } // the host validates and answers ROCKET_OK
+    this._fireRocket();
+  }
+
+  /** The boost itself (after the host's OK for a guest). */
+  _fireRocket() {
+    const p = this.player;
+    if (!p.gliding || p.dead) return;
+    if (!p.isCreative) { const slot = this._findItemSlot(ItemIds.ROCKET); if (slot < 0) return; this.inventory.removeFromSlot(slot, 1); }
+    p.rocketTime = ROCKET_SECONDS;
+    p.rocketCooldown = ROCKET_COOLDOWN;
+    this.cameraController.rocket();
+    this.audio.playAt('items/rocket_launch', p.position.x, p.position.y + 1, p.position.z, 'player', 0.9);
+    this.events.emit('player:rocketFired');
+  }
+
+  /** The smoke-and-spark trail behind a boosting player at (x, y, z) moving along (vx, vy, vz). */
+  rocketTrail(x, y, z, vx, vy, vz) {
+    const len = Math.hypot(vx, vy, vz) || 1;
+    const bx = x - vx / len * 0.7, by = y - vy / len * 0.7, bz = z - vz / len * 0.7;
+    this.particles.spawnSmoke(bx, by, bz, 2, 0.9);
+    this.particles.spawnFlame(bx, by, bz, 2, 0.25, -0.5);
   }
 
   /** Shoot an arrow from the eyes along the view (power 0..1 from the draw); Survival uses one arrow up. */
@@ -568,7 +619,7 @@ export class Game {
     if (!creative) { const slot = this._findItemSlot(ItemIds.ARROW); if (slot < 0) return; this.inventory.removeFromSlot(slot, 1); }
     const eye = p.getEyePosition(this._eye), dir = p.getLookDirection(this._dir);
     this.audio.playPlayer('bow_shoot', 0.9);
-    this.events.emit('player:swing');
+    this.hand.bowKick(); // no swing: the bow just recoils back to its resting frame; third person / remote players only lower their arms
     if (this.net && !this.net.isHost) { this.net.shoot(eye, dir, power); return; }
     const origin = { x: eye.x + dir.x * 0.3, y: eye.y - 0.1 + dir.y * 0.3, z: eye.z + dir.z * 0.3 };
     this.entities.shootArrow(origin, dir, power, 'self', { pickup: !creative });
@@ -661,28 +712,46 @@ export class Game {
     } else if (this.state.is(State.INVENTORY)) this.closeInventory(lock);
   }
 
-  /** @param {'inventory'|'crafting_table'|'furnace'} station recipe list to show */
-  openInventory(station = 'inventory') {
+  /**
+   * @param {'inventory'|'crafting_table'|'furnace'|'chest'} station recipe list (or the chest) to show
+   * @param {{x: number, y: number, z: number}|null} pos the station block (chests)
+   */
+  openInventory(station = 'inventory', pos = null) {
     if (!this.state.is(State.PLAYING)) return;
-    if (this.player.isSpectator && station !== 'inventory') return; // spectators cannot use stations
+    if (this.player.isSpectator && station !== 'inventory') return; // spectators cannot use stations (or chests)
     if (this.ui.chat.isOpen) this.ui.chat.close(false);
     this.lock.release('inventory');
     this.state.set(State.INVENTORY);
+    if (station === 'chest' && pos) {
+      const chest = this.chests.open(pos.x, pos.y, pos.z);
+      if (this.isGuest) this.net.chestOpen(pos.x, pos.y, pos.z); // the host's contents arrive as CHEST_CONTENTS
+      this.ui.inventory.open('chest', chest, { x: pos.x, y: pos.y, z: pos.z });
+      this.audio.playAt('blocks/chest_open', pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, 'blocks', 0.8);
+      return;
+    }
     this.ui.inventory.open(station);
     this.audio.playUI('inv_open');
   }
 
   closeInventory(lock = true) {
     if (!this.state.is(State.INVENTORY)) return;
+    const chestPos = this.ui.inventory.station === 'chest' ? this.ui.inventory.chestPos : null;
     this.ui.inventory.close();
     this.state.set(State.PLAYING);
-    this.audio.playUI('inv_close');
+    if (chestPos) this.audio.playAt('blocks/chest_close', chestPos.x + 0.5, chestPos.y + 0.5, chestPos.z + 0.5, 'blocks', 0.8);
+    else this.audio.playUI('inv_close');
     if (lock) this.requestPointerLock('inventory-close'); else this.lock.relockOnNextInput();
   }
 
   // ---- Chat and commands ----
 
   /** Chat box: `prefill` '/' when the slash key opened it. */
+  /** /locate: the nearest structure or biome from the player, searched in a chunk worker. */
+  locate(kind, name) {
+    const p = this.player.position;
+    return this.chunkManager.locate(kind, name, Math.floor(p.x), Math.floor(p.z), LOCATE_MAX_DISTANCE);
+  }
+
   openChat(prefill = '') {
     if (!this.state.is(State.PLAYING) || this.ui.chat.isOpen) return;
     this.ui.chat.open(prefill);
@@ -784,9 +853,10 @@ export class Game {
   async saveAndQuit() {
     this.ui.pause.setBusy(true);
     try {
-      if (this.isGuest) { this.leaveServer(); return; }
+      if (this.isGuest) { this.leaveServer(); return; } // → the server list
       if (this.net && this.net.isHost) this.stopHosting();
-      await this.session.quit();
+      const left = await this.session.quit();
+      if (left && this.state.is(State.MENU)) this.ui.mainMenu.showWorlds(); // back to the world selection, not the home page
     } finally { this.ui.pause.setBusy(false); }
   }
 
@@ -967,6 +1037,7 @@ export class Game {
       this.ui.hud.setHotbarVisible(!spectator && !this.state.is(State.INVENTORY));
       this.sky.setLiquid(p.headInLava ? 'lava' : p.headInWater ? 'water' : null);
       if (p.onFire && !p.dead && !spectator) this.particles.spawnFlame(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, first ? 1 : 2, 0.35, 0.9); // burning
+      if (p.rocketTime > 0 && !p.dead) this.rocketTrail(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, p.velocity.x, p.velocity.y, p.velocity.z);
       this.sky.update(this.renderer.camera);
       this.audio.update(dt, this.renderer.camera, p, this.world);
       this._footsteps();

@@ -41,8 +41,9 @@ export class EntityManager {
     this.player = player;
     this.inventory = inventory;
     this.events = events;
-    /** Set by Game so dropped items drift in flowing water. */
+    /** Set by Game so dropped items (and primed explosives) drift in flowing water; `lavaSim` for explosives in lava. */
     this.waterSim = null;
+    this.lavaSim = null;
     /** @type {import('./mobs/MobManager.js').MobManager|null} set by Game once the mob textures loaded */
     this.mobs = null;
     this.material = createBlockModelMaterial(atlas.texture);
@@ -89,6 +90,8 @@ export class EntityManager {
     /** Host hooks for arrows and explosives (HostServer). */
     this.onArrowSpawn = null; this.onArrowStuck = null; this.onArrowRemove = null;
     this.onExplosiveSpawn = null; this.onExplosion = null;
+    /** Set by Game: are explosives on in this world ("Explosives: Off" in Server Settings)? Only then do arrows set off explosive blocks and primed explosives. */
+    this.explosivesAllowed = null;
     /** True while an explosion removes its blocks (HostServer tags the batch). */
     this.exploding = false;
     /** Statistics for tests. */
@@ -207,6 +210,7 @@ export class EntityManager {
       vx: vx ?? dir.x * speed, vy: vy ?? dir.y * speed, vz: vz ?? dir.z * speed,
       shooter, power, crit: crit ?? power >= 1, pickup, id: id !== null ? id : this.remote ? null : this.nextArrowId++, remote,
     });
+    a.world = this.world;
     this.arrows.push(a);
     this.scene.add(a.mesh);
     this.arrowsShot++;
@@ -239,6 +243,12 @@ export class EntityManager {
     if (this.raycaster) { const t = this.raycaster.solidDistance(ox, oy, oz, dx, dy, dz, len); if (t < len) { bestT = t; best = { t, kind: 'block', target: null }; } }
     if (this.remote) return best; // guests only stop at blocks; the host decides hits
     if (this.mobs) { const h = this.mobs.raycast(ox, oy, oz, dx, dy, dz, bestT); if (h && h.distance < bestT) { bestT = h.distance; best = { t: h.distance, kind: 'mob', target: h.mob }; } }
+    if (this._explosivesOn()) for (const e of this.explosives) { // a primed explosive in the way goes off at once
+      if (e.dead) continue;
+      const b = e.updateAABB();
+      const t = rayBoxT(ox, oy, oz, dx, dy, dz, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ, bestT);
+      if (t >= 0 && t < bestT) { bestT = t; best = { t, kind: 'explosive', target: e }; }
+    }
     if (this.remotePlayers && a.age > 0.05) { const h = this.remotePlayers.raycast(ox, oy, oz, dx, dy, dz, bestT); if (h && h.player.id !== a.shooter && h.distance < bestT) { bestT = h.distance; best = { t: h.distance, kind: 'player', target: h.player }; } }
     if (a.shooter !== 'self' && a.age > 0.05 && !this.player.isSpectator && !this.player.dead) {
       const b = this.player.aabb;
@@ -256,9 +266,28 @@ export class EntityManager {
       if (a.dead) { this.removeArrow(a); continue; }
       if (!hit) { this._arrowPickup(a); continue; }
       if (hit.kind === 'block') {
-        a.land();
+        // The cell the tip is in (the arrow stopped 0.02 before the face; the tip sits a hair inside it).
+        const v = a.velocity, vl = v.length() || 1;
+        const cell = { x: Math.floor(a.position.x + v.x / vl * 0.05), y: Math.floor(a.position.y + v.y / vl * 0.05), z: Math.floor(a.position.z + v.z / vl * 0.05) };
+        // An explosive block: the arrow sets it off at once — the normal blast whatever the draw strength (no fuse) — and
+        // is used up. The host decides (guests only stop at blocks and get ARROW_REMOVE, the BLOCKS batch and EXPLOSION);
+        // with "Explosives: Off" the arrow just sticks into it.
+        if (!this.remote && this.world.getBlock(cell.x, cell.y, cell.z) === BlockIds.EXPLOSIVES && this._explosivesOn()) {
+          this.exploding = true; this.world.setBlock(cell.x, cell.y, cell.z, BlockIds.AIR, true, false); this.exploding = false;
+          if (this.effects) this.effects.arrowHitBlock(a.position.x, a.position.y, a.position.z);
+          this.removeArrow(a);
+          this.explode({ id: null, position: new THREE.Vector3(cell.x + 0.5, cell.y, cell.z + 0.5) });
+          continue;
+        }
+        a.land(cell);
         if (this.effects) this.effects.arrowHitBlock(a.position.x, a.position.y, a.position.z);
         if (this.onArrowStuck && !this.remote && a.id !== null) this.onArrowStuck(a);
+      } else if (hit.kind === 'explosive') {
+        // A primed explosive: it goes off at once with the normal blast; the arrow is used up.
+        const e = hit.target;
+        if (this.effects) this.effects.arrowHitEntity(a.position.x, a.position.y, a.position.z);
+        this.removeArrow(a);
+        if (!e.dead) { this.removeExplosive(e); this.explode(e); }
       } else if (hit.kind === 'mob') {
         const bonus = a.power >= 1 ? Math.floor(Math.random() * 5) : 0;
         const dmg = arrowMobDamage(a.power, bonus);
@@ -275,6 +304,9 @@ export class EntityManager {
       }
     }
   }
+
+  /** Explosives on in this world (Game's hook; true without one). */
+  _explosivesOn() { return !this.explosivesAllowed || this.explosivesAllowed() !== false; }
 
   /** A stuck Survival arrow goes back to its shooter when they touch it (the host grants a guest's through ITEM_GRANT). */
   _arrowPickup(a) {
@@ -331,7 +363,7 @@ export class EntityManager {
     const list = this.explosives;
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];
-      const done = e.fixedUpdate(dt, this.world);
+      const done = e.fixedUpdate(dt, this.world, this.waterSim, this.lavaSim);
       if (done && !e.remote) { this.removeExplosive(e); this.explosionQueue.push(e); }
       else if (done && e.remote && e.fuse < -1.5) this.removeExplosive(e); // the host's EXPLOSION never came (lost link): drop it quietly
     }
@@ -401,11 +433,18 @@ export class EntityManager {
       const r = explosionImpactOn(blocked, cx, cy, cz, box, power);
       if (r.impact > 0 && this.hurtPlayer) this.hurtPlayer(null, { id: rp.id, impact: r.impact, power, kx: r.dirX, ky: Math.max(r.dirY, 0.3), kz: r.dirZ, kind: 'explosion' });
     }
-    // Other primed explosives fly off; dropped items in the blast are pushed a little too.
+    // Other primed explosives fly off; arrows in the blast are pushed outward (stuck ones come loose when the push is strong,
+    // or when their block was just destroyed — they notice on their next step).
     for (const o of this.explosives) {
       if (o === e) continue;
       const r = explosionImpactOn(blocked, cx, cy, cz, o.updateAABB(), power);
       if (r.impact > 0) o.push(r.dirX, r.dirY, r.dirZ, r.impact);
+    }
+    for (const a of this.arrows) {
+      const q = a.position;
+      box.minX = q.x - 0.15; box.maxX = q.x + 0.15; box.minY = q.y - 0.15; box.maxY = q.y + 0.15; box.minZ = q.z - 0.15; box.maxZ = q.z + 0.15;
+      const r = explosionImpactOn(blocked, cx, cy, cz, box, power);
+      if (r.impact > 0) a.push(r.dirX, r.dirY, r.dirZ, r.impact);
     }
     if (this.effects) this.effects.explosion(cx, cy, cz, power);
     if (this.onExplosion && !this.remote) this.onExplosion(e, cx, cy, cz, power);
@@ -421,7 +460,7 @@ export class EntityManager {
     const minX = box.minX - ITEM_PICKUP_EXPAND_XZ, maxX = box.maxX + ITEM_PICKUP_EXPAND_XZ;
     const minY = box.minY - ITEM_PICKUP_EXPAND_Y, maxY = box.maxY + ITEM_PICKUP_EXPAND_Y;
     const minZ = box.minZ - ITEM_PICKUP_EXPAND_XZ, maxZ = box.maxZ + ITEM_PICKUP_EXPAND_XZ;
-    const canPickUp = !p.isSpectator;
+    const canPickUp = !p.isSpectator && !p.dead; // a dead player picks nothing up until respawning (the host checks peer.dead for guests)
     if (this.mobs) this.mobs.fixedUpdate(dt, p);
     const simFar = this.simDistanceBlocks;
     for (let i = 0; i < items.length; i++) {

@@ -1,0 +1,57 @@
+{
+ "name": "ship_large",
+ "size": [
+  11,
+  14,
+  23
+ ],
+ "anchor": [
+  5,
+  3,
+  11
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "planks",
+  "chest[facing=east]",
+  "torch",
+  "log[axis=y]",
+  "chest[facing=west]",
+  "log[axis=z]",
+  "glass",
+  "wool_white",
+  "torch[facing=north]",
+  "torch[facing=south]",
+  "log[axis=x]"
+ ],
+ "blocks": "3x0,5x2,5x0,7x2,3x0,9x2,1x0,176x2,1x0,9x2,3x0,7x2,5x0,5x2,7x0,3x2,7x0,5x2,5x0,1x2,5x1,1x2,3x0,1x2,7x1,1x2,1x0,1x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,4x1,1x2,4x1,2x2,9x1,2x2,1x1,1x3,7x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,1x2,1x0,1x2,7x1,1x2,3x0,1x2,5x1,1x2,5x0,1x2,3x1,1x2,7x0,3x2,7x0,5x2,5x0,1x2,5x1,1x2,3x0,1x2,7x1,1x2,1x0,1x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,2x2,9x1,1x2,1x0,1x2,7x1,1x2,3x0,1x2,5x1,1x2,5x0,1x2,3x1,1x2,7x0,3x2,7x0,5x2,5x0,7x2,3x0,9x2,1x0,38x2,1x1,10x2,1x1,126x2,1x0,9x2,3x0,7x2,5x0,5x2,7x0,3x2,27x0,1x2,7x0,1x2,1x0,1x2,1x0,1x4,2x0,1x5,2x0,1x4,1x0,2x2,9x0,2x2,9x0,2x2,9x0,2x2,9x0,2x2,9x0,2x2,4x0,1x5,4x0,2x2,9x0,2x2,9x0,2x2,9x0,2x2,9x0,2x2,1x0,1x5,2x2,1x1,2x2,1x5,1x0,2x2,1x0,1x2,1x1,1x2,3x1,1x2,1x0,2x2,1x0,1x2,5x1,1x2,1x0,2x2,1x0,1x2,5x1,1x2,1x0,2x2,1x0,1x2,5x1,1x2,1x0,1x2,1x0,2x2,4x1,1x6,2x2,3x0,1x5,5x2,1x5,7x0,1x7,10x0,1x7,43x0,1x5,65x0,1x5,51x0,1x5,2x2,1x1,2x2,1x5,4x0,1x2,5x1,1x2,4x0,1x2,1x1,1x2,3x1,1x2,4x0,1x8,5x1,1x8,4x0,1x2,5x1,1x2,4x0,1x2,5x1,1x2,4x0,1x5,1x2,1x8,1x2,1x8,1x2,1x5,62x0,1x5,8x0,5x9,52x0,1x5,7x0,7x9,37x0,1x5,5x2,1x5,4x0,1x2,1x10,4x1,1x2,4x0,1x2,5x1,1x2,4x0,1x2,1x1,1x2,3x1,1x2,4x0,1x2,5x1,1x2,4x0,1x2,2x1,1x11,2x1,1x2,4x0,1x5,5x2,1x5,62x0,1x5,8x0,5x9,52x0,1x5,7x0,7x9,37x0,7x2,4x0,7x2,4x0,7x2,4x0,2x2,1x1,4x2,4x0,2x2,1x1,4x2,4x0,7x2,4x0,7x2,62x0,1x5,8x0,5x9,52x0,1x5,7x0,7x9,37x0,1x2,5x0,1x2,51x0,1x4,7x0,1x2,5x0,1x2,62x0,1x5,8x0,5x12,52x0,1x5,7x0,7x9,238x0,1x5,7x0,7x9,238x0,1x5,7x0,7x12,238x0,1x5,401x0",
+ "containers": [
+  {
+   "pos": [
+    2,
+    1,
+    10
+   ],
+   "loot": "sailor_rich"
+  },
+  {
+   "pos": [
+    7,
+    4,
+    19
+   ],
+   "loot": "sailor"
+  }
+ ],
+ "placement": {
+  "biomes": [
+   "ocean"
+  ],
+  "mode": "ocean_surface",
+  "spacing": 44,
+  "separation": 10,
+  "chance": 0.4,
+  "rotate": true
+ }
+}

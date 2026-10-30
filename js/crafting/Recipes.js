@@ -21,6 +21,8 @@ export const RECIPES = Object.freeze([
   { id: 'crafting_table', result: { item: 'crafting_table', count: 1 }, inputs: [{ item: 'planks', count: 4 }], stations: ['inventory', 'crafting_table'] },
   { id: 'wooden_pickaxe', result: { item: 'wooden_pickaxe', count: 1 }, inputs: [{ item: 'planks', count: 4 }], stations: ['crafting_table'] },
   { id: 'furnace', result: { item: 'furnace', count: 1 }, inputs: [{ item: 'cobblestone', count: 8 }], stations: ['crafting_table'] },
+  { id: 'chest', result: { item: 'chest', count: 1 }, inputs: [{ item: 'planks', count: 8 }], stations: ['crafting_table'] },
+  { id: 'rocket', result: { item: 'rocket', count: 3 }, inputs: [{ item: 'coal', count: 1 }, { item: 'sand', count: 4 }, { item: 'planks', count: 1 }], stations: ['crafting_table'] },
   { id: 'iron_pickaxe', result: { item: 'iron_pickaxe', count: 1 }, inputs: [{ item: 'iron_ingot', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'diamond_pickaxe', result: { item: 'diamond_pickaxe', count: 1 }, inputs: [{ item: 'diamond', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'stone_pickaxe', result: { item: 'stone_pickaxe', count: 1 }, inputs: [{ item: 'cobblestone', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },

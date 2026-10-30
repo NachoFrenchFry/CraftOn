@@ -137,8 +137,10 @@ export const BlockRegistry = {
   dropName(id) { const d = defsById[id]; return d && d.drops ? d.drops : null; },
   isStoneType(id) { return STONE_TYPE[id] === 1; },
   isWoodType(id) { return WOOD_TYPE[id] === 1; },
-  /** 'crafting_table' | 'furnace' | null. */
+  /** 'crafting_table' | 'furnace' | 'chest' | null. */
   stationOf(id) { const d = defsById[id]; return d && d.station ? d.station : null; },
+  /** True for blocks that hold items (chests of any facing). */
+  isContainer(id) { const d = defsById[id]; return !!(d && d.container); },
   /** The base block of a facing variant (itself for ordinary blocks). */
   baseOf(id) { const d = defsById[id]; return d && d.base ? idByName.get(d.base) : id; },
   /** Variant of a facing block whose front points toward `facing` ('north' | 'south' | 'east' | 'west'). */

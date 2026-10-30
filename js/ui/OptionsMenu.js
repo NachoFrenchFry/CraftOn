@@ -37,7 +37,17 @@ export class OptionsMenu {
     if (schema.percent) return `${Math.round(value * 100)}%`;
     if (schema.type === 'toggle') return value ? 'ON' : 'OFF';
     if (schema.type === 'select') { const o = schema.options.find((x) => x[0] === value); return o ? o[1] : String(value); }
+    if (schema.offBelow !== undefined && value < schema.offBelow) return 'Off';
     return `${schema.step < 1 ? value.toFixed(2) : value}${schema.unit || ''}`;
+  }
+
+  /** A warning line under a row (e.g. "High memory use" above 16 chunks), or none. */
+  _setWarn(row, text) {
+    let el = row.querySelector('.option-warn');
+    if (!text) { if (el) el.remove(); row.classList.remove('warn'); return; }
+    if (!el) { el = document.createElement('div'); el.className = 'option-hint option-warn'; row.appendChild(el); }
+    el.textContent = '⚠ ' + text;
+    row.classList.add('warn');
   }
 
   _build() {
@@ -52,7 +62,7 @@ export class OptionsMenu {
         row.className = 'option-row wide';
         const b = document.createElement('button');
         b.id = 'btn-performance-mode'; b.className = 'mc-button'; b.textContent = 'Performance mode';
-        b.title = 'Render scale 50%, render distance 4, simulation distance 3, decreased particles, fast leaves, AO off, shaders off';
+        b.title = 'Render scale 50%, render distance 4, simulation distance 3, decreased particles, fast leaves, AO off, shaders off, anti-aliasing off';
         b.addEventListener('click', () => { this.game.audio.playUI('click'); this.applyPerformanceMode(); });
         row.appendChild(b);
         this.list.appendChild(row);
@@ -80,6 +90,7 @@ export class OptionsMenu {
           const v = parseFloat(control.value);
           this.settings.set(schema.key, v);
           value.textContent = this._format(schema, v);
+          if (schema.warn) this._setWarn(row, schema.warn(v));
         });
         control.addEventListener('change', () => this.game.audio.playUI('click', 0.4));
       } else if (schema.type === 'toggle') {
@@ -101,18 +112,22 @@ export class OptionsMenu {
           const next = opts[(i + 1) % opts.length][0];
           this.settings.set(schema.key, next);
           control.textContent = this._format(schema, next);
+          if (schema.warn) this._setWarn(row, schema.warn(next));
           this.game.audio.playUI('click');
         });
       }
       row.appendChild(control);
+      if (schema.hint) { const h = document.createElement('div'); h.className = 'option-hint'; h.textContent = schema.hint; row.appendChild(h); }
       this.list.appendChild(row);
       this.controls.set(schema.key, { schema, control, value });
+      if (schema.warn) this._setWarn(row, schema.warn(this.settings.get(schema.key)));
     }
   }
 
   refresh() {
     for (const { schema, control, value } of this.controls.values()) {
       const v = this.settings.get(schema.key);
+      if (schema.warn) { const row = control.closest('.option-row'); if (row) this._setWarn(row, schema.warn(v)); }
       if (schema.type === 'range') { control.value = v; value.textContent = this._format(schema, v); }
       else { control.textContent = this._format(schema, v); value.textContent = ''; }
     }

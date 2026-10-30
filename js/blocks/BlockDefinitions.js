@@ -18,7 +18,7 @@ import { SoundGroup as S } from './BlockSoundGroups.js';
  *  placeable: appears as an item; creativeOnly: only in the creative catalog
  *  needsSupport: breaks when the block below is removed (plants, cactus)
  *  stoneType: pickaxes mine it faster; woodType: axes mine it faster (log, planks, crafting table)
- *  station: 'crafting_table' | 'furnace' opens a screen on right click
+ *  station: 'crafting_table' | 'furnace' | 'chest' opens a screen on right click; container: true holds 36 item slots (chests)
  *  cullSameType: false keeps faces between two blocks of this type ("fancy" leaves)
  *  base / facing: rotated variants of a station block (only the base is an item)
  *  axis: 'x' | 'z' log variants (base 'log' is vertical); rotateFaces: faces whose texture turns 90° so the
@@ -112,6 +112,10 @@ export const BLOCK_DEFINITIONS = [
   ...facingVariants(B.FURNACE, 'furnace', 'Furnace',
     { top: 'furnace_top', bottom: 'furnace_top', front: 'furnace_front', side: 'furnace_side' },
     { breakTime: 6.0, soundGroup: S.STONE, station: 'furnace', stoneType: true }),
+  // The chest: right click opens its 36 slots (sneak + right click places against it); breaking it drops the contents.
+  ...facingVariants(B.CHEST, 'chest', 'Chest',
+    { top: 'chest_top', bottom: 'chest_top', front: 'chest_front', side: 'chest_side' },
+    { breakTime: 3.0, soundGroup: S.WOOD, station: 'chest', woodType: true, container: true }),
   // Lava: the source is a Creative-only item (buckets carry it in Survival); it emits block light 15.
   { id: B.LAVA, name: 'lava', displayName: 'Lava', textures: { all: 'lava' }, opaque: false, solid: false, renderType: 'liquid', pass: 'lava', lightOpacity: 15, lightEmission: 15, breakTime: Infinity, soundGroup: S.STONE, drops: null, placeable: true, creativeOnly: true },
   lavaVariant(B.FLOWING_LAVA_1, 'flowing_lava_1'), lavaVariant(B.FLOWING_LAVA_2, 'flowing_lava_2'), lavaVariant(B.FLOWING_LAVA_3, 'flowing_lava_3'), lavaVariant(B.FALLING_LAVA, 'falling_lava'),

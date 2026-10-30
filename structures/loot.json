@@ -1,0 +1,710 @@
+{
+ "house_common": {
+  "rolls": [
+   3,
+   6
+  ],
+  "entries": [
+   {
+    "item": "raw_beef",
+    "weight": 10,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "cooked_porkchop",
+    "weight": 6,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 10,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 8,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "string",
+    "weight": 6,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 4,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "wooden_pickaxe",
+    "weight": 3
+   },
+   {
+    "item": "stick",
+    "weight": 6,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "arrow",
+    "weight": 4,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "wooden_sword",
+    "weight": 2
+   },
+   {
+    "item": "bucket",
+    "weight": 1
+   }
+  ]
+ },
+ "house_rich": {
+  "rolls": [
+   4,
+   7
+  ],
+  "entries": [
+   {
+    "item": "iron_ingot",
+    "weight": 8,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 4,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "cooked_beef",
+    "weight": 8,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 8,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 8,
+    "count": [
+     4,
+     8
+    ]
+   },
+   {
+    "item": "iron_pickaxe",
+    "weight": 3
+   },
+   {
+    "item": "iron_sword",
+    "weight": 2
+   },
+   {
+    "item": "bow",
+    "weight": 2
+   },
+   {
+    "item": "arrow",
+    "weight": 6,
+    "count": [
+     4,
+     10
+    ]
+   },
+   {
+    "item": "iron_helmet",
+    "weight": 2
+   },
+   {
+    "item": "glider",
+    "weight": 1
+   },
+   {
+    "item": "rocket",
+    "weight": 2,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 1
+   }
+  ]
+ },
+ "sailor": {
+  "rolls": [
+   3,
+   5
+  ],
+  "entries": [
+   {
+    "item": "string",
+    "weight": 10,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "cooked_porkchop",
+    "weight": 6,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 6,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 4,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 3,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "arrow",
+    "weight": 5,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "bow",
+    "weight": 2
+   },
+   {
+    "item": "torch",
+    "weight": 6,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "rocket",
+    "weight": 3,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "bucket",
+    "weight": 2
+   },
+   {
+    "item": "glider",
+    "weight": 1
+   }
+  ]
+ },
+ "sailor_rich": {
+  "rolls": [
+   4,
+   7
+  ],
+  "entries": [
+   {
+    "item": "gold_ingot",
+    "weight": 8,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 6,
+    "count": [
+     2,
+     4
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 3,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "diamond_sword",
+    "weight": 1
+   },
+   {
+    "item": "iron_sword",
+    "weight": 2
+   },
+   {
+    "item": "bow",
+    "weight": 3
+   },
+   {
+    "item": "arrow",
+    "weight": 6,
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "glider",
+    "weight": 2
+   },
+   {
+    "item": "rocket",
+    "weight": 4,
+    "count": [
+     2,
+     4
+    ]
+   },
+   {
+    "item": "cooked_beef",
+    "weight": 5,
+    "count": [
+     2,
+     4
+    ]
+   },
+   {
+    "item": "golden_helmet",
+    "weight": 2
+   }
+  ]
+ },
+ "tree": {
+  "rolls": [
+   3,
+   5
+  ],
+  "entries": [
+   {
+    "item": "stick",
+    "weight": 8,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "string",
+    "weight": 6,
+    "count": [
+     1,
+     4
+    ]
+   },
+   {
+    "item": "arrow",
+    "weight": 6,
+    "count": [
+     4,
+     8
+    ]
+   },
+   {
+    "item": "bow",
+    "weight": 3
+   },
+   {
+    "item": "raw_porkchop",
+    "weight": 5,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 5,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 2,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 6,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "wooden_axe",
+    "weight": 3
+   },
+   {
+    "item": "glider",
+    "weight": 1
+   }
+  ]
+ },
+ "ruin_rare": {
+  "rolls": [
+   3,
+   6
+  ],
+  "entries": [
+   {
+    "item": "gold_ingot",
+    "weight": 10,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 5,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 6,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "golden_pickaxe",
+    "weight": 2
+   },
+   {
+    "item": "golden_sword",
+    "weight": 2
+   },
+   {
+    "item": "diamond_pickaxe",
+    "weight": 1
+   },
+   {
+    "item": "golden_helmet",
+    "weight": 2
+   },
+   {
+    "item": "bow",
+    "weight": 2
+   },
+   {
+    "item": "arrow",
+    "weight": 4,
+    "count": [
+     4,
+     10
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 3,
+    "count": [
+     2,
+     5
+    ]
+   }
+  ]
+ },
+ "igloo": {
+  "rolls": [
+   3,
+   5
+  ],
+  "entries": [
+   {
+    "item": "cooked_mutton",
+    "weight": 8,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "raw_mutton",
+    "weight": 6,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 8,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 6,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 3,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "string",
+    "weight": 4,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "stone_pickaxe",
+    "weight": 3
+   },
+   {
+    "item": "stone_sword",
+    "weight": 2
+   },
+   {
+    "item": "wooden_helmet",
+    "weight": 1
+   }
+  ]
+ },
+ "cabin": {
+  "rolls": [
+   3,
+   6
+  ],
+  "entries": [
+   {
+    "item": "coal",
+    "weight": 10,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "raw_beef",
+    "weight": 6,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "cooked_beef",
+    "weight": 5,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 5,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "stone_axe",
+    "weight": 3
+   },
+   {
+    "item": "iron_axe",
+    "weight": 2
+   },
+   {
+    "item": "torch",
+    "weight": 8,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "stick",
+    "weight": 5,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "arrow",
+    "weight": 4,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "bow",
+    "weight": 1
+   },
+   {
+    "item": "iron_helmet",
+    "weight": 1
+   }
+  ]
+ },
+ "dungeon": {
+  "rolls": [
+   3,
+   6
+  ],
+  "entries": [
+   {
+    "item": "iron_ingot",
+    "weight": 10,
+    "count": [
+     1,
+     4
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 6,
+    "count": [
+     1,
+     3
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 2,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "bow",
+    "weight": 5
+   },
+   {
+    "item": "arrow",
+    "weight": 8,
+    "count": [
+     4,
+     12
+    ]
+   },
+   {
+    "item": "string",
+    "weight": 6,
+    "count": [
+     1,
+     4
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 8,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 6,
+    "count": [
+     2,
+     6
+    ]
+   },
+   {
+    "item": "iron_sword",
+    "weight": 3
+   },
+   {
+    "item": "iron_helmet",
+    "weight": 2
+   },
+   {
+    "item": "cooked_beef",
+    "weight": 4,
+    "count": [
+     1,
+     3
+    ]
+   }
+  ]
+ }
+}

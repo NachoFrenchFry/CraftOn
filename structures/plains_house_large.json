@@ -1,0 +1,54 @@
+{
+ "name": "plains_house_large",
+ "size": [
+  11,
+  10,
+  13
+ ],
+ "anchor": [
+  5,
+  1,
+  0
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "cobblestone",
+  "log[axis=y]",
+  "planks",
+  "crafting_table[facing=south]",
+  "chest[facing=south]",
+  "furnace[facing=north]",
+  "glass",
+  "torch[facing=west]",
+  "torch[facing=east]",
+  "torch[facing=south]",
+  "wool_white",
+  "wool_red",
+  "wool_blue",
+  "torch[facing=north]"
+ ],
+ "blocks": "143x2,1x3,4x4,1x1,4x4,1x3,1x4,1x5,7x1,1x6,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,8x1,3x4,9x1,2x4,9x1,2x4,1x7,8x1,1x4,1x3,9x4,2x3,1x4,1x8,2x4,1x1,2x4,1x8,1x4,1x3,1x4,9x1,2x4,9x1,1x4,1x8,9x1,1x8,1x4,9x1,2x4,9x1,1x4,1x8,9x1,1x8,1x4,9x1,2x4,9x1,1x4,1x8,8x1,1x4,1x8,1x4,9x1,2x4,9x1,1x4,1x3,1x4,1x8,5x4,1x8,1x4,2x3,9x4,1x3,1x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,1x9,7x1,1x10,2x4,9x1,2x4,9x1,2x4,9x1,2x4,8x1,3x4,4x1,1x11,4x1,1x4,1x3,9x4,2x3,9x4,1x3,108x4,1x1,9x4,2x1,1x4,1x3,9x4,2x3,9x4,1x3,1x4,1x12,8x1,2x4,1x13,8x1,2x4,9x1,2x4,1x12,8x1,2x4,1x14,8x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,1x4,1x3,9x4,2x3,1x4,1x8,2x4,1x8,2x4,1x8,1x4,1x3,1x4,9x1,2x4,9x1,1x4,1x8,9x1,1x8,1x4,9x1,2x4,9x1,1x4,1x8,9x1,1x8,1x4,9x1,2x4,9x1,1x4,1x8,9x1,1x8,1x4,9x1,2x4,9x1,1x4,1x3,1x4,1x8,2x4,1x8,2x4,1x8,1x4,2x3,9x4,1x3,1x4,4x1,1x15,4x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,1x9,8x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,9x1,2x4,4x1,1x11,4x1,1x4,1x3,9x4,1x3,143x4,1x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,2x0,9x4,1x0",
+ "containers": [
+  {
+   "pos": [
+    9,
+    1,
+    1
+   ],
+   "loot": "house_rich"
+  }
+ ],
+ "placement": {
+  "biomes": [
+   "plains"
+  ],
+  "mode": "surface",
+  "spacing": 22,
+  "separation": 6,
+  "chance": 0.5,
+  "rotate": true,
+  "foundation": "cobblestone",
+  "clearAbove": true
+ }
+}

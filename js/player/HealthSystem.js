@@ -149,6 +149,7 @@ export class HealthSystem {
     p.dead = true;
     p.health = 0;
     p.fireTimer = 0; p.onFire = false;
+    p.gliding = false; p.rocketTime = 0;
     this.deathCause = cause || { kind: 'other' };
     this.deathPosition = p.position.clone();
     this.deathTimer = 0; this.puffed = false;
@@ -160,17 +161,21 @@ export class HealthSystem {
     g.events.emit('player:died', this.deathCause);
   }
 
-  /** Every stack (armor too) becomes an item entity where the player died; guests ask the host to spawn them. */
+  /**
+   * Every stack (armor too) becomes an item entity where the player died, scattered a little around the body with the
+   * thrown-item pickup delay (nothing is picked up while dead anyway); guests ask the host to spawn them.
+   */
   dropInventory() {
     const g = this.game, inv = g.inventory, p = g.player;
     const x = p.position.x, y = p.position.y + 0.8, z = p.position.z;
     for (let i = 0; i < TOTAL_SLOTS; i++) {
       const s = inv.slots[i];
       if (!s) continue;
-      const a = Math.random() * Math.PI * 2, speed = 1.5 + Math.random() * 2;
-      const vx = Math.cos(a) * speed, vz = Math.sin(a) * speed, vy = 3 + Math.random() * 2;
-      if (g.entities.throwHook) g.entities.throwHook(s.itemId, s.count, x, y, z, vx, vy, vz);
-      else g.entities.spawnItem(x, y, z, s.itemId, s.count, vx, vy, vz, ITEM_THROW_PICKUP_DELAY);
+      const a = Math.random() * Math.PI * 2, speed = 0.8 + Math.random() * 1.2;
+      const ox = (Math.random() - 0.5) * 0.6, oz = (Math.random() - 0.5) * 0.6;
+      const vx = Math.cos(a) * speed, vz = Math.sin(a) * speed, vy = 2 + Math.random() * 1.5;
+      if (g.entities.throwHook) g.entities.throwHook(s.itemId, s.count, x + ox, y, z + oz, vx, vy, vz);
+      else g.entities.spawnItem(x + ox, y, z + oz, s.itemId, s.count, vx, vy, vz, ITEM_THROW_PICKUP_DELAY);
       inv.slots[i] = null;
     }
     inv.changed();

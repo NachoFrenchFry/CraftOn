@@ -1,0 +1,49 @@
+{
+ "name": "plains_house_small",
+ "size": [
+  9,
+  7,
+  11
+ ],
+ "anchor": [
+  4,
+  1,
+  0
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "cobblestone",
+  "log[axis=y]",
+  "planks",
+  "wool_white",
+  "wool_red",
+  "crafting_table[facing=north]",
+  "chest[facing=north]",
+  "glass",
+  "torch[facing=south]"
+ ],
+ "blocks": "99x2,1x3,3x4,1x1,3x4,1x3,1x4,1x5,6x1,2x4,1x6,6x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,1x7,5x1,1x8,1x4,1x3,7x4,2x3,1x4,1x9,1x4,1x1,1x4,1x9,1x4,1x3,1x4,7x1,2x4,7x1,1x4,1x9,7x1,1x9,1x4,7x1,2x4,7x1,2x4,7x1,1x4,1x9,7x1,1x9,1x4,7x1,2x4,7x1,1x4,1x3,2x4,1x9,1x4,1x9,2x4,2x3,7x4,1x3,1x4,7x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,7x1,2x4,3x1,1x10,3x1,1x4,1x3,7x4,1x3,99x4,1x0,7x4,2x0,7x4,2x0,7x4,2x0,7x4,2x0,7x4,2x0,7x4,2x0,7x4,2x0,7x4,2x0,7x4,2x0,7x4,2x0,7x4,4x0,3x4,6x0,3x4,6x0,3x4,6x0,3x4,6x0,3x4,6x0,3x4,6x0,3x4,6x0,3x4,6x0,3x4,6x0,3x4,6x0,3x4,3x0",
+ "containers": [
+  {
+   "pos": [
+    7,
+    1,
+    9
+   ],
+   "loot": "house_common"
+  }
+ ],
+ "placement": {
+  "biomes": [
+   "plains"
+  ],
+  "mode": "surface",
+  "spacing": 14,
+  "separation": 4,
+  "chance": 0.6,
+  "rotate": true,
+  "foundation": "cobblestone",
+  "clearAbove": true
+ }
+}

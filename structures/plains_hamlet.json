@@ -1,0 +1,57 @@
+{
+ "name": "plains_hamlet",
+ "pieces": [
+  {
+   "structure": "plains_house_small",
+   "offset": [
+    -11,
+    0,
+    -3
+   ],
+   "rotation": 0
+  },
+  {
+   "structure": "plains_house_small",
+   "offset": [
+    9,
+    0,
+    3
+   ],
+   "rotation": 1
+  },
+  {
+   "structure": "plains_house_large",
+   "offset": [
+    -4,
+    0,
+    15
+   ],
+   "rotation": 2,
+   "chance": 0.65
+  },
+  {
+   "structure": "plains_house_small",
+   "offset": [
+    13,
+    0,
+    19
+   ],
+   "rotation": 3,
+   "chance": 0.6
+  }
+ ],
+ "paths": {
+  "block": "gravel"
+ },
+ "placement": {
+  "biomes": [
+   "plains"
+  ],
+  "mode": "surface",
+  "spacing": 28,
+  "separation": 8,
+  "chance": 0.55,
+  "rotate": false,
+  "clearAbove": true
+ }
+}

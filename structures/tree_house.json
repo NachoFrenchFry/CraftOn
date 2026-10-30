@@ -1,0 +1,47 @@
+{
+ "name": "tree_house",
+ "size": [
+  11,
+  18,
+  11
+ ],
+ "anchor": [
+  5,
+  0,
+  5
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "log[axis=y]",
+  "planks",
+  "chest[facing=west]",
+  "glass",
+  "torch[facing=north]",
+  "leaves"
+ ],
+ "blocks": "48x0,3x2,8x0,4x2,7x0,3x2,96x0,3x2,8x0,3x2,1x1,7x0,4x2,95x0,3x2,8x0,3x2,1x1,7x0,3x2,1x1,10x0,1x2,84x0,3x2,8x0,3x2,8x0,3x2,1x1,9x0,1x2,1x1,84x0,3x2,8x0,3x2,8x0,3x2,9x0,1x2,2x1,84x0,3x2,8x0,3x2,8x0,3x2,8x0,1x2,2x1,85x0,3x2,8x0,3x2,8x0,3x2,7x0,1x2,2x1,86x0,3x2,8x0,3x2,7x0,4x2,7x0,2x1,51x0,9x3,2x0,9x3,2x0,9x3,2x0,9x3,2x0,9x3,2x0,2x3,1x1,6x3,2x0,9x3,2x0,9x3,2x0,9x3,36x0,1x2,5x3,1x2,4x0,1x3,5x1,1x3,4x0,1x3,1x1,3x2,1x1,1x3,4x0,1x3,1x1,3x2,1x1,1x3,4x0,1x3,1x1,3x2,1x1,1x3,4x0,1x3,4x1,1x4,1x3,4x0,1x2,2x3,1x1,2x3,1x2,48x0,1x2,1x5,3x3,1x5,1x2,4x0,1x3,2x1,1x6,2x1,1x3,4x0,1x3,1x1,3x2,1x1,1x3,4x0,1x5,1x1,3x2,1x1,1x5,4x0,1x3,1x1,3x2,1x1,1x3,4x0,1x3,5x1,1x3,4x0,1x2,2x3,1x1,2x3,1x2,48x0,1x2,5x3,1x2,4x0,1x3,5x1,1x3,4x0,1x3,1x1,3x2,1x1,1x3,4x0,1x3,1x1,3x2,1x1,1x3,4x0,1x3,1x1,3x2,1x1,1x3,4x0,1x3,5x1,1x3,4x0,1x2,5x3,1x2,28x0,3x7,5x0,9x3,2x0,9x3,2x0,9x3,1x0,1x7,9x3,2x7,9x3,2x7,9x3,1x7,1x0,9x3,2x0,9x3,2x0,9x3,5x0,3x7,7x0,5x7,5x0,7x7,3x0,9x7,1x0,27x7,1x2,27x7,1x0,9x7,3x0,7x7,5x0,5x7,17x0,5x7,5x0,7x7,3x0,9x7,2x0,9x7,2x0,4x7,1x2,4x7,2x0,9x7,2x0,9x7,3x0,7x7,5x0,5x7,39x0,5x7,5x0,7x7,4x0,7x7,4x0,3x7,1x2,3x7,4x0,7x7,4x0,7x7,5x0,5x7,62x0,3x7,7x0,5x7,6x0,5x7,6x0,5x7,7x0,3x7,85x0,3x7,8x0,3x7,8x0,3x7,48x0",
+ "containers": [
+  {
+   "pos": [
+    7,
+    9,
+    7
+   ],
+   "loot": "tree"
+  }
+ ],
+ "placement": {
+  "biomes": [
+   "forest"
+  ],
+  "mode": "tree",
+  "spacing": 16,
+  "separation": 4,
+  "chance": 0.55,
+  "rotate": true,
+  "foundation": "dirt",
+  "clearAbove": true,
+  "maxSlope": 3
+ }
+}

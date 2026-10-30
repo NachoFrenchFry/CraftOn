@@ -23,7 +23,7 @@ const HIP_HEIGHT = 12 * PX;
 
 /** Freestyle flutter kick: legs alternate ±SWIM_KICK_AMP at SWIM_KICK_HZ, a little faster when moving faster. */
 export const SWIM_KICK_AMP = 0.35;
-export const SWIM_KICK_HZ = 2.5;
+export const SWIM_KICK_HZ = 1.4;
 export function flutterKick(t, out = { left: 0, right: 0 }) {
   const k = Math.sin(t * Math.PI * 2) * SWIM_KICK_AMP;
   out.left = k; out.right = -k;
@@ -62,6 +62,8 @@ export class PlayerModel {
     this._hurtOn = false;
     /** Bow: 0 = not drawing, 1–3 = the pulling frame shown (both arms raised in an aiming pose). */
     this.bowFrame = 0;
+    /** 0..1 blend of the bow-aiming arm pose (eased, so a shot just lowers the arms — no swing). */
+    this.aimBlend = 0;
     this.heldFrameTexture = null;
     this._build();
   }
@@ -129,14 +131,44 @@ export class PlayerModel {
     this.heldAnchor.position.set(0, -12 * PX, -3 * PX);
     this.heldAnchor.rotation.set(0.3, -0.6, 0);
     this.rightArm.pivot.add(this.heldAnchor);
+    // The swing of whatever is held: a relative rotation at the grip (the top leads forward and down), on top of the arm's.
+    this.heldSwing = new THREE.Group();
+    this.heldAnchor.add(this.heldSwing);
     // The bow hangs off an unrotated anchor at the same hand, so its pose can be reasoned about in the arm's own frame.
     this.bowAnchor = new THREE.Group();
     this.bowAnchor.position.set(0, -12 * PX, -3 * PX);
     this.rightArm.pivot.add(this.bowAnchor);
     this.heldMesh = null;
+    // The glider wing: a textured delta above the back (the body's +Z side), shown while gliding; the arms reach up to it.
+    this.wing = this._buildWing();
+    this.wing.visible = false;
+    this.bodyPivot.add(this.wing);
     this.hips.add(this.leftLeg.pivot, this.rightLeg.pivot, this.bodyPivot);
     this.root.add(this.hips);
     this._buildArmor();
+  }
+
+  /** A simple hang-glider: a delta of two triangles over textures/entity/glider.png (rows 0–15 the top, 16–31 the underside). */
+  _buildWing() {
+    const g = new THREE.BufferGeometry();
+    // Body space: the apex over the head (+Y), the tips behind the hips (−Y) and out to the sides (±X), lying flat over the back.
+    const pos = [0, 1.15, 0, -1.05, -0.55, 0, 0, -0.3, 0, 1.05, -0.55, 0];
+    const uv = [0.5, 1, 0, 0.5, 0.5, 0.56, 1, 0.5];
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex([0, 1, 2, 0, 2, 3]);
+    g.computeVertexNormals();
+    const tex = this.entityTextures ? this.entityTextures.get('glider') || null : null;
+    const mat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.5 });
+    if (!tex) mat.color.set(0xff00ff);
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.name = 'wing';
+    mesh.userData.noShadow = true;
+    const group = new THREE.Group();
+    group.add(mesh);
+    group.position.set(0, 9 * PX, 7 * PX); // above the shoulders, behind the back
+    group.rotation.set(0.15, 0, 0);
+    return group;
   }
 
   /** Armor layer: textured, inflated boxes on the same pivots as the body parts (ArmorParts.js), hidden until worn. */
@@ -189,7 +221,7 @@ export class PlayerModel {
         pivot.add(handle);
         pivot.rotation.set(-0.9, 0.15, 0, 'YXZ');
         pivot.userData.toolMesh = this.heldMesh;
-        this.heldAnchor.add(pivot);
+        this.heldSwing.add(pivot);
         this.heldMesh = pivot;
         return;
       }
@@ -201,16 +233,15 @@ export class PlayerModel {
         // offsets part of the hanging arm's held-item lift. Aiming (the arm raised forward, rotated +90° about X): the arm's −Z is up and
         // −Y is forward, so a −90° pitch after the yaw stands it up again. Lives on the unrotated bow anchor.
         this.heldMesh.position.set(0, 0.08, 0);
-        if (this.bowFrame > 0) this.heldMesh.rotation.set(-Math.PI / 2, -1.0, Math.PI / 4, 'XYZ');
-        else this.heldMesh.rotation.set(-0.15, -1.0, Math.PI / 4, 'XYZ');
-        // The lean: the top of the bow tips about 26° toward the body's centre (Minecraft's diagonal hold) — about the arm's
-        // Z (the forward axis) with the arm hanging, about its Y (the forward axis once the arm is raised) when aiming.
-        if (this.bowFrame > 0) this.bowAnchor.rotation.set(0, 0.45, 0); else this.bowAnchor.rotation.set(0, 0, 0.45);
+        // Straight up, no lean: the −43° turn about the stave points the curve forward with the face toward the front.
+        if (this.bowFrame > 0) this.heldMesh.rotation.set(-Math.PI / 2, -0.75, Math.PI / 4, 'XYZ');
+        else this.heldMesh.rotation.set(-0.15, -0.75, Math.PI / 4, 'XYZ');
+        this.bowAnchor.rotation.set(0, 0, 0);
         this.bowAnchor.add(this.heldMesh);
         return;
       }
     }
-    this.heldAnchor.add(this.heldMesh);
+    this.heldSwing.add(this.heldMesh);
   }
 
   /** The bow draw: frame 0 = not drawing (arms down), 1–3 = both arms raised forward in an aiming pose with that pulling frame on the bow. */
@@ -244,13 +275,19 @@ export class PlayerModel {
     this.root.rotation.y = this.bodyYaw;
     this.root.rotation.z = 0; // applyDeathPose() tips the body after this
 
-    // Swimming / crawling: the body lies horizontal along the swim direction (eased over ~0.25 s).
-    const lowPose = !!(p.swimming || p.crawling);
+    // Swimming / crawling: the body lies horizontal along the swim direction (eased over ~0.25 s). Gliding: the same
+    // prone pose along the flight direction (Minecraft's elytra pose), the wing shown above the back, both arms up to it.
+    const gliding = !!p.gliding;
+    const lowPose = !!(p.swimming || p.crawling) || gliding;
     this.swimBlend = damp(this.swimBlend, lowPose ? 1 : 0, 4 / POSE_TRANSITION_SECONDS, dt);
+    this.glideBlend = damp(this.glideBlend || 0, gliding ? 1 : 0, 4 / POSE_TRANSITION_SECONDS, dt);
     const sw = this.swimBlend;
-    const poseAngle = -(Math.PI / 2 - (p.swimming ? p.pitch : 0));
+    const vel = p.velocity || null;
+    const glidePitch = gliding && vel ? Math.atan2(vel.y, Math.hypot(vel.x, vel.z) || 1e-6) : 0;
+    const poseAngle = -(Math.PI / 2 - (p.swimming ? p.pitch : gliding ? clamp(glidePitch, -1.2, 0.6) : 0));
     this.hips.rotation.x = sw * poseAngle;
-    this.hips.position.y = HIP_HEIGHT + (PLAYER_SWIM_HEIGHT / 2 - HIP_HEIGHT) * sw;
+    this.hips.position.y = HIP_HEIGHT + (PLAYER_SWIM_HEIGHT / 2 - HIP_HEIGHT) * sw + (gliding ? 0.5 : 0) * this.glideBlend;
+    this.wing.visible = this.glideBlend > 0.05;
     // The head keeps looking along the look direction whatever the body does (the sneak lean is compensated below).
     this.head.pivot.rotation.set(p.pitch - this.hips.rotation.x, delta, 0, 'YXZ');
 
@@ -268,21 +305,45 @@ export class PlayerModel {
     this.leftArm.pivot.rotation.x = -walkAngle * (1 - sw);
     let rightArm = walkAngle * (1 - sw);
     this.swimSpreadZ = 0;
-    // Mining / placing swing on the right arm: positive x raises the arm forward (the model faces -Z).
+    // Minecraft's attack animation (HumanoidModel.setupAttackAnimation) on the right arm, carrying the held item: the body
+    // twists by sin(√s·2π)·0.2, the arms follow the twist, the right arm raises forward by sin(f·π)·1.2 (f = 1 − (1 − s)⁴)
+    // plus a term from the look pitch, and rolls inward by sin(s·π)·0.4. Positive x raises an arm forward here.
+    let twist = 0, armRoll = 0;
     if (this.swingProgress < 1) {
       this.swingProgress = Math.min(1, this.swingProgress + dt / 0.3);
-      const s = Math.sin(Math.sqrt(this.swingProgress) * Math.PI);
-      rightArm += s * 1.6;
-      this.rightArm.pivot.rotation.y = -s * 0.3;
-    } else this.rightArm.pivot.rotation.y = 0;
+      const s = this.swingProgress;
+      twist = Math.sin(Math.sqrt(s) * 2 * Math.PI) * 0.2;
+      let f = 1 - s; f *= f; f *= f; f = 1 - f;
+      const f1 = Math.sin(f * Math.PI), f2 = Math.sin(s * Math.PI) * (p.pitch + 0.7) * 0.75;
+      rightArm += f1 * 1.2 + f2;
+      this.leftArm.pivot.rotation.x += twist;
+      armRoll = -Math.sin(s * Math.PI) * 0.4;
+    }
+    this.bodyPivot.rotation.y = twist;
+    this.head.pivot.rotation.y -= twist; // the head keeps its own yaw while the body twists under it
+    this.rightArm.pivot.rotation.y = twist * 2;
+    this.leftArm.pivot.rotation.y = twist;
+    this.heldSwing.rotation.set(0, 0, 0); // the held item simply follows the arm, as in Minecraft
     this.rightArm.pivot.rotation.x = rightArm;
     // A held item raises the arm slightly forward.
     if (this.heldMesh) this.rightArm.pivot.rotation.x += 0.35;
-    // Drawing a bow: both arms point forward along the look direction, the left a little across the chest.
-    if (this.bowFrame > 0 && sw < 0.5) {
-      this.rightArm.pivot.rotation.x = Math.PI / 2 + p.pitch * 0.6;
-      this.leftArm.pivot.rotation.x = Math.PI / 2 + p.pitch * 0.6;
-      this.rightArm.pivot.rotation.y = 0.12; this.leftArm.pivot.rotation.y = -0.35;
+    // Drawing a bow: both arms point forward along the look direction, the left a little across the chest. The pose blends
+    // in over a few frames and, after the shot, the arms simply lower again (no swing — for remote players too).
+    const aiming = this.bowFrame > 0 && sw < 0.5;
+    this.aimBlend = damp(this.aimBlend, aiming ? 1 : 0, aiming ? 24 : 12, dt); // quick to raise, a gentle lowering after the shot
+    if (this.aimBlend > 0.01) {
+      const ab = this.aimBlend, aim = Math.PI / 2 + p.pitch * 0.6;
+      this.rightArm.pivot.rotation.x += (aim - this.rightArm.pivot.rotation.x) * ab;
+      this.leftArm.pivot.rotation.x += (aim - this.leftArm.pivot.rotation.x) * ab;
+      this.rightArm.pivot.rotation.y += (0.12 - this.rightArm.pivot.rotation.y) * ab;
+      this.leftArm.pivot.rotation.y += (-0.35 - this.leftArm.pivot.rotation.y) * ab;
+    }
+    // Gliding: both arms reach up to the wing's bar (toward the body's +Z, which is up once the body lies prone).
+    if (this.glideBlend > 0.01) {
+      const gb = this.glideBlend;
+      this.rightArm.pivot.rotation.x = this.rightArm.pivot.rotation.x * (1 - gb) + (-Math.PI / 2 + 0.25) * gb;
+      this.leftArm.pivot.rotation.x = this.leftArm.pivot.rotation.x * (1 - gb) + (-Math.PI / 2 + 0.25) * gb;
+      this.leftLeg.pivot.rotation.x *= 1 - gb; this.rightLeg.pivot.rotation.x *= 1 - gb;
     }
 
     // Sneak: the torso leans forward about 0.5 rad toward the look direction (the model faces -Z, so a
@@ -295,9 +356,9 @@ export class PlayerModel {
     this.leftLeg.pivot.position.z = this.rightLeg.pivot.position.z = p.sneaking ? 2 * PX : 0;
     // Idle arm sway (while swimming the arms rest along the sides). Positive z on a hanging arm moves the
     // hand toward +X, so the left arm (at -X) takes the negative value to sway outward.
-    const spread = 0.03 + Math.sin(this.walkTime * 0.5) * 0.02 + (this.swimSpreadZ || 0);
+    const spread = 0.03 + Math.sin(this.walkTime * 0.5) * 0.02 + (this.swimSpreadZ || 0) + (this.glideBlend || 0) * 0.45;
     this.leftArm.pivot.rotation.z = -spread;
-    this.rightArm.pivot.rotation.z = spread;
+    this.rightArm.pivot.rotation.z = spread + armRoll;
   }
 
   /**

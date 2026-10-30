@@ -1,15 +1,25 @@
-// Particles.js — pooled camera-facing quads in one geometry: block-break chips (a random 4×4 texel
-// sub-rectangle of the block's texture), smoke puffs, and critical-hit stars (the crit_star tile, spinning,
-// fading out, slight gravity). Positions are rewritten per frame; nothing allocates while running.
+// Particles.js — pooled camera-facing quads in one geometry: block-break chips (a random 2–4 texel sub-rectangle of
+// the block's texture), smoke puffs, flames and critical-hit stars (the crit_star tile, spinning, fading out). Real
+// physics: chips spawn inside the broken block and fly outward, fall with PARTICLE_GRAVITY and a little air drag,
+// stop (never push) under a ceiling, bounce once on the ground and slide to a stop, bounce off walls. Positions are
+// rewritten per frame; nothing allocates while running. The Particles setting scales every spawn (All / 50 % / 15 %).
 
 import * as THREE from 'three';
 import { FACE_TILE } from '../blocks/BlockRegistry.js';
 import { TILE_UVS, TILE_SIZE, getTileIndex } from './AtlasLayout.js';
 import { Direction } from '../utils/Direction.js';
-import { GRAVITY } from '../config/Constants.js';
 
-const MAX_PARTICLES = 768;
+const MAX_PARTICLES = 2048;
 const SIZE = 0.09;
+/** Block chips are about half the old size. */
+const CHIP_SIZE = 0.045;
+/** Chips per broken block: 4× the old count (the callers' 12–20 become 48–80). */
+const BREAK_MULTIPLIER = 4;
+export const PARTICLE_GRAVITY = 22;       // blocks/s²
+const AIR_DRAG = 0.6;                     // per second (exponential)
+const BOUNCE = 0.3;                       // restitution on the ground and against walls
+const GROUND_FRICTION = 9;                // per second while sliding
+const REST_SPEED = 0.6;                   // below this a landing chip stops instead of bouncing
 const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
 
 export class ParticleSystem {
@@ -69,32 +79,60 @@ export class ParticleSystem {
     this._up = new THREE.Vector3();
   }
 
-  /** Spawn n particles for a broken block. */
-  /** Spawn count after the Particles setting (all / decreased 40 % / minimal 15 %, at least one). */
-  _budget(n) { return this.level === 'all' ? n : Math.max(1, Math.round(n * (this.level === 'minimal' ? 0.15 : 0.4))); }
+  /** Spawn count after the Particles setting (All = full, Decreased = 50 %, Minimal = 15 %, at least one). */
+  _budget(n) { return this.level === 'all' ? n : Math.max(1, Math.round(n * (this.level === 'minimal' ? 0.15 : 0.5))); }
 
-  spawnBlockBreak(x, y, z, blockId, n = 16) {
-    n = this._budget(n);
+  /** One block chip: a random 2–4 texel crop of the block's face texture, small, fading over 0.5–1.2 s. */
+  _chip(i, blockId, px, py, pz, vx, vy, vz) {
     const tile = FACE_TILE[blockId * 6 + Direction.SOUTH];
     const t4 = tile * 4;
-    const u0 = TILE_UVS[t4], v0 = TILE_UVS[t4 + 1], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
+    const u0 = TILE_UVS[t4], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
     const texel = (u1 - u0) / TILE_SIZE;
+    this._reset(i);
+    this.pos[i * 3] = px; this.pos[i * 3 + 1] = py; this.pos[i * 3 + 2] = pz;
+    this.vel[i * 3] = vx; this.vel[i * 3 + 1] = vy; this.vel[i * 3 + 2] = vz;
+    this.maxLife[i] = this.life[i] = 0.5 + Math.random() * 0.7;
+    const crop = 2 + Math.floor(Math.random() * 3);
+    const tx = Math.floor(Math.random() * (TILE_SIZE - crop)), ty = Math.floor(Math.random() * (TILE_SIZE - crop));
+    this.uvRect[i * 4] = u0 + tx * texel;
+    this.uvRect[i * 4 + 1] = v1 - (ty + crop) * texel;
+    this.uvRect[i * 4 + 2] = u0 + (tx + crop) * texel;
+    this.uvRect[i * 4 + 3] = v1 - ty * texel;
+    this.shade[i] = 0.6 + Math.random() * 0.4;
+    this.sizes[i] = CHIP_SIZE * (0.7 + Math.random() * 0.6);
+    this.fade[i] = 1;
+  }
+
+  /**
+   * A broken block: `n` × BREAK_MULTIPLIER chips from random points inside the block, flying outward from its centre at
+   * 1–4 blocks/s with a slight upward bias, under real gravity (they fall, bounce once and slide to a stop).
+   */
+  spawnBlockBreak(x, y, z, blockId, n = 16) {
+    n = this._budget(n * BREAK_MULTIPLIER);
     for (let k = 0; k < n; k++) {
       if (this.count >= MAX_PARTICLES) return;
       const i = this.count++;
-      const px = x + 0.15 + Math.random() * 0.7, py = y + 0.15 + Math.random() * 0.7, pz = z + 0.15 + Math.random() * 0.7;
-      this.pos[i * 3] = px; this.pos[i * 3 + 1] = py; this.pos[i * 3 + 2] = pz;
-      this.vel[i * 3] = (px - x - 0.5) * 4 + (Math.random() - 0.5) * 2;
-      this.vel[i * 3 + 1] = Math.random() * 4 + 1.5;
-      this.vel[i * 3 + 2] = (pz - z - 0.5) * 4 + (Math.random() - 0.5) * 2;
-      this.maxLife[i] = this.life[i] = 0.6 + Math.random() * 0.4;
-      const tx = Math.floor(Math.random() * (TILE_SIZE - 4)), ty = Math.floor(Math.random() * (TILE_SIZE - 4));
-      this.uvRect[i * 4] = u0 + tx * texel;
-      this.uvRect[i * 4 + 1] = v1 - (ty + 4) * texel;
-      this.uvRect[i * 4 + 2] = u0 + (tx + 4) * texel;
-      this.uvRect[i * 4 + 3] = v1 - ty * texel;
-      this.shade[i] = 0.6 + Math.random() * 0.4;
-      this.sizes[i] = SIZE * (0.7 + Math.random() * 0.6);
+      const px = x + 0.1 + Math.random() * 0.8, py = y + 0.1 + Math.random() * 0.8, pz = z + 0.1 + Math.random() * 0.8;
+      let dx = px - x - 0.5, dy = py - y - 0.5, dz = pz - z - 0.5;
+      const len = Math.hypot(dx, dy, dz) || 1; dx /= len; dy /= len; dz /= len;
+      const sp = 1 + Math.random() * 3;
+      this._chip(i, blockId, px, py, pz, dx * sp, dy * sp + 0.5 + Math.random() * 0.8, dz * sp);
+    }
+  }
+
+  /** A mining hit: a small burst of chips off the hit face (nx, ny, nz = the face normal), flying outward from it. */
+  spawnMiningHit(x, y, z, nx, ny, nz, blockId, n = 4) {
+    n = this._budget(n);
+    for (let k = 0; k < n; k++) {
+      if (this.count >= MAX_PARTICLES) return;
+      const i = this.count++;
+      // A point on the face, a hair outside the block.
+      const ox = nx !== 0 ? 0.5 + nx * 0.52 : 0.15 + Math.random() * 0.7;
+      const oy = ny !== 0 ? 0.5 + ny * 0.52 : 0.15 + Math.random() * 0.7;
+      const oz = nz !== 0 ? 0.5 + nz * 0.52 : 0.15 + Math.random() * 0.7;
+      const sp = 1 + Math.random() * 2;
+      this._chip(i, blockId, x + ox, y + oy, z + oz, nx * sp + (Math.random() - 0.5) * 1.5, ny * sp + 0.6 + Math.random() * 0.8, nz * sp + (Math.random() - 0.5) * 1.5);
+      this.maxLife[i] = this.life[i] = 0.4 + Math.random() * 0.4;
     }
   }
   /** Food crumbs: a few texels of an item icon from the mouth. */
@@ -109,8 +147,9 @@ export class ParticleSystem {
       const i = this.count++;
       const px = x + 0.15 + Math.random() * 0.7, py = y + 0.15 + Math.random() * 0.7, pz = z + 0.15 + Math.random() * 0.7;
       this.pos[i * 3] = px; this.pos[i * 3 + 1] = py; this.pos[i * 3 + 2] = pz;
+      this._reset(i);
       this.vel[i * 3] = (px - x - 0.5) * 4 + (Math.random() - 0.5) * 2;
-      this.vel[i * 3 + 1] = Math.random() * 4 + 1.5;
+      this.vel[i * 3 + 1] = Math.random() * 2 + 0.5;
       this.vel[i * 3 + 2] = (pz - z - 0.5) * 4 + (Math.random() - 0.5) * 2;
       this.maxLife[i] = this.life[i] = 0.6 + Math.random() * 0.4;
       const tx = Math.floor(Math.random() * (TILE_SIZE - 4)), ty = Math.floor(Math.random() * (TILE_SIZE - 4));
@@ -119,7 +158,8 @@ export class ParticleSystem {
       this.uvRect[i * 4 + 2] = u0 + (tx + 4) * texel;
       this.uvRect[i * 4 + 3] = v1 - ty * texel;
       this.shade[i] = 0.6 + Math.random() * 0.4;
-      this.sizes[i] = SIZE * (0.7 + Math.random() * 0.6);
+      this.sizes[i] = CHIP_SIZE * (0.9 + Math.random() * 0.6);
+      this.fade[i] = 1;
     }
   }
 
@@ -238,7 +278,7 @@ export class ParticleSystem {
       const tx = Math.floor(Math.random() * (TILE_SIZE - 4)), ty = Math.floor(Math.random() * (TILE_SIZE - 4));
       this.uvRect[i * 4] = u0 + tx * texel; this.uvRect[i * 4 + 1] = v1 - (ty + 4) * texel; this.uvRect[i * 4 + 2] = u0 + (tx + 4) * texel; this.uvRect[i * 4 + 3] = v1 - ty * texel;
       this.shade[i] = 0.95; this.sizes[i] = SIZE * (1.6 + Math.random());
-      this.vel[i * 3 + 1] += GRAVITY * 0.5 * this.maxLife[i] * 0.5; // counter most of the gravity so smoke rises
+      this.gravityScale[i] = 0; // smoke rises: no gravity, just its upward drift and the air drag
     }
   }
 
@@ -260,19 +300,38 @@ export class ParticleSystem {
 
   update(dt, camera) {
     const world = this.world;
+    const drag = Math.exp(-AIR_DRAG * dt), slide = Math.exp(-GROUND_FRICTION * dt);
     for (let i = 0; i < this.count; i++) {
       this.life[i] -= dt;
       if (this.life[i] <= 0) { this._remove(i); i--; continue; }
       const b = i * 3;
-      this.vel[b + 1] -= GRAVITY * 0.5 * this.gravityScale[i] * dt;
+      const gs = this.gravityScale[i];
+      this.vel[b + 1] -= PARTICLE_GRAVITY * gs * dt;
+      this.vel[b] *= drag; this.vel[b + 1] *= drag; this.vel[b + 2] *= drag;
       this.angle[i] += this.spin[i] * dt;
-      let nx = this.pos[b] + this.vel[b] * dt, ny = this.pos[b + 1] + this.vel[b + 1] * dt, nz = this.pos[b + 2] + this.vel[b + 2] * dt;
-      if (world.isSolid(Math.floor(nx), Math.floor(ny), Math.floor(nz))) {
-        if (world.isSolid(Math.floor(this.pos[b]), Math.floor(ny), Math.floor(this.pos[b + 2]))) {
-          this.vel[b + 1] = 0; ny = this.pos[b + 1];
-          this.vel[b] *= 0.6; this.vel[b + 2] *= 0.6;
-        } else { this.vel[b] = 0; this.vel[b + 2] = 0; nx = this.pos[b]; nz = this.pos[b + 2]; }
+      const x = this.pos[b], y = this.pos[b + 1], z = this.pos[b + 2];
+      const cx = Math.floor(x), cy = Math.floor(y), cz = Math.floor(z);
+      // Y: into a ceiling → the upward speed is zeroed (it falls, never pushes); onto the ground → a small bounce, then rest.
+      let ny = y + this.vel[b + 1] * dt;
+      const fy = Math.floor(ny);
+      if (fy !== cy && world.isSolid(cx, fy, cz)) {
+        if (this.vel[b + 1] > 0) { this.vel[b + 1] = 0; ny = fy - 0.001; }
+        else {
+          const vy = -this.vel[b + 1];
+          ny = fy + 1.001;
+          this.vel[b + 1] = vy > REST_SPEED && gs > 0 ? vy * BOUNCE : 0;
+          this.vel[b] *= 0.7; this.vel[b + 2] *= 0.7;
+        }
       }
+      // Resting on the ground: slide to a stop with friction.
+      if (gs > 0 && this.vel[b + 1] === 0 && world.isSolid(cx, Math.floor(ny - 0.01), cz)) { this.vel[b] *= slide; this.vel[b + 2] *= slide; }
+      // X and Z: a wall bounces the chip back a little (or stops it).
+      let nx = x + this.vel[b] * dt;
+      const fx = Math.floor(nx);
+      if (fx !== cx && world.isSolid(fx, Math.floor(ny), cz)) { nx = x; this.vel[b] = Math.abs(this.vel[b]) > REST_SPEED ? -this.vel[b] * BOUNCE : 0; }
+      let nz = z + this.vel[b + 2] * dt;
+      const fz = Math.floor(nz);
+      if (fz !== cz && world.isSolid(Math.floor(nx), Math.floor(ny), fz)) { nz = z; this.vel[b + 2] = Math.abs(this.vel[b + 2]) > REST_SPEED ? -this.vel[b + 2] * BOUNCE : 0; }
       this.pos[b] = nx; this.pos[b + 1] = ny; this.pos[b + 2] = nz;
     }
     // Rebuild billboards.

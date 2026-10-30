@@ -1,0 +1,46 @@
+{
+ "name": "desert_ruin",
+ "size": [
+  13,
+  9,
+  13
+ ],
+ "anchor": [
+  6,
+  3,
+  0
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "sandstone",
+  "chest[facing=north]",
+  "torch[facing=north]",
+  "cracked_stone_bricks",
+  "stone_bricks"
+ ],
+ "blocks": "56x0,5x2,8x0,5x2,8x0,5x2,8x0,5x2,8x0,5x2,112x0,5x2,8x0,1x2,3x1,1x2,8x0,1x2,1x1,1x3,1x1,1x2,8x0,1x2,3x1,1x2,8x0,5x2,112x0,5x2,8x0,1x2,1x1,1x4,1x1,1x2,8x0,1x2,3x1,1x2,8x0,1x2,3x1,1x2,8x0,5x2,57x0,24x2,1x0,3x2,1x5,48x2,1x0,47x2,1x5,5x2,1x5,21x2,1x0,2x2,1x0,4x2,1x0,5x2,15x0,1x2,9x0,1x2,1x0,1x2,12x0,1x2,7x0,1x5,4x0,1x2,12x0,1x2,9x0,1x5,2x0,1x2,4x0,3x6,5x0,1x2,24x0,1x2,4x0,1x5,7x0,1x2,12x0,1x2,1x0,1x2,9x0,1x2,3x0,5x2,20x0,1x2,9x0,1x2,14x0,1x5,44x0,1x5,59x0,1x2,9x0,1x2,3x0,2x2,23x0,1x2,9x0,1x2,129x0,1x2,28x0,1x2,9x0,1x5,129x0,1x2,28x0,1x5,139x0,1x5,14x0",
+ "containers": [
+  {
+   "pos": [
+    6,
+    1,
+    6
+   ],
+   "loot": "ruin_rare"
+  }
+ ],
+ "placement": {
+  "biomes": [
+   "desert"
+  ],
+  "mode": "surface",
+  "spacing": 18,
+  "separation": 5,
+  "chance": 0.6,
+  "rotate": true,
+  "foundation": "sandstone",
+  "clearAbove": true,
+  "maxSlope": 7
+ }
+}

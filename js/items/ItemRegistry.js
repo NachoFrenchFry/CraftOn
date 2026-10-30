@@ -45,6 +45,8 @@ for (const def of ITEM_DEFINITIONS) {
     food: def.food || null, // { heal }
     knockback: def.knockback || HAND_KNOCKBACK,
     bow: !!def.bow,
+    glider: !!def.glider,
+    rocket: !!def.rocket,
     def,
   });
 }
@@ -57,7 +59,7 @@ const PIECE_ORDER = { helmet: 0, chestplate: 1, gauntlets: 2, leggings: 3, boots
 const tierOf = (name) => { const t = name.split('_')[0]; return TIER_ORDER[t] !== undefined ? TIER_ORDER[t] : 9; };
 /** Blocks by kind: building, natural, ores + storage, plants, functional. */
 const NATURAL_BLOCKS = new Set(['grass_block', 'dirt', 'sand', 'gravel', 'clay', 'snow', 'snowy_grass', 'ice', 'log', 'leaves', 'bedrock', 'water', 'lava', 'stone', 'cobblestone', 'sandstone', 'mossy_cobblestone', 'obsidian']);
-const FUNCTIONAL_BLOCKS = new Set(['crafting_table', 'furnace', 'torch', 'explosives']);
+const FUNCTIONAL_BLOCKS = new Set(['crafting_table', 'furnace', 'chest', 'torch', 'explosives']);
 const MATERIAL_ITEMS = new Set(['string', 'coal', 'iron_ingot', 'gold_ingot', 'diamond']);
 const MATERIAL_ORDER = ['string', 'coal', 'iron_ingot', 'gold_ingot', 'diamond'];
 /**
@@ -77,6 +79,7 @@ function rankOf(it, index) {
   if (it.tool) return [5, 0, (TOOL_ORDER[it.tool.type] ?? 5) * 10 + tierOf(name), index];
   if (it.bow || name === 'arrow') return [5, 1, it.bow ? 0 : 1, index];
   if (name === 'stick') return [5, 2, 0, index];
+  if (it.glider || it.rocket) return [5, 3, it.glider ? 0 : 1, index];
   if (it.armor) return [6, 0, TIER_ORDER[it.armor.material] * 10 + (PIECE_ORDER[it.armor.slot] ?? 9), index];
   if (it.food) return [7, name.startsWith('raw_') ? 0 : 1, 0, index];
   if (MATERIAL_ITEMS.has(name)) return [8, 0, MATERIAL_ORDER.indexOf(name), index];
@@ -110,6 +113,8 @@ export const ItemRegistry = {
   /** Knockback points when hitting with the item (the empty hand has HAND_KNOCKBACK). */
   knockback(id) { const it = items.get(id); return it ? it.knockback : HAND_KNOCKBACK; },
   isBow(id) { const it = items.get(id); return !!(it && it.bow); },
+  isGlider(id) { const it = items.get(id); return !!(it && it.glider); },
+  isRocket(id) { const it = items.get(id); return !!(it && it.rocket); },
   /** Every item, including creative-only ones, in definition order. */
   all() { return [...items.values()]; },
   /** Every item in catalog order: building, natural, ores / storage, plants, functional blocks, tools (wood → stone → gold → iron → diamond, then bow, arrows, stick), armor, food, materials, buckets, spawn eggs. */

@@ -1,5 +1,10 @@
 // ChunkManager.js — streams chunks around the player: prioritized generation in a worker pool,
 // meshing in a worker pool once all neighbours exist, budgeted integration per frame, unloading.
+// A job the pool rejects (the worker replied with an error, crashed, or timed out) clears its in-flight entry and
+// flags and is queued again with a backoff (1 s, 2 s, 4 s); after three failures the chunk is marked failed (logged
+// once with its coordinates, the job type and the error). A watchdog
+// (every 2 s) looks for chunks inside the render distance that have not reached "meshed" about 10 s after they were
+// needed and resets whatever they were stuck in; F3 shows the stuck / retried / failed counts (`stats().health`).
 
 import { WorkerPool } from './WorkerPool.js';
 import { Chunk, ChunkState } from './Chunk.js';
@@ -10,6 +15,8 @@ import { LightUpdater, LIGHT_BUDGET_MS } from './lighting/LightUpdater.js';
 import { chunkTop } from './lighting/SkyLight.js';
 
 const NEIGHBOR_OFFSETS = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+/** Failed jobs: retried after 1 s, 2 s, 4 s, then the chunk is marked failed. The watchdog runs every WATCHDOG_MS and resets a chunk not done STUCK_MS after it was needed. */
+const RETRY_BASE_MS = 1000, MAX_RETRIES = 3, WATCHDOG_MS = 2000, STUCK_MS = 10000;
 
 export class ChunkManager {
   /**
@@ -25,7 +32,21 @@ export class ChunkManager {
     // to hardwareConcurrency − 1 workers, at most 6, so a 4-core laptop runs 3 and an 8-core desktop 6; every job goes to the
     // idlest worker. `genPool` / `meshPool` are the same pool (kept as names for the dispatch caps and the overlay).
     const cores = navigator.hardwareConcurrency || 4;
-    this.pool = new WorkerPool(new URL('./chunk.worker.js', import.meta.url), Math.max(2, Math.min(6, cores - 1)));
+    this.pool = new WorkerPool(new URL('./chunk.worker.js', import.meta.url), Math.max(2, Math.min(6, cores - 1)), { label: 'chunk' });
+    { const pool = this.pool;
+      pool.onError = (info) => { if (info.kind !== 'error') console.warn(`ChunkManager: ${pool.label} worker ${info.worker} ${info.kind}: ${info.message}`); };
+      pool.onReplaced = (index, reason) => console.warn(`ChunkManager: ${pool.label} worker ${index} replaced (${reason}); its jobs are retried`);
+    }
+    /** Failed jobs per chunk: key → { generate, light, mesh, failed, error }; `retries` are due re-queues; the watchdog's bookkeeping. */
+    this.failures = new Map();
+    this.retries = [];
+    this.health = { retried: 0, failed: 0, stuck: 0 };
+    /** The pool request id of every job in flight, per kind (key → id): the watchdog can tell a lost job from a pending one. */
+    this.jobIds = { generate: new Map(), light: new Map(), mesh: new Map() };
+    this.needed = new Map();
+    this.stuckKeys = new Set();
+    this._watchdogAt = 0;
+    this.lastProgressAt = 0;
     this.genPool = this.pool;
     this.meshPool = this.pool;
     this.genQueue = [];
@@ -58,6 +79,8 @@ export class ChunkManager {
     this._lightFree = [];
     /** How far flat opaque faces merge in the worker: 'greedy' (2D), 'strips' (1D) or 'faces' (none); the bench and the sparkle test switch it. */
     this.meshMode = 'greedy';
+    /** Structure chests get their generated loot written into WorldEdits when the chunk first arrives (false on guests: the host owns chests). */
+    this.applyGeneratedLoot = true;
   }
 
   get renderDistance() { return this.settings.get('renderDistance'); }
@@ -70,6 +93,12 @@ export class ChunkManager {
 
   setSeed(seed) {
     this.pool.broadcast({ type: 'init', seed });
+  }
+
+
+  /** /locate in a chunk worker (no chunks generated): resolves with { x, y, z, distance } or null (also on a worker failure, logged). */
+  locate(kind, name, x, z, maxDist) {
+    return this.pool.post({ type: 'locate', kind, name, x, z, seed: this.world.seed, maxDist }).then((r) => r.found || null).catch((e) => { console.warn('ChunkManager: locate failed', e); return null; });
   }
 
   /** Mirror the atlas' transparency overrides in the workers (main-thread mesher shares the registry). */
@@ -90,12 +119,113 @@ export class ChunkManager {
     this.lightInFlight.clear();
     this.lightResults.length = 0;
     this.loadedQueue.length = 0;
+    this.failures.clear(); this.retries.length = 0; this.needed.clear(); this.stuckKeys.clear();
+    for (const m of Object.values(this.jobIds)) m.clear();
     this.lightUpdater.clear();
     this.meshManager.removeAll();
     this.world.chunks.clear();
     this.centerCX = null;
     this.centerCZ = null;
     this.queuesDirty = true;
+  }
+
+  // ---- failed, retried and stuck jobs ----
+  /** Marked failed after MAX_RETRIES failures of one job kind. */
+  isFailed(key) { const f = this.failures.get(key); return !!(f && f.failed); }
+  /** Waiting for its retry backoff. */
+  isRetrying(key) { for (const r of this.retries) if (r.key === key) return true; return false; }
+  /** Forget the failed chunks (a console / test helper): they are queued again. */
+  retryFailed() {
+    for (const [key, f] of this.failures) if (f.failed) { this.failures.delete(key); const c = this.world.chunks.get(key); if (c) { if (!c.lit) this.lightCheck.add(key); this.meshCheck.add(key); } }
+    this.queuesDirty = true;
+  }
+  /**
+   * A worker job was rejected (an error reply, a crashed worker, a timeout): clear the in-flight entry and flags, log once
+   * per chunk and job kind, queue it again after a backoff, and mark the chunk failed after MAX_RETRIES tries.
+   */
+  _jobFailed(kind, key, cx, cz, err, extra = null) {
+    const chunk = this.world.chunks.get(key);
+    this.jobIds[kind].delete(key);
+    if (kind === 'generate') { if (!this.genInFlight.has(key)) return; this.genInFlight.delete(key); }
+    else if (kind === 'light') { if (!this.lightInFlight.has(key)) return; this.lightInFlight.delete(key); if (chunk) chunk.lighting = false; }
+    else if (kind === 'mesh') { if (!this.meshInFlight.has(key)) return; this.meshInFlight.delete(key); if (chunk) { chunk.meshing = false; if (extra && extra.partial) chunk.remeshMask |= extra.sectionMask; } }
+    const f = this.failures.get(key) || { generate: 0, light: 0, mesh: 0, failed: false, error: null };
+    f[kind]++; f.error = err.message; this.failures.set(key, f);
+    const n = f[kind];
+    if (n > MAX_RETRIES) {
+      f.failed = true; this.health.failed++;
+      console.error(`ChunkManager: ${kind} job for chunk ${cx},${cz} failed ${n} times, marked failed: ${err.message}`, err.workerStack || '');
+      return;
+    }
+    const delay = RETRY_BASE_MS << (n - 1);
+    this.health.retried++;
+    if (n === 1) console.warn(`ChunkManager: ${kind} job for chunk ${cx},${cz} failed: ${err.message}; retrying in ${delay} ms (up to ${MAX_RETRIES} tries)`, err.workerStack || '');
+    this.retries.push({ key, kind, at: performance.now() + delay });
+  }
+  _runRetries(now) {
+    if (!this.retries.length) return;
+    const keep = [];
+    for (const r of this.retries) {
+      if (r.at > now) { keep.push(r); continue; }
+      if (r.kind === 'generate') this.queuesDirty = true;
+      else if (this.world.chunks.has(r.key)) { if (r.kind === 'light') this.lightCheck.add(r.key); else this.meshCheck.add(r.key); }
+    }
+    this.retries = keep;
+  }
+  /**
+   * Every WATCHDOG_MS: every chunk inside the render distance should be meshed (inside the generation radius: generated)
+   * within STUCK_MS of being needed. One that is not, and is neither waiting its turn behind moving work nor retrying nor
+   * failed, is logged with its full state, reset (in-flight entries and flags cleared) and queued again.
+   */
+  _watchdog(now) {
+    const cx = this.centerCX, cz = this.centerCZ;
+    if (cx === null) return;
+    const rd = this.renderDistance, genR = this.genRadius, span = Math.ceil(genR);
+    const moving = now - this.lastProgressAt < STUCK_MS; // results keep landing: queued work is just waiting for a slot
+    for (let dz = -span; dz <= span; dz++) for (let dx = -span; dx <= span; dx++) {
+      const d2 = dx * dx + dz * dz;
+      if (d2 > genR * genR) continue;
+      const key = chunkKey(cx + dx, cz + dz), chunk = this.world.chunks.get(key), inRd = d2 <= rd * rd;
+      const done = chunk ? (chunk.meshed || !inRd) : false;
+      if (done || this.isFailed(key) || this.isRetrying(key)) { this.needed.delete(key); this.stuckKeys.delete(key); continue; }
+      const since = this.needed.get(key);
+      if (since === undefined) { this.needed.set(key, now); continue; }
+      if (now - since < STUCK_MS) continue;
+      const state = {
+        generated: !!chunk, lit: !!(chunk && chunk.lit), lighting: !!(chunk && chunk.lighting), meshed: !!(chunk && chunk.meshed), meshing: !!(chunk && chunk.meshing),
+        genInFlight: this.genInFlight.has(key), lightInFlight: this.lightInFlight.has(key), meshInFlight: this.meshInFlight.has(key),
+        inGenQueue: this.genQueue.some((j) => j.key === key), inLightCheck: this.lightCheck.has(key), inMeshCheck: this.meshCheck.has(key),
+        neighbours: chunk ? this._hasAllNeighbors(chunk.cx, chunk.cz) : false, failures: this.failures.get(key) || null,
+      };
+      const inFlight = state.genInFlight || state.lightInFlight || state.meshInFlight;
+      const queued = state.inGenQueue || state.inLightCheck || state.inMeshCheck;
+      // Waiting its turn (queued, or in a worker's queue) while results keep landing is not stuck: the pool's own timeout
+      // catches a job that never answers. Stuck is an "in flight" entry whose request the pool no longer holds and
+      // whose result is not waiting to be integrated (lost), a chunk the pipeline has dropped (neither queued nor in
+      // flight), or anything at all once nothing has landed for STUCK_MS.
+      const lost = (state.genInFlight && !this._jobAlive('generate', key, this.genResults)) || (state.lightInFlight && !this._jobAlive('light', key, this.lightResults)) || (state.meshInFlight && !this._jobAlive('mesh', key, this.meshResults));
+      state.lost = lost;
+      if (!lost && (inFlight || queued) && moving) { this.needed.set(key, now); continue; }
+      this.health.stuck++; this.stuckKeys.add(key);
+      console.warn(`ChunkManager watchdog: chunk ${cx + dx},${cz + dz} not ${inRd ? 'meshed' : 'generated'} ${Math.round((now - since) / 1000)} s after it was needed — reset and queued again`, JSON.stringify(state));
+      this.genInFlight.delete(key); this.lightInFlight.delete(key); this.meshInFlight.delete(key);
+      if (chunk) { chunk.lighting = false; chunk.meshing = false; if (!chunk.lit) this.lightCheck.add(key); this.meshCheck.add(key); }
+      else this.queuesDirty = true;
+      this.needed.set(key, now);
+    }
+    for (const key of [...this.needed.keys()]) { const ddx = keyToChunkX(key) - cx, ddz = keyToChunkZ(key) - cz; if (ddx * ddx + ddz * ddz > genR * genR) { this.needed.delete(key); this.stuckKeys.delete(key); } }
+  }
+  /** An in-flight job of this kind is still pending in the pool, or its result waits for integration. */
+  _jobAlive(kind, key, results) {
+    const id = this.jobIds[kind].get(key);
+    if (id !== undefined && this.pool.pending.has(id)) return true;
+    for (const r of results) if (chunkKey(r.cx, r.cz) === key) return true;
+    return false;
+  }
+  /** The job-health counts for F3 and the benchmark report. */
+  healthSummary() {
+    const a = this.pool.stats;
+    return { stuck: this.health.stuck, retried: this.health.retried, retriesPending: this.retries.length, failed: this.health.failed, errors: a.errors, crashes: a.crashes, timeouts: a.timeouts, replaced: a.replaced, lastError: a.lastError };
   }
 
   /** Force queue recomputation (e.g. render distance changed). */
@@ -126,6 +256,9 @@ export class ChunkManager {
   /** Per-frame driver. dirX/dirZ = horizontal view direction for priority bonus. */
   update(px, pz, dirX, dirZ) {
     const cx = Math.floor(px) >> 4, cz = Math.floor(pz) >> 4;
+    const now = performance.now();
+    this._runRetries(now);
+    if (now - this._watchdogAt > WATCHDOG_MS) { this._watchdogAt = now; this._watchdog(now); }
     if (this.queuesDirty || cx !== this.centerCX || cz !== this.centerCZ) {
       this.centerCX = cx; this.centerCZ = cz;
       this.queuesDirty = false;
@@ -182,7 +315,7 @@ export class ChunkManager {
     for (const key of this.lightCheck) {
       if (this.lightInFlight.size >= maxInFlight) break;
       const chunk = this.world.chunks.get(key);
-      if (!chunk || chunk.lit || chunk.lighting) { this.lightCheck.delete(key); continue; }
+      if (!chunk || chunk.lit || chunk.lighting || this.isFailed(key)) { this.lightCheck.delete(key); continue; }
       if (!this._withinRadius(chunk.cx, chunk.cz, reach)) continue;
       if (!this._hasAllNeighbors(chunk.cx, chunk.cz)) continue;
       this.lightCheck.delete(key);
@@ -194,12 +327,16 @@ export class ChunkManager {
         if (n) { const copy = n.blocks.slice(); grid.push(copy); tops.push(chunkTop(n)); transfer.push(copy.buffer); } else { grid.push(null); tops.push(0); }
       }
       const gen = this.generation;
-      this.pool.post({ type: 'light', cx: chunk.cx, cz: chunk.cz, grid, tops, revision: chunk.revision }, transfer).then((r) => {
+      const lmsg = { type: 'light', cx: chunk.cx, cz: chunk.cz, grid, tops, revision: chunk.revision };
+      const lp = this.pool.post(lmsg, transfer);
+      this.jobIds.light.set(key, lmsg.id);
+      lp.then((r) => {
         if (gen !== this.generation) return;
+        this.jobIds.light.delete(key);
         this.lightTiming.total += r.ms || 0; this.lightTiming.count++;
         if (r.phases) for (const k of Object.keys(this.lightPhases)) this.lightPhases[k] += r.phases[k] || 0;
         this.lightResults.push(r);
-      });
+      }).catch((e) => { if (gen === this.generation) this._jobFailed('light', key, chunk.cx, chunk.cz, e); });
     }
   }
 
@@ -226,7 +363,7 @@ export class ChunkManager {
         const d2 = dx * dx + dz * dz;
         if (d2 > genR * genR) continue;
         const key = chunkKey(cx + dx, cz + dz);
-        if (this.world.chunks.has(key) || this.genInFlight.has(key)) continue;
+        if (this.world.chunks.has(key) || this.genInFlight.has(key) || this.isFailed(key) || this.isRetrying(key)) continue;
         const d = Math.sqrt(d2);
         const dot = d > 0 ? (dx * vx + dz * vz) / d : 1;
         queue.push({ cx: cx + dx, cz: cz + dz, key, priority: d - Math.max(0, dot) * 2.5 });
@@ -248,11 +385,15 @@ export class ChunkManager {
       if (this.world.chunks.has(job.key)) continue;
       this.genInFlight.add(job.key);
       const gen = this.generation;
-      this.pool.post({ type: 'generate', cx: job.cx, cz: job.cz, seed: this.world.seed }).then((r) => {
+      const gmsg = { type: 'generate', cx: job.cx, cz: job.cz, seed: this.world.seed };
+      const gp = this.pool.post(gmsg);
+      this.jobIds.generate.set(job.key, gmsg.id);
+      gp.then((r) => {
         if (gen !== this.generation) return;
+        this.jobIds.generate.delete(job.key);
         this.genTiming.total += r.ms || 0; this.genTiming.count++;
         this.genResults.push(r);
-      });
+      }).catch((e) => { if (gen === this.generation) this._jobFailed('generate', job.key, job.cx, job.cz, e); });
     }
   }
 
@@ -266,6 +407,7 @@ export class ChunkManager {
     const start = performance.now();
     let uploads = 0;
     const [maxUploads, budgetMs] = this.uploadBudget;
+    if (this.lightResults.length || this.meshResults.length || this.genResults.length) this.lastProgressAt = start;
     while (this.lightResults.length && performance.now() - start < budgetMs) {
       const r = this.lightResults.shift();
       const key = chunkKey(r.cx, r.cz);
@@ -291,6 +433,7 @@ export class ChunkManager {
       this.meshManager.applyChunkResult(r.cx, r.cz, r, r.sectionMask, r.revisions);
       if (pr) pr.end('meshing');
       this._recycle(r);
+      if (!chunk.meshed && this.world.events) this.world.events.emit('chunk:meshed', r.cx, r.cz);
       chunk.meshed = true;
       if (chunk.remeshMask) this.meshCheck.add(key); // sections edited while the job ran: the next (partial) job
       uploads++;
@@ -306,6 +449,7 @@ export class ChunkManager {
       chunk.biomeMap.set(r.biomeMap);
       chunk.springs = r.springs && r.springs.length ? r.springs : null;
       chunk.state = ChunkState.GENERATED;
+      if (r.containers && r.containers.length && this.applyGeneratedLoot) this.world.edits.applyGenerated(r.cx, r.cz, r.containers);
       this.world.edits.applyTo(chunk);
       chunk.recountSections();
       chunk.revision = 0;
@@ -348,7 +492,7 @@ export class ChunkManager {
     cand.length = 0;
     for (const key of this.meshCheck) {
       const chunk = this.world.chunks.get(key);
-      if (!chunk) { this.meshCheck.delete(key); continue; }
+      if (!chunk || this.isFailed(key)) { this.meshCheck.delete(key); continue; }
       if ((chunk.meshed && !chunk.remeshMask) || chunk.meshing) { this.meshCheck.delete(key); continue; }
       if (!this._withinRadius(chunk.cx, chunk.cz, rd)) continue;
       if (!chunk.lit) continue; // lighting runs first (the light pass is queued by _dispatchLighting)
@@ -378,13 +522,16 @@ export class ChunkManager {
       const revisions = Array.from(chunk.sectionRevisions);
       const msg = { type: 'mesh', cx: chunk.cx, cz: chunk.cz, padded, light, sectionMask, ao, fastLeaves, revision: chunk.revision, mode: this.meshMode, timing: this.meshTiming.sections !== null };
       const gen = this.generation;
-      this.pool.post(msg, [padded.buffer, light.buffer]).then((r) => {
+      const mp = this.pool.post(msg, [padded.buffer, light.buffer]);
+      this.jobIds.mesh.set(key, msg.id);
+      mp.then((r) => {
         if (gen !== this.generation) { this._recycle(r); return; }
+        this.jobIds.mesh.delete(key);
         this.meshTiming.total += r.ms || 0; this.meshTiming.count++;
         if (this.meshTiming.sections && r.sectionMs) for (const ms of r.sectionMs) this.meshTiming.sections.push(ms);
         r.revisions = revisions;
         this.meshResults.push(r);
-      });
+      }).catch((e) => { if (gen === this.generation) this._jobFailed('mesh', key, chunk.cx, chunk.cz, e, { partial, sectionMask }); });
     }
     cand.length = 0;
   }
@@ -443,6 +590,7 @@ export class ChunkManager {
       lightPending: [...this.lightCheck].filter((k) => { const c = this.world.chunks.get(k); return c && this.centerCX !== null && this._withinRadius(c.cx, c.cz, rd + 1) && this._hasAllNeighbors(c.cx, c.cz); }).length + this.lightInFlight.size + this.lightResults.length,
       lightInFlight: this.lightInFlight.size,
       lightQueue: this.lightUpdater.pending,
+      health: this.healthSummary(),
     };
   }
 

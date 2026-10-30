@@ -210,6 +210,28 @@
   padding: calc(3px * var(--gui-scale)) calc(4px * var(--gui-scale)); font: inherit; outline: none; caret-color: #fff;
 }
 .chat-input.hidden { display: none; }
+/* The command suggestion popup: just above the input, styled like the chat boxes, at most ~8 rows (scrollable). */
+.chat-suggest {
+  box-sizing: border-box; width: 100%; pointer-events: auto;
+  background: rgba(46, 74, 107, 0.92); border: calc(1px * var(--gui-scale)) solid rgba(255, 255, 255, 0.25);
+  padding: calc(2px * var(--gui-scale)); display: flex; flex-direction: column; gap: calc(1px * var(--gui-scale)); text-shadow: var(--text-shadow);
+}
+.chat-suggest.hidden { display: none; }
+.chat-suggest-hint { color: #c8c8c8; white-space: pre-wrap; overflow-wrap: anywhere; min-height: calc(10px * var(--gui-scale)); }
+.chat-suggest-hint .current { color: #ffe566; text-decoration: underline; }
+.chat-suggest-hint.error { color: #ff7a7a; }
+.chat-suggest-list { display: flex; flex-direction: column; max-height: calc(8 * 12px * var(--gui-scale)); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #5b6f85 rgba(46, 74, 107, 0.6); }
+.chat-suggest-list::-webkit-scrollbar { width: calc(4px * var(--gui-scale)); }
+.chat-suggest-list::-webkit-scrollbar-thumb { background: #5b6f85; }
+.chat-suggest-row { display: flex; gap: calc(6px * var(--gui-scale)); align-items: baseline; padding: calc(1px * var(--gui-scale)) calc(3px * var(--gui-scale)); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: calc(10px * var(--gui-scale)); }
+.chat-suggest-row:hover { background: rgba(255, 255, 255, 0.1); }
+.chat-suggest-row.selected { background: rgba(255, 255, 255, 0.2); }
+.chat-suggest-row .detail { color: #aab4d8; font-size: calc(7px * var(--gui-scale)); overflow: hidden; text-overflow: ellipsis; }
+.chat-suggest-row.disabled { color: #8f8f8f; }
+.chat-suggest-row.disabled .detail { color: #b08080; }
+.chat-bold { color: #fff; }
+.chat-coords { color: #ffe566; text-decoration: underline; cursor: pointer; }
+.chat-coords:hover { color: #fff; }
 /* /tick badge: top right while the rate is not 20 */
 .tick-badge {
   position: absolute; right: calc(6px * var(--gui-scale)); top: calc(6px * var(--gui-scale));
@@ -220,6 +242,7 @@
 
 /* the F3 performance graph and the benchmark report */
 #debug-graph { display: block; margin-top: 4px; image-rendering: pixelated; }
+#chunk-map { display: block; margin-top: 4px; image-rendering: pixelated; border: 1px solid rgba(255, 255, 255, 0.5); background: #000; }
 #bench-report {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 40;
   max-width: 96vw; max-height: 90vh; overflow: auto; padding: 12px 16px;

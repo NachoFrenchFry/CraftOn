@@ -95,9 +95,11 @@ export class WorldSession {
     g.chunkManager.clear();
     g.world.clear();
     g.entities.clear();
+    if (g.chests) g.chests.clear();
     g.waterSim.clear(); g.lavaSim.clear(); g.torchEffects.clear();
     g.world.seed = meta.seed >>> 0;
     g.chunkManager.setSeed(g.world.seed);
+    g.chunkManager.applyGeneratedLoot = true;
     for (const [key, data] of edits) g.world.edits.loadChunk(key, data);
     // Mobs must be registered before chunks stream in, so they reappear when their chunk loads.
     this.spawnedChunks = new Set(Array.isArray(meta.spawnedChunks) ? meta.spawnedChunks : []);
@@ -176,9 +178,11 @@ export class WorldSession {
     g.chunkManager.clear();
     g.world.clear();
     g.entities.clear();
+    if (g.chests) g.chests.clear();
     g.waterSim.clear(); g.lavaSim.clear(); g.torchEffects.clear();
     g.world.seed = meta.seed;
     g.chunkManager.setSeed(g.world.seed);
+    g.chunkManager.applyGeneratedLoot = false; // the host's chunk rows carry the chest contents
     for (const row of rows) {
       try { const { key, diff } = await decodeChunkRow(row); g.world.edits.loadChunk(key, diff); } catch (e) { console.warn('WorldSession: bad chunk row from the host', row && row.key, e); }
     }
@@ -333,7 +337,7 @@ export class WorldSession {
     }
     this.saving = true;
     const edits = g.world.edits;
-    const keys = full ? [...edits.chunks.keys()] : edits.takeDirtyKeys();
+    const keys = full ? edits.allKeys() : edits.takeDirtyKeys(); // a full save includes chunks that only carry chest data or the generated-loot flag
     if (full) edits.dirtyKeys.clear();
     try {
       const meta = this.meta;
@@ -344,7 +348,7 @@ export class WorldSession {
       meta.spawnedChunks = [...this.spawnedChunks];
       meta.gameMode = g.player.gameMode;
       meta.perspective = g.cameraController.perspective;
-      const entries = keys.map((key) => ({ key, ...edits.serializeChunk(key) })).filter((e) => e.indices);
+      const entries = keys.map((key) => ({ key, ...edits.serializeChunk(key) })).filter((e) => e.indices && (e.indices.length || e.containers || e.generated)); // an emptied edit map is not a row
       this.changedSinceSave = false;
       await g.saveManager.saveChunks(meta.id, entries);
       await g.saveManager.saveWorld(meta);
@@ -413,6 +417,7 @@ export class WorldSession {
     g.chunkManager.clear();
     g.world.clear();
     g.entities.clear();
+    if (g.chests) g.chests.clear();
     g.entities.remote = false;
     if (g.entities.mobs) g.entities.mobs.remote = false;
     if (g.remotePlayers) g.remotePlayers.clear();

@@ -4,6 +4,7 @@ import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { compassFromYaw } from '../utils/Direction.js';
 import { biomeName } from '../generation/Biomes.js';
 import { radToDeg } from '../utils/MathUtils.js';
+import { ChunkMap } from './ChunkMap.js';
 
 export class DebugOverlay {
   /** @param {import('../core/Game.js').Game} game */
@@ -13,7 +14,7 @@ export class DebugOverlay {
     this.visible = false;
     this.timer = 0;
     this.lines = [];
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < 19; i++) {
       const el = document.createElement('div');
       el.className = 'debug-line';
       this.root.appendChild(el);
@@ -26,16 +27,21 @@ export class DebugOverlay {
     this.graph.width = 240; this.graph.height = 60;
     this.root.appendChild(this.graph);
     this.gfx = this.graph.getContext('2d');
+    /** The chunk-state map under the graph (one cell per chunk column; see ChunkMap.js). */
+    this.chunkMap = new ChunkMap(game, this.root);
+    this.chunkMap.setVisible(false);
   }
 
   toggle() {
     this.visible = !this.visible;
     this.root.classList.toggle('hidden', !this.visible);
+    this.chunkMap.setVisible(this.visible);
     if (this.visible) this.refresh();
   }
 
   update(dt) {
     if (!this.visible) return;
+    this.chunkMap.update(dt);
     this._drawGraph();
     this.timer -= dt;
     if (this.timer > 0) return;
@@ -88,7 +94,7 @@ export class DebugOverlay {
     const g = this.game;
     const p = g.player;
     const pos = p.position;
-    const stats = g.chunkManager ? g.chunkManager.stats() : { loaded: 0, meshes: 0, meshPending: 0, genQueue: 0 };
+    const stats = g.chunkManager ? g.chunkManager.stats() : { loaded: 0, meshes: 0, meshPending: 0, genQueue: 0, health: { stuck: 0, retried: 0, retriesPending: 0, failed: 0, errors: 0, crashes: 0, timeouts: 0, replaced: 0 } };
     const info = g.renderer.info;
     const t = g.interaction ? g.interaction.target : null;
     const f = (n) => n.toFixed(3);
@@ -105,6 +111,9 @@ export class DebugOverlay {
     this._set(i++, `Light: sky ${g.world.getSkyLightAt(pos.x, pos.y + 0.5, pos.z)} / block ${g.world.getBlockLightAt(pos.x, pos.y + 0.5, pos.z)} at feet, sky ${g.world.getSkyLightAt(pos.x, pos.y + 1.6, pos.z)} / block ${g.world.getBlockLightAt(pos.x, pos.y + 1.6, pos.z)} at eyes   initial pass avg ${lt.count ? (lt.total / lt.count).toFixed(1) : '-'} ms   edit update avg ${lu.count ? (lu.total / lu.count).toFixed(2) : '-'} ms   brightness ${g.settings.get('brightness')}%`);
     const vs = g.meshManager.stats;
     this._set(i++, `Draw calls: ${g.renderer.worldStats.calls}  triangles: ${g.renderer.worldStats.triangles}  geometries: ${info.memory.geometries}   culling: ${vs.visible} of ${vs.sections} sections in ${vs.chunksVisible} chunks (${g.visibility.lastMs.toFixed(2)} ms)`);
+    this._set(i++, `Render distance: ${g.settings.get('renderDistance')} chunks (${g.world.chunks.size} loaded, unloaded beyond ${g.chunkManager.unloadRadius.toFixed(1)})`);
+    const h = stats.health;
+    this._set(i++, `Jobs: stuck ${h.stuck} · retried ${h.retried} (${h.retriesPending} pending) · failed ${h.failed} · worker errors ${h.errors} · crashes ${h.crashes} · timeouts ${h.timeouts} · workers replaced ${h.replaced}`);
     this._set(i++, `Seed: ${g.world.seed}${g.worldMeta && g.worldMeta.seedText ? ` ("${g.worldMeta.seedText}")` : ''}`);
     this._set(i++, t && t.hit ? `Target: ${BlockRegistry.nameOf(t.blockId)} at ${t.blockPos.x} ${t.blockPos.y} ${t.blockPos.z}` : 'Target: none');
     this._set(i++, `Mode: ${p.gameMode}  ${p.flying ? 'flying ' : ''}${p.sprinting ? 'sprinting ' : ''}${p.sneaking ? 'sneaking ' : ''}${p.inWater ? 'in water ' : ''}${p.onGround ? 'on ground' : 'airborne'}   swimming: ${p.swimming}${p.crawling ? ' (crawling)' : ''}`);

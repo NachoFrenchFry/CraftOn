@@ -1,0 +1,33 @@
+{
+ "name": "desert_well",
+ "size": [
+  5,
+  5,
+  5
+ ],
+ "anchor": [
+  2,
+  1,
+  2
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "sandstone",
+  "water"
+ ],
+ "blocks": "25x2,6x0,3x2,2x0,1x2,1x3,1x2,2x0,3x2,12x0,1x2,1x0,1x2,7x0,1x2,1x0,1x2,12x0,1x2,1x0,1x2,7x0,1x2,1x0,1x2,12x0,3x2,2x0,3x2,2x0,3x2,6x0",
+ "containers": [],
+ "placement": {
+  "biomes": [
+   "desert"
+  ],
+  "mode": "surface",
+  "spacing": 14,
+  "separation": 4,
+  "chance": 0.6,
+  "rotate": false,
+  "foundation": "sandstone",
+  "clearAbove": true
+ }
+}

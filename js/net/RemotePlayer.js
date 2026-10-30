@@ -144,6 +144,7 @@ export class RemotePlayer {
     st.onFire = !!(pose & Pose.ON_FIRE); st.inLava = !!(pose & Pose.IN_LAVA);
     st.bowFrame = bowFrameOf(pose); this.model.setAiming(st.bowFrame); // the bow draw frame (aiming pose + pulling frame)
     st.dead = !!(pose & Pose.DEAD);
+    st.gliding = !!(pose & Pose.GLIDING); st.rocketTime = (pose & Pose.ROCKET) ? 1 : 0;
     st.velocity.x = o.vx; st.velocity.y = o.vy; st.velocity.z = o.vz;
     st.horizontalSpeed = Math.hypot(o.vx, o.vz);
     const s = o;
@@ -174,6 +175,7 @@ export class RemotePlayer {
       if (this.dead) this.model.applyDeathPose(this.deathTimer / PLAYER_DEATH_SECONDS);
     }
     if (visible && st.onFire && !this.dead && this.game.particles) this.game.particles.spawnFlame(o.x, o.y + 0.9, o.z, 2, 0.35, 0.9); // burning
+    if (visible && st.rocketTime > 0 && !this.dead && this.game.particles) this.game.rocketTrail(o.x, o.y + 0.9, o.z, o.vx, o.vy, o.vz); // the rocket's smoke and sparks
     this.nametag.visible = visible && !st.sneaking && !this.dead;
     this.nametag.position.set(o.x, o.y + (st.crawling || st.swimming ? 0.9 : NAMETAG_HEIGHT), o.z);
     if (this.mineTimer > 0) { this.mineTimer -= dt; if (this.mineTimer <= 0) this.overlay.hide(); }

@@ -5,7 +5,11 @@
 // free and game keys are ignored while the game keeps running. Enter sends (a line starting with "/" runs a
 // command), Esc closes, ↑ / ↓ recall sent messages, Tab completes commands. Closed, the last 10 messages show and
 // each fades out about 10 s after it arrived. The last 100 messages are kept per session (never saved). Every piece
-// of text goes through textContent — names and messages can never run HTML.
+// of text goes through textContent — names and messages can never run HTML. A line that starts with "/" opens the
+// command suggestion popup above the input (CommandRegistry.suggest): every command with its usage, then the options
+// of the argument being typed, a usage hint with the current argument marked and red hints for invalid words; Tab
+// accepts the highlighted row, ↑ / ↓ move the highlight while it is open (closed, they recall sent messages), Esc
+// closes the popup first, a click accepts a row. Command replies may carry clickable coordinates that copy "X Y Z".
 const MAX_HISTORY = 100;
 const MAX_SHOWN_CLOSED = 10;
 const FADE_AFTER = 10;    // seconds a message stays fully visible while the chat is closed
@@ -34,7 +38,72 @@ export class Chat {
     this.time = 0;
     this.input.addEventListener('keydown', (e) => this._onInputKey(e));
     this.input.addEventListener('blur', () => { if (this.isOpen) this.input.focus(); }); // the mouse may be used to scroll / select text; typing continues
-    this.input.addEventListener('input', () => { this.sentIndex = -1; });
+    this.input.addEventListener('input', () => { this.sentIndex = -1; this.suggestSuppressed = false; this.refreshSuggestions(); });
+    // ---- the command suggestion popup ----
+    this.suggestBox = document.getElementById('chat-suggest');
+    this.suggestHint = document.getElementById('chat-suggest-hint');
+    this.suggestList = document.getElementById('chat-suggest-list');
+    /** The last CommandRegistry.suggest result shown, its rows' elements, the highlighted row. */
+    this.suggestion = null; this.suggestRows = []; this.suggestIndex = 0;
+    /** True after Esc closed the popup: it stays closed until the text changes. */
+    this.suggestSuppressed = false;
+    if (this.suggestList) this.suggestList.addEventListener('mousedown', (e) => { e.preventDefault(); const row = e.target.closest('.chat-suggest-row'); if (row) this.acceptSuggestion(+row.dataset.index); });
+  }
+
+  /** Is the suggestion popup showing? */
+  get suggestOpen() { return !!this.suggestBox && !this.suggestBox.classList.contains('hidden'); }
+
+  /** Rebuild the popup for the current input text (shown only for a line starting with "/"). */
+  refreshSuggestions() {
+    if (!this.suggestBox) return;
+    const value = this.input.value;
+    if (!this.isOpen || this.suggestSuppressed || !value.startsWith('/') || !this.game.commands || !this.game.commands.suggest) { this._hideSuggestions(); return; }
+    const s = this.game.commands.suggest(value);
+    this.suggestion = s;
+    this.suggestHint.textContent = '';
+    this.suggestHint.classList.toggle('error', !!s.error);
+    if (s.error) this.suggestHint.textContent = s.error;
+    else if (s.hint) { const b = document.createElement('span'); b.textContent = s.hint.before; const c = document.createElement('span'); c.className = 'current'; c.textContent = s.hint.current; const a = document.createElement('span'); a.textContent = s.hint.after; this.suggestHint.append(b, c, a); }
+    else this.suggestHint.textContent = s.items.length ? 'Commands — Tab accepts, ↑ ↓ choose' : '';
+    this.suggestList.textContent = '';
+    this.suggestRows = [];
+    s.items.forEach((it, i) => {
+      const row = document.createElement('div');
+      row.className = 'chat-suggest-row' + (it.disabled ? ' disabled' : '');
+      row.dataset.index = String(i);
+      const label = document.createElement('span'); label.className = 'label'; label.textContent = it.label;
+      row.appendChild(label);
+      const detailText = it.disabled ? `(${it.disabled})` : it.detail;
+      if (detailText) { const d = document.createElement('span'); d.className = 'detail'; d.textContent = detailText; row.appendChild(d); }
+      this.suggestList.appendChild(row);
+      this.suggestRows.push(row);
+    });
+    if (!s.items.length && !s.hint && !s.error) { this._hideSuggestions(); return; }
+    this.suggestIndex = Math.min(this.suggestIndex, Math.max(0, s.items.length - 1));
+    this._highlightSuggestion();
+    this.suggestBox.classList.remove('hidden');
+  }
+
+  _hideSuggestions() { if (this.suggestBox) this.suggestBox.classList.add('hidden'); this.suggestion = null; this.suggestRows = []; this.suggestIndex = 0; }
+
+  _highlightSuggestion() {
+    this.suggestRows.forEach((r, i) => r.classList.toggle('selected', i === this.suggestIndex));
+    const row = this.suggestRows[this.suggestIndex];
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+  }
+
+  /** Put row `i` (default: the highlighted one) into the input: the word, plus a space when more arguments follow. */
+  acceptSuggestion(i = this.suggestIndex) {
+    const s = this.suggestion;
+    if (!s || !s.items[i]) return false;
+    const it = s.items[i];
+    const text = s.line.slice(0, s.replaceStart) + it.text + (it.needsSpace ? ' ' : '');
+    this.input.value = text;
+    this.input.setSelectionRange(text.length, text.length);
+    this.suggestIndex = 0;
+    this.suggestSuppressed = false;
+    this.refreshSuggestions();
+    return true;
   }
 
   /** Forget everything (a new world / server). */
@@ -59,12 +128,38 @@ export class Chat {
     this._push(line);
   }
 
-  /** A system line without a name: `kind` 'yellow' (joins, leaves, deaths), 'gray' (command feedback) or 'red' (errors). */
+  /**
+   * A system line without a name: `kind` 'yellow' (joins, leaves, deaths), 'gray' (command feedback) or 'red' (errors).
+   * `text` may be an array of segments { text, bold?, copy? }: a `copy` segment is clickable and copies that text
+   * (the coordinates of /locate) — every piece still goes through textContent.
+   */
   system(text, kind = 'yellow') {
     const line = document.createElement('div');
     line.className = `chat-line chat-system chat-${kind}`;
-    line.textContent = text;
+    if (Array.isArray(text)) {
+      for (const part of text) {
+        const span = document.createElement('span');
+        span.textContent = part.text;
+        if (part.bold) span.classList.add('chat-bold');
+        if (part.copy) {
+          span.classList.add('chat-coords'); span.title = 'Click to copy ' + part.copy; span.setAttribute('role', 'button');
+          const copy = String(part.copy);
+          span.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.copyText(copy); });
+        }
+        line.appendChild(span);
+      }
+    } else line.textContent = text;
     this._push(line);
+  }
+
+  /** Copy to the clipboard and say so ("Copied!"); when the clipboard is unavailable the text is shown instead. */
+  copyText(text) {
+    const done = () => this.system('Copied!', 'gray');
+    const fail = () => this.system('Could not copy — ' + text, 'red');
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fail);
+      else fail();
+    } catch (e) { fail(); }
   }
 
   _push(line) {
@@ -121,6 +216,8 @@ export class Chat {
     if (g.ui.hud) g.ui.hud.setPointerHint(false);
     this.input.focus();
     this.input.setSelectionRange(this.input.value.length, this.input.value.length);
+    this.suggestSuppressed = false; this.suggestIndex = 0;
+    this.refreshSuggestions();
     g.events.emit('chat:opened');
   }
 
@@ -134,6 +231,7 @@ export class Chat {
     this.root.classList.remove('open');
     this.input.classList.add('hidden');
     this.input.blur();
+    this._hideSuggestions();
     this.game.input.textInputActive = false;
     this._refreshVisibility();
     this.game.onChatClosed(viaKey);
@@ -142,16 +240,23 @@ export class Chat {
   _onInputKey(e) {
     e.stopPropagation();
     if (e.key === 'Enter') { e.preventDefault(); this._send(); this.close(true); return; }
-    if (e.key === 'Escape') { e.preventDefault(); this.close(false); return; }
+    if (e.key === 'Escape') { e.preventDefault(); if (this.suggestOpen) { this.suggestSuppressed = true; this._hideSuggestions(); } else this.close(false); return; }
     if (e.key === 'Tab') {
       e.preventDefault();
+      if (this.suggestOpen && this.suggestion && this.suggestion.items.length) { this.acceptSuggestion(); return; }
+      if (this.suggestSuppressed) { this.suggestSuppressed = false; this.refreshSuggestions(); if (this.suggestOpen && this.suggestion && this.suggestion.items.length) this.acceptSuggestion(); return; }
       const r = this.game.commands.complete(this.input.value);
-      if (r.text !== this.input.value) { this.input.value = r.text; this.input.setSelectionRange(r.text.length, r.text.length); }
-      else if (r.candidates.length > 1) this.system(r.candidates.join('  '), 'gray');
+      if (r.text !== this.input.value) { this.input.value = r.text; this.input.setSelectionRange(r.text.length, r.text.length); this.refreshSuggestions(); }
       return;
     }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
+      if (this.suggestOpen && this.suggestRows.length) {
+        const n = this.suggestRows.length;
+        this.suggestIndex = (this.suggestIndex + (e.key === 'ArrowUp' ? n - 1 : 1)) % n;
+        this._highlightSuggestion();
+        return;
+      }
       if (!this.sent.length) return;
       if (this.sentIndex === -1) this.draft = this.input.value;
       let i = this.sentIndex === -1 ? this.sent.length : this.sentIndex;

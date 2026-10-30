@@ -20,7 +20,7 @@ export function encodeChunks(entries) {
     } catch (e) { codecWorker = null; return encodeOnMainThread(entries); }
   }
   const id = ++codecId;
-  const copies = entries.map((e) => ({ key: e.key, indices: Uint16Array.from(e.indices), ids: Uint8Array.from(e.ids) }));
+  const copies = entries.map((e) => ({ key: e.key, indices: Uint16Array.from(e.indices), ids: Uint8Array.from(e.ids), containers: e.containers || undefined, generated: e.generated || undefined })); // the chest contents and the generated-loot flag travel with the diff
   return new Promise((resolve, reject) => {
     codecPending.set(id, { resolve, reject });
     try { codecWorker.postMessage({ id, entries: copies }, copies.flatMap((c) => [c.indices.buffer, c.ids.buffer])); }

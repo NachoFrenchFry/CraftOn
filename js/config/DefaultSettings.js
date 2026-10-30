@@ -4,7 +4,8 @@
 // updates) and the client-only shader options (the Shaders screen).
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  renderDistance: 8,      // chunks, 2..16
+  renderDistance: 8,      // chunks, 2..32 (above 16 the options screen warns about the computer and memory this needs)
+  antialias: 'msaa4',     // 'off' | 'fxaa' | 'msaa2' | 'msaa4' (MSAA is set when the WebGL context is created: a reload applies it)
   fov: 70,                // degrees, 50..110
   mouseSensitivity: 0.5,  // 0.05..1.5
   crouchMode: 'hold',     // 'hold' | 'toggle' (Controls screen)
@@ -18,6 +19,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   smoothLighting: true, // ambient occlusion + 4-corner smooth light
   brightness: 50,         // Moody 0 % … Bright 100 %: how bright light level 0 is (caves stay playable)
   viewBobbing: 50,        // intensity 0..100 % (0 = off); 50 % is the tuned default
+  fovEffects: 100,        // 0..100 %: scales the sprint / speed / rocket FOV widening (0 = off)
   showFps: false,
   // ---- Performance ----
   renderScale: 0,         // 0.25 / 0.5 / 0.75 / 1 of the device resolution, or 0 = Auto (lowers itself under the FPS target; the default)
@@ -50,8 +52,9 @@ export const SETTING_SECTIONS = Object.freeze([['general', 'Game'], ['audio', 'A
 
 /** Descriptions used by the options screen to build controls. */
 export const SETTING_SCHEMA = [
-  { key: 'renderDistance', label: 'Render Distance', type: 'range', min: 2, max: 16, step: 1, unit: ' chunks', section: 'general' },
+  { key: 'renderDistance', label: 'Render Distance', type: 'range', min: 2, max: 32, step: 1, unit: ' chunks', section: 'general', warn: (v) => (v > 16 ? 'High render distances need a strong computer and lots of memory.' : null) },
   { key: 'fov', label: 'FOV', type: 'range', min: 50, max: 110, step: 1, unit: '°', section: 'general' },
+  { key: 'fovEffects', label: 'FOV Effects (sprint / speed zoom)', type: 'range', min: 0, max: 100, step: 5, unit: '%', section: 'general' },
   { key: 'mouseSensitivity', label: 'Mouse Sensitivity', type: 'range', min: 0.05, max: 1.5, step: 0.05, unit: '', section: 'general' },
   { key: 'invertY', label: 'Invert Mouse Y', type: 'toggle', section: 'general' },
   { key: 'guiScale', label: 'GUI Scale', type: 'select', options: [[0, 'Auto'], [1, '1'], [2, '2'], [3, '3'], [4, '4']], section: 'general' },
@@ -72,6 +75,7 @@ export const SETTING_SCHEMA = [
   { key: 'fancyLeaves', label: 'Leaves', type: 'select', options: [[true, 'Fancy'], [false, 'Fast']], section: 'performance' },
   { key: 'smoothLighting', label: 'Smooth Lighting (AO)', type: 'toggle', section: 'performance' },
   { key: 'chunkUpdates', label: 'Chunk Updates per Frame', type: 'select', options: [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], section: 'performance' },
+  { key: 'antialias', label: 'Anti-aliasing', type: 'select', options: [['off', 'Off'], ['fxaa', 'FXAA'], ['msaa2', 'MSAA 2×'], ['msaa4', 'MSAA 4×']], section: 'performance', hint: 'MSAA smooths block edges only (pixel art stays crisp); FXAA works live but may soften textures slightly. MSAA changes apply after a reload; without MSAA support FXAA is used.', warn: (v) => (typeof globalThis !== 'undefined' && globalThis.__craftonMsaa !== undefined && (String(v).startsWith('msaa') ? 'on' : 'off') !== globalThis.__craftonMsaa ? 'Reload the page to apply this MSAA setting' : null) },
 ];
 
 /** The Shaders screen rows; `shadersOn` and `shaderPreset` are the two controls above the list. */
@@ -99,7 +103,7 @@ export const SHADER_PRESETS = Object.freeze({
 });
 
 /** The "Performance mode" preset button. */
-export const PERFORMANCE_MODE = Object.freeze({ renderScale: 0.5, renderDistance: 4, simulationDistance: 3, particles: 'decreased', fancyLeaves: false, smoothLighting: false, shadersOn: false });
+export const PERFORMANCE_MODE = Object.freeze({ renderScale: 0.5, renderDistance: 4, simulationDistance: 3, particles: 'decreased', fancyLeaves: false, smoothLighting: false, shadersOn: false, antialias: 'off' });
 
 const RENDER_SCALES = [0.25, 0.5, 0.75, 1];
 /** Snap values saved by older versions onto the current choices (render scale used to be a free slider). */

@@ -3,13 +3,16 @@
 // blur of the bright sky around the sun, hidden where terrain covers it) → UnrealBloomPass → grade pass (filmic
 // ACES tone mapping with a slightly warmer, richer look, vignette, underwater wobble) → OutputPass (sRGB). The
 // first-person hand is drawn by Renderer after the chain, so it stays crisp. Built only while some post effect
-// is on and disposed when the last one goes off.
+// is on or FXAA is chosen, and disposed when the last one goes off. Anti-aliasing: with MSAA the chain renders into a
+// multisampled WebGLRenderTarget (`samples` 2 or 4; the canvas's own MSAA does not apply inside a composer); FXAA is
+// a final pass after the OutputPass (it wants sRGB luma), so it works with or without the shader effects.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 
 const GOD_RAYS_SHADER = {
   uniforms: { tDiffuse: { value: null }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uIntensity: { value: 0 }, uSunColor: { value: new THREE.Color(1, 0.95, 0.8) } },
@@ -55,13 +58,22 @@ void main() {
 };
 
 export class PostFX {
-  /** @param {import('../Renderer.js').Renderer} renderer the game's Renderer wrapper */
-  constructor(renderer) {
+  /**
+   * @param {import('../Renderer.js').Renderer} renderer the game's Renderer wrapper
+   * @param {number} samples MSAA samples of the chain's render target (0 = none)
+   */
+  constructor(renderer, samples = 0) {
     this.wrapper = renderer;
+    this.samples = samples;
     const r = renderer.renderer;
-    this.composer = new EffectComposer(r);
+    const size = r.getDrawingBufferSize(new THREE.Vector2());
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples });
+    this.composer = new EffectComposer(r, target);
     this.composer.setPixelRatio(r.getPixelRatio());
     this.composer.setSize(renderer.width, renderer.height);
+    this.fxaa = new ShaderPass(FXAAShader);
+    this.fxaaOn = false;
+    this._fxaaResolution(renderer.width, renderer.height);
     this.renderPass = new RenderPass(renderer.scene, renderer.camera);
     this.godRays = new ShaderPass(GOD_RAYS_SHADER);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(renderer.width, renderer.height), 0.45, 0.35, 0.82);
@@ -72,9 +84,11 @@ export class PostFX {
     this._fwd = new THREE.Vector3();
   }
 
-  /** Rebuild the pass list for the enabled effects (cheap: the passes already exist). */
-  configure(flags) {
-    this.flags = flags;
+  /** Rebuild the pass list for the enabled effects (cheap: the passes already exist); `fxaa` adds the FXAA pass at the end. */
+  configure(flags, fxaa = false) {
+    this.flags = flags || { bloom: false, godRays: false, toneMap: false, vignette: false, underwater: false };
+    flags = this.flags;
+    this.fxaaOn = !!fxaa;
     const c = this.composer;
     c.passes.length = 0;
     c.addPass(this.renderPass);
@@ -82,15 +96,21 @@ export class PostFX {
     if (flags.bloom) c.addPass(this.bloom);
     if (flags.toneMap || flags.vignette || flags.underwater) c.addPass(this.grade);
     c.addPass(this.output);
+    if (this.fxaaOn) c.addPass(this.fxaa);
     this.grade.uniforms.uToneMap.value = flags.toneMap ? 1 : 0;
     this.grade.uniforms.uVignette.value = flags.vignette ? 1 : 0;
   }
+
+  /** Whether any of the shader effects is on (the chain may exist for FXAA alone). */
+  get anyEffect() { const f = this.flags; return !!f && (f.bloom || f.godRays || f.toneMap || f.vignette || f.underwater); }
 
   setSize(w, h) {
     this.composer.setPixelRatio(this.wrapper.renderer.getPixelRatio());
     this.composer.setSize(w, h);
     this.bloom.setSize(w, h);
+    this._fxaaResolution(w, h);
   }
+  _fxaaResolution(w, h) { const pr = this.wrapper.renderer.getPixelRatio(); this.fxaa.material.uniforms.resolution.value.set(1 / Math.max(1, w * pr), 1 / Math.max(1, h * pr)); }
 
   /** Per frame: sun screen position for the god rays, underwater wobble, time. */
   update(time, camera, sunDir, underwater, sky) {
@@ -116,6 +136,6 @@ export class PostFX {
     this.composer.passes.length = 0;
     this.composer.renderTarget1.dispose(); this.composer.renderTarget2.dispose();
     this.bloom.dispose();
-    this.godRays.dispose(); this.grade.dispose(); this.output.dispose();
+    this.godRays.dispose(); this.grade.dispose(); this.output.dispose(); this.fxaa.dispose();
   }
 }

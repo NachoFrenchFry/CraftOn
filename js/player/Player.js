@@ -53,6 +53,14 @@ export class Player {
     /** Bow: draw progress 0..1 while the use button is held with a bow (slows movement, zooms the view) and the frame carried in pose bits. */
     this.drawProgress = 0;
     this.bowFrame = 0;
+    /** Gliding with a held glider (Minecraft's elytra physics at 20 Hz); the rocket boost timer and its cooldown. */
+    this.gliding = false;
+    this.holdingGlider = false;
+    this.glideTime = 0;
+    this.rocketTime = 0;
+    this.rocketCooldown = 0;
+    /** Set by the physics when a glide ended against a wall: the horizontal speed lost (blocks per tick). */
+    this.crashSpeed = 0;
     /** Health: 100 max, saved with the player; `dead` while the death screen shows. */
     this.maxHealth = 100;
     this.health = 100;

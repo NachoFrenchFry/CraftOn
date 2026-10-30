@@ -8,7 +8,8 @@ import { AABB } from '../utils/AABB.js';
 import { moveBox, hasSupport } from './EntityPhysics.js';
 import { createBlockGeometry } from '../rendering/BlockGeometry.js';
 import { BlockIds } from '../blocks/BlockIds.js';
-import { GRAVITY, TERMINAL_VELOCITY, EXPLOSIVE_FUSE_SECONDS } from '../config/Constants.js';
+import { GRAVITY, TERMINAL_VELOCITY, EXPLOSIVE_FUSE_SECONDS, ITEM_WATER_PUSH } from '../config/Constants.js';
+import { isWater, isLava } from '../world/WaterLevels.js';
 
 const SIZE = 0.98;
 const FLASH_PERIOD = 0.5, FLASH_ON = 0.2;
@@ -25,6 +26,8 @@ export class PrimedExplosive {
     this.velocity = new THREE.Vector3(o.vx || 0, o.vy || 0, o.vz || 0);
     this.fuse = o.fuse ?? EXPLOSIVE_FUSE_SECONDS;
     this.fuseTotal = this.fuse;
+    this._flow = { x: 0, y: 0, z: 0 };
+    this.inWater = false; this.inLava = false;
     this.id = o.id ?? null;
     this.remote = !!o.remote;
     this.onGround = false;
@@ -48,20 +51,35 @@ export class PrimedExplosive {
   /** The box of the block entity (feet at `position`). */
   updateAABB() { return this.aabb.setFromFeet(this.position.x, this.position.y, this.position.z, SIZE, SIZE); }
 
-  /** Push from another blast: velocity along the outward direction, scaled by the impact. */
+  /**
+   * Push from another blast: velocity along the outward direction, scaled by the impact — about 2.5× what players and mobs
+   * get, with an extra upward kick, so chain reactions send primed explosives flying visibly.
+   */
   push(dx, dy, dz, impact) {
-    const k = impact * 10;
-    this.velocity.x += dx * k; this.velocity.y += Math.max(dy, 0.25) * k * 0.8 + 2 * impact; this.velocity.z += dz * k;
+    const k = impact * 25;
+    this.velocity.x += dx * k; this.velocity.y += Math.max(dy, 0.3) * k * 0.8 + 6 * impact; this.velocity.z += dz * k;
   }
 
-  /** One physics step; returns true when the fuse ran out (the owner explodes it). */
-  fixedUpdate(dt, world) {
+  /** One physics step; returns true when the fuse ran out (the owner explodes it). `waterSim` / `lavaSim` give the currents. */
+  fixedUpdate(dt, world, waterSim = null, lavaSim = null) {
     this.prevPosition.copy(this.position);
     this.fuse -= dt;
     if (!world.isLoadedAt(this.position.x, this.position.z)) return this.fuse <= 0;
     const v = this.velocity;
-    v.y -= GRAVITY * 0.6 * dt;
-    if (v.y < -TERMINAL_VELOCITY) v.y = -TERMINAL_VELOCITY;
+    // Liquids: flowing water or lava pushes a primed explosive along the current (the same flow vector players, mobs and
+    // dropped items use) with liquid drag; in water it also floats up slowly. Unprimed explosives are blocks and never move.
+    const bx = Math.floor(this.position.x), by = Math.floor(this.position.y + 0.5), bz = Math.floor(this.position.z);
+    const here = world.getBlock(bx, by, bz);
+    this.inWater = isWater(here); this.inLava = !this.inWater && isLava(here);
+    if (this.inWater || this.inLava) {
+      const sim = this.inWater ? waterSim : lavaSim;
+      if (sim) { const f = sim.flowVector(bx, by, bz, this._flow); v.x += f.x * ITEM_WATER_PUSH * dt; v.z += f.z * ITEM_WATER_PUSH * dt; v.y += f.y * ITEM_WATER_PUSH * 0.5 * dt; }
+      if (this.inWater) { v.y += 6 * dt; if (v.y > 0.8) v.y = 0.8; } else { v.y -= GRAVITY * 0.1 * dt; if (v.y < -0.6) v.y = -0.6; }
+      const drag = Math.exp(-3 * dt); v.x *= drag; v.z *= drag; v.y *= drag;
+    } else {
+      v.y -= GRAVITY * 0.6 * dt;
+      if (v.y < -TERMINAL_VELOCITY) v.y = -TERMINAL_VELOCITY;
+    }
     const box = this.updateAABB();
     const m = moveBox(world, box, v.x, v.y, v.z, dt, this._move);
     if (m.landed) v.y = 0;

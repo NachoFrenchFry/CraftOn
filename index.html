@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CraftOn</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" type="image/png" href="assets/ui/favicon.png?icon=2">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/hud.css">
   <link rel="stylesheet" href="css/inventory.css">
@@ -31,7 +31,7 @@
   <div id="boot-screen" class="screen menu-screen">
     <div class="menu-bg"></div>
     <div class="menu-content">
-      <h1 class="title">CraftOn</h1>
+      <img class="logo" src="assets/ui/logo.png" alt="CraftOn" draggable="false">
       <div class="progress"><div id="boot-bar" class="progress-bar" style="width: 3%"></div></div>
       <div id="boot-text" class="loading-text">Loading…</div>
     </div>
@@ -59,6 +59,7 @@
     <!-- Chat: top-left message boxes, the input bar while open -->
     <div id="chat" class="chat">
       <div id="chat-messages" class="chat-messages"></div>
+      <div id="chat-suggest" class="chat-suggest hidden"><div id="chat-suggest-hint" class="chat-suggest-hint"></div><div id="chat-suggest-list" class="chat-suggest-list"></div></div>
       <input id="chat-input" class="chat-input hidden" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Chat message">
     </div>
     <div id="toast" class="toast hidden"></div>
@@ -81,6 +82,11 @@
           <div id="catalog-panel" class="catalog-area hidden">
             <input id="catalog-search" class="catalog-search" type="text" placeholder="Search" autocomplete="off" spellcheck="false">
             <div id="catalog-grid" class="catalog-grid"></div>
+          </div>
+          <!-- A chest: its 36 slots on the wooden panel (the inventory stays on the right). -->
+          <div id="chest-panel" class="chest-area hidden">
+            <div id="chest-title" class="chest-title">Chest</div>
+            <div id="chest-grid" class="slot-grid chest-grid"></div>
           </div>
         </div>
         <div class="inv-divider" aria-hidden="true"></div>
@@ -118,16 +124,15 @@
 
   <div id="main-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
-    <div class="menu-content">
-      <h1 class="title">CraftOn</h1>
+    <div class="menu-content main-menu-content">
+      <img class="logo" src="assets/ui/logo.png" alt="CraftOn" draggable="false">
       <div class="subtitle">A voxel sandbox in your browser</div>
-      <div class="menu-buttons">
+      <div class="menu-buttons main-menu-buttons">
         <button id="btn-play" class="mc-button">Play</button>
         <button id="btn-multiplayer" class="mc-button">Multiplayer</button>
         <button id="btn-options" class="mc-button">Options</button>
       </div>
       <div class="menu-account"><span id="menu-account"></span> <button id="btn-logout" class="mc-button small" type="button">Log out</button></div>
-      <div class="menu-footer">CraftOn · Three.js · no build step</div>
     </div>
   </div>
 

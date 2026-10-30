@@ -1,0 +1,15 @@
+{
+ "structures": [
+  "cave_dungeon.json",
+  "desert_ruin.json",
+  "desert_well.json",
+  "igloo.json",
+  "mountain_cabin.json",
+  "plains_hamlet.json",
+  "plains_house_large.json",
+  "plains_house_small.json",
+  "ship_large.json",
+  "ship_small.json",
+  "tree_house.json"
+ ]
+}

@@ -1,0 +1,43 @@
+{
+ "name": "igloo",
+ "size": [
+  7,
+  5,
+  7
+ ],
+ "anchor": [
+  3,
+  1,
+  0
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "snow",
+  "chest[facing=east]",
+  "torch"
+ ],
+ "blocks": "2x0,3x2,3x0,5x2,1x0,21x2,1x0,5x2,3x0,3x2,4x0,1x2,1x1,1x2,3x0,1x2,3x1,1x2,1x0,1x2,5x1,2x2,1x3,3x1,1x4,2x2,5x1,1x2,1x0,1x2,3x1,1x2,3x0,3x2,5x0,1x1,4x0,2x2,1x1,2x2,2x0,1x2,3x1,1x2,2x0,1x2,3x1,1x2,2x0,1x2,3x1,1x2,2x0,5x2,24x0,3x2,4x0,3x2,4x0,3x2,65x0",
+ "containers": [
+  {
+   "pos": [
+    1,
+    1,
+    3
+   ],
+   "loot": "igloo"
+  }
+ ],
+ "placement": {
+  "biomes": [
+   "snowy"
+  ],
+  "mode": "surface",
+  "spacing": 16,
+  "separation": 4,
+  "chance": 0.55,
+  "rotate": true,
+  "foundation": "snow",
+  "clearAbove": true
+ }
+}

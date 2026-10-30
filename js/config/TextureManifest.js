@@ -43,6 +43,8 @@ export const GENERATED_TEXTURES = Object.freeze([
   'coal_block', 'iron_block', 'gold_block', 'diamond_block',
   // string, the bow and its draw frames, arrows, explosives
   'string', 'bow', 'bow_pulling_0', 'bow_pulling_1', 'bow_pulling_2', 'arrow', 'explosives_top', 'explosives_side', 'explosives_bottom',
+  // the zombie egg, the glider and rockets, the chest
+  'zombie_spawn_egg', 'glider', 'rocket', 'chest_front', 'chest_side', 'chest_top',
 ]);
 
 /**
@@ -61,10 +63,10 @@ export const EXTRA_ATLAS_TEXTURES = Object.freeze([...PARTICLE_TEXTURES, ...HELD
  * Entity sheets in textures/entity/ (not part of the atlas): the mob sheets (64×32 Minecraft-style box-UV nets), the
  * player skin and the zombie (64×64, the standard Minecraft skin layout, see js/player/models/SkinLayout.js) and the arrow.
  */
-export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool', 'zombie', 'player', 'arrow']);
+export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool', 'zombie', 'player', 'arrow', 'glider']);
 export const ENTITY_TEXTURE_SIZE = Object.freeze([64, 32]);
 /** Sheets that are not 64×32. */
-export const ENTITY_TEXTURE_SIZES = Object.freeze({ zombie: [64, 64], player: [64, 64], arrow: [16, 16] });
+export const ENTITY_TEXTURE_SIZES = Object.freeze({ zombie: [64, 64], player: [64, 64], arrow: [16, 16], glider: [32, 32] });
 export const SKIN_SIZE = Object.freeze([64, 64]);
 /**
  * Armor sheets in textures/entity/armor/: per material `<m>_layer_1.png` holds the helmet,

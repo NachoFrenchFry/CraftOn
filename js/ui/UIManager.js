@@ -40,6 +40,7 @@ export class UIManager {
     this.chat = new Chat(game);
     this.inventory = new InventoryScreen(game);
     this.debug = new DebugOverlay(game);
+    this.chunkMap = this.debug.chunkMap;
     this.death = new DeathScreen(game);
     this.atlasView.addEventListener('click', () => this.toggleAtlasView());
     game.events.on('state:changed', (state) => this._onState(state));

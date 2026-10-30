@@ -110,6 +110,29 @@
 .craft-button .slot-icon { width: calc(20px * var(--gui-scale)); height: calc(20px * var(--gui-scale)); }
 .craft-button .craft-count { position: absolute; right: calc(4px * var(--gui-scale)); bottom: calc(2px * var(--gui-scale)); font: 700 calc(9px * var(--gui-scale)) var(--inv-font); text-shadow: calc(1px * var(--gui-scale)) calc(1px * var(--gui-scale)) 0 #000; }
 
+/* ---- Chest (left panel): a wooden orange panel, sharp corners, a 6×6 grid ---- */
+.inv-left.chest {
+  --chest-rim: #a06a2a;
+  --chest-panel: #b87b35;
+  --chest-slot: #d0903f;
+  --chest-slot-border: #9a6428;
+  --chest-slot-hover: #e0a455;
+  width: calc(152px * var(--gui-scale));
+  min-height: 0;
+  background: var(--chest-panel);
+  box-shadow: 0 0 0 calc(3px * var(--gui-scale)) var(--chest-rim), 0 0 0 calc(4px * var(--gui-scale)) rgba(0, 0, 0, 0.35);
+  justify-content: flex-start;
+}
+.chest-area { display: flex; flex-direction: column; align-items: center; gap: calc(5px * var(--gui-scale)); }
+.chest-area.hidden { display: none; }
+.chest-title {
+  text-align: center; font-weight: 700; font-size: calc(9px * var(--gui-scale)); line-height: 1.2; color: #fff;
+  text-shadow: calc(1px * var(--gui-scale)) 0 0 #3a2410, calc(-1px * var(--gui-scale)) 0 0 #3a2410, 0 calc(1px * var(--gui-scale)) 0 #3a2410, 0 calc(-1px * var(--gui-scale)) 0 #3a2410, calc(1px * var(--gui-scale)) calc(1px * var(--gui-scale)) 0 #3a2410;
+}
+.chest-grid { grid-template-columns: repeat(6, calc(20px * var(--gui-scale))); grid-auto-rows: calc(20px * var(--gui-scale)); justify-content: center; }
+.inv-left.chest .slot { background: var(--chest-slot); border-color: var(--chest-slot-border); box-shadow: inset calc(1px * var(--gui-scale)) calc(1px * var(--gui-scale)) 0 rgba(255, 230, 190, 0.25), inset calc(-1px * var(--gui-scale)) calc(-1px * var(--gui-scale)) 0 rgba(90, 55, 20, 0.45); }
+.inv-left.chest .slot:hover, .inv-left.chest .slot.drag-target { background: var(--chest-slot-hover); border-color: #7a4e1e; }
+
 /* ---- Creative catalog (left panel) ---- */
 .catalog-area { display: flex; flex-direction: column; gap: calc(4px * var(--gui-scale)); flex: 1; min-height: 0; }
 .catalog-search {

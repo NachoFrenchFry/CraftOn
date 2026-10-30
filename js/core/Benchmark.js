@@ -56,7 +56,7 @@ export class Benchmark {
     this.y = p.position.y;
     this._buildPath();
     this.samples = this._newSamples();
-    this.standing = null; this.flying = null;
+    this.standing = null; this.flying = null; this.loaded = null;
     g.ui.hud.showToast('Benchmark: loading the spawn area…', false);
   }
 
@@ -89,7 +89,7 @@ export class Benchmark {
       const st = g.chunkManager.stats();
       const done = g.chunkManager.progress(cx, cz, g.chunkManager.renderDistance) >= 0.98 && st.genQueue === 0;
       if (done || this.loadTime > LOAD_TIMEOUT_SECONDS) {
-        this.loaded = { seconds: +this.loadTime.toFixed(1), complete: done, chunks: st.loaded };
+        this.loaded = { seconds: +this.loadTime.toFixed(1), complete: done, chunks: st.loaded, heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null };
         this._enter('standing');
       }
       return;
@@ -208,11 +208,16 @@ export class Benchmark {
       resolution: `${g.renderer.renderer.domElement.width}x${g.renderer.renderer.domElement.height}`,
       devicePixelRatio: window.devicePixelRatio,
       cores: navigator.hardwareConcurrency || null,
-      settings: { renderDistance: s.get('renderDistance'), simulationDistance: s.get('simulationDistance'), renderScale: g.renderer.renderScale, fancyLeaves: s.get('fancyLeaves'), smoothLighting: s.get('smoothLighting'), shadersOn: s.get('shadersOn'), chunkUpdates: s.get('chunkUpdates') },
+      settings: { renderDistance: s.get('renderDistance'), simulationDistance: s.get('simulationDistance'), renderScale: g.renderer.renderScale, fancyLeaves: s.get('fancyLeaves'), smoothLighting: s.get('smoothLighting'), shadersOn: s.get('shadersOn'), chunkUpdates: s.get('chunkUpdates'), antialias: s.get('antialias') },
+      /** Anti-aliasing in effect: the setting, the effective mode, whether the context is multisampled, the post target's samples, and whether the post chain draws. */
+      antialias: { setting: s.get('antialias'), effective: g.renderer.aaMode, contextMsaa: g.renderer.contextMsaa, samples: g.renderer.msaaSamples, post: !!g.renderer.post },
       loading: this.loaded,
       standing: this.standing,
       flying: this.flying,
       geometry: this._geometry(),
+      heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
+      /** Worker-job health: stuck / retried / failed chunks, worker errors, crashes, timeouts, replacements. */
+      workers: g.chunkManager.healthSummary(),
       chunksLoaded: g.world.chunks.size,
       /** Draw-range culling at the end of the flight: triangles the contiguous visible spans draw vs. those of the sections the walk reached. */
       culling: g.meshManager && g.meshManager.stats ? { spanTriangles: Math.round(g.meshManager.stats.spanTriangles || 0), reachedTriangles: Math.round(g.meshManager.stats.reachedTriangles || 0) } : null,
@@ -228,7 +233,7 @@ export class Benchmark {
       triangles: fl.triangles.avg, drawCalls: fl.drawCalls.avg, geometryMB: this.report.geometry.megabytes,
       geometryBytes: this.report.geometry.bytes, geometryUsedMB: this.report.geometry.usedMegabytes, gpuMsP50: fl.gpuMs ? fl.gpuMs.p50 : null, uncappedFps: fl.uncappedFps, uncappedEstimate: fl.uncappedEstimate, heapAllocMBps: fl.heapAllocMBps, heapAllocStandingMBps: st.heapAllocMBps,
       spanTriangles: this.report.culling ? this.report.culling.spanTriangles : null, reachedTriangles: this.report.culling ? this.report.culling.reachedTriangles : null,
-      loadSeconds: this.loaded.seconds,
+      loadSeconds: this.loaded.seconds, loadComplete: this.loaded.complete, chunksLoaded: this.report.chunksLoaded, heapMB: this.report.heapMB, antialias: this.report.antialias.effective,
     };
     window.__bench = this.report;
     console.log('CRAFTON_BENCH ' + JSON.stringify(this.report));
@@ -241,8 +246,8 @@ export class Benchmark {
     const sys = Object.entries(fl.systems).sort((a, b) => b[1].totalMs - a[1].totalMs).slice(0, 10).map(([n, v]) => `${n.padEnd(12)} ${String(v.perFrameMs.toFixed(2)).padStart(6)} ms/frame   max ${String(v.maxFrameMs).padStart(6)} ms`).join('\n');
     const line = (name, p) => `${name.padEnd(9)} ${String(p.fps).padStart(5)} fps   frame p50 ${p.frameMs.p50} / p95 ${p.frameMs.p95} / p99 ${p.frameMs.p99} / max ${p.frameMs.max} ms   cpu p50 ${p.cpuMs.p50} / p99 ${p.cpuMs.p99} ms   >33 ms: ${p.over33}   >50 ms: ${p.over50}`;
     const text = [
-      `CraftOn benchmark — rd ${r.settings.renderDistance}, ${r.resolution}, ${r.renderer}`,
-      `loaded in ${r.loading.seconds} s (${r.loading.chunks} chunks${r.loading.complete ? '' : ', timed out'})`,
+      `CraftOn benchmark — rd ${r.settings.renderDistance}, AA ${r.antialias.effective}, ${r.resolution}, ${r.renderer}`,
+      `loaded in ${r.loading.seconds} s (${r.loading.chunks} chunks${r.loading.complete ? '' : ', timed out'})   heap ${r.heapMB} MB`,
       line('standing', st), line('flying', fl),
       `longest task ${r.summary.longestTaskMs} ms   longest frame ${r.summary.longestFrameMs} ms   triangles ${fl.triangles.avg} (max ${fl.triangles.max})   draw calls ${fl.drawCalls.avg} (max ${fl.drawCalls.max})   geometry ${r.geometry.megabytes} MB in ${r.geometry.meshes} meshes`,
       `uncapped ≈ ${fl.uncappedFps} fps${fl.uncappedEstimate ? '* (CPU-only estimate)' : ''}   gpu p50 ${fl.gpuMs ? fl.gpuMs.p50 + ' ms' : 'n/a'}   heap allocation ${fl.heapAllocMBps === null ? 'n/a' : fl.heapAllocMBps + ' MB/s'} while flying`,

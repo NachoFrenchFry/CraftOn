@@ -20,7 +20,10 @@ import { cleanChatText } from '../ui/Chat.js';
 const CHAT_LIMIT = 5;
 const CHAT_WINDOW_MS = 5000;
 import { attackDamage } from '../items/Tools.js';
-import { ARMOR_POINTS } from '../items/ItemDefinitions.js';
+import { ARMOR_POINTS, ItemIds } from '../items/ItemDefinitions.js';
+import { ItemStack } from '../items/ItemStack.js';
+import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
+import { clickSlot, putIntoSlot } from '../items/SlotClick.js';
 import { Signaling } from './Signaling.js';
 import { detectNetworkHash } from './NetworkId.js';
 import { RemotePlayerManager } from './RemotePlayer.js';
@@ -118,6 +121,7 @@ export class HostServer {
     on('inventory:selected', () => this._sendOwnMeta());
     on('gamemode:changed', () => this._sendOwnMeta());
     on('player:equip', (armor) => { const p = this.game.player.position; this.broadcast(Msg.SOUND, { id: this.userId, name: armor.material === 'wood' ? 'player.equip_wood' : 'player.equip_metal', x: p.x, y: p.y + 1, z: p.z, vol: 0.8 }); });
+    on('player:rocketFired', () => { const p = this.game.player.position; this.broadcast(Msg.SOUND, { id: this.userId, name: 'items/rocket_launch', x: p.x, y: p.y + 1, z: p.z, vol: 0.9 }); });
     const mobs = this.game.entities.mobs;
     mobs.onSpawn = (m) => this.broadcast(Msg.MOB_SPAWN, this._mobRow(m));
     mobs.onRemove = (m) => this.broadcast(Msg.MOB_REMOVE, { id: m.id });
@@ -132,6 +136,11 @@ export class HostServer {
     items.onArrowPickup = (a) => this._arrowPickup(a);
     items.onExplosiveSpawn = (e) => this.broadcast(Msg.EXPLOSIVE_SPAWN, { id: e.id, x: e.position.x, y: e.position.y, z: e.position.z, vx: e.velocity.x, vy: e.velocity.y, vz: e.velocity.z, fuse: e.fuse });
     items.onExplosion = (e, x, y, z, power) => this.broadcast(Msg.EXPLOSION, { id: e.id, x, y, z, power });
+    // Chests: every change of the host's (authoritative) contents goes to everyone as the changed slot.
+    this.game.chests.onSlotChanged = (x, y, z, slot, st) => {
+      if (slot >= 0) this.broadcast(Msg.CHEST_SLOT, { x, y, z, slot, stack: st.get(slot) ? st.get(slot).serialize() : null });
+      else this.broadcast(Msg.CHEST_SLOT, { x, y, z, slot: -1, slots: st.serialize() });
+    };
   }
 
   _unwire() {
@@ -207,6 +216,10 @@ export class HostServer {
       case Msg.BLOCK: return this._blockRequest(peer, msg);
       case Msg.ATTACK: return this._attack(peer, msg);
       case Msg.SHOOT: return this._shoot(peer, msg);
+      case Msg.ROCKET: return this._rocket(peer);
+      case Msg.SPAWN_EGG: return this._spawnEgg(peer, msg);
+      case Msg.CHEST_OPEN: return this._chestOpen(peer, msg);
+      case Msg.CHEST_OP: return this._chestOp(peer, msg);
       case Msg.PRIME: return this._prime(peer, msg);
       case Msg.PICKUP: return this._pickup(peer, msg);
       case Msg.THROW: return this._throw(peer, msg);
@@ -531,6 +544,90 @@ export class HostServer {
     this.game.entities.shootArrow({ x: ox, y: oy, z: oz }, { x: dx, y: dy, z: dz }, power, peer.userId, { pickup: survival });
   }
 
+  /** The chest a guest may use: integer coordinates, a loaded chest block within reach of the guest. */
+  _chestFor(peer, msg) {
+    const g = this.game;
+    const { x, y, z } = msg;
+    if (!peer.state || peer.dead || peer.mode === 'spectator' || !Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return null;
+    if (!g.world.isLoadedAt(x, z) || !BlockRegistry.isContainer(g.world.getBlock(x, y, z))) return null;
+    if (Math.hypot(x + 0.5 - peer.state[0], y + 0.5 - (peer.state[1] + 1.6), z + 0.5 - peer.state[2]) > REACH_CREATIVE + 3) return null;
+    return g.chests.open(x, y, z);
+  }
+
+  /** A guest opened a chest: it gets the real contents (its own copy may be stale). */
+  _chestOpen(peer, msg) {
+    const st = this._chestFor(peer, msg);
+    if (!st) return;
+    peer.link.send(Msg.CHEST_CONTENTS, { x: msg.x, y: msg.y, z: msg.z, slots: st.serialize() });
+  }
+
+  /**
+   * A guest's chest operation, applied to the real contents and answered with CHEST_ACK: 'exchange' (a click with the
+   * guest's cursor: the new cursor comes back), 'takeAll' (the slot's stack comes back for the guest's inventory), 'put'
+   * (items into a slot, or anywhere with slot −1: the accepted count comes back). The changed slots reach everyone.
+   */
+  _chestOp(peer, msg) {
+    const seq = msg.seq;
+    const reply = (r) => peer.link.send(Msg.CHEST_ACK, { seq, ...r });
+    const st = this._chestFor(peer, msg);
+    if (!st) return reply({ ok: false });
+    const slot = msg.slot | 0;
+    if (msg.op === 'exchange') {
+      if (slot < 0 || slot >= st.size) return reply({ ok: false });
+      const cursor = msg.cursor ? ItemStack.deserialize(msg.cursor) : null;
+      const r = clickSlot(st.get(slot), cursor, msg.button === 2 ? 2 : 0);
+      st.set(slot, r.slot);
+      return reply({ ok: true, cursor: r.cursor ? r.cursor.serialize() : null });
+    }
+    if (msg.op === 'takeAll') {
+      if (slot < 0 || slot >= st.size) return reply({ ok: false });
+      const s = st.get(slot);
+      st.set(slot, null);
+      return reply({ ok: true, stack: s ? s.serialize() : null });
+    }
+    if (msg.op === 'put') {
+      const id = msg.id | 0, n = Math.max(0, Math.min(64, msg.n | 0));
+      if (!ItemRegistry.has(id) || n <= 0) return reply({ ok: false });
+      if (slot === -1) { const left = st.addItem(id, n); return reply({ ok: true, n: n - left }); }
+      if (slot < 0 || slot >= st.size) return reply({ ok: false });
+      const r = putIntoSlot(st.get(slot), id, n);
+      if (r.accepted > 0) st.set(slot, r.slot);
+      return reply({ ok: true, n: r.accepted });
+    }
+    return reply({ ok: false });
+  }
+
+  /** A guest used a spawn egg (Creative only): the mob is spawned at the clicked cell past the caps and broadcast like every host spawn. */
+  _spawnEgg(peer, msg) {
+    const g = this.game;
+    const def = MOB_BY_TYPE[msg.type];
+    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    if (!def || !peer.state || peer.dead || peer.mode !== 'creative') return;
+    if (Math.hypot(x + 0.5 - peer.state[0], y + 0.5 - (peer.state[1] + 1.6), z + 0.5 - peer.state[2]) > REACH_CREATIVE + 3) return;
+    if (!g.world.isLoadedAt(x, z)) { peer.link.send(Msg.CHAT, { system: 'That spot is not loaded on the server yet.', color: 'gray' }); return; }
+    if (def.hostile && !g.entities.mobs.hostileEnabled) { peer.link.send(Msg.CHAT, { system: 'Hostile mobs are turned off in this world.', color: 'gray' }); return; }
+    g.entities.mobs._add(def, x + 0.5, y, z + 0.5, (Math.random() * 4294967296) >>> 0, Math.random() * Math.PI * 2, def.health, null, true);
+  }
+
+  /** A guest fired a rocket while gliding: it needs a rocket in its replicated inventory (none in Creative) and 0.2 s since the last; everyone hears the launch. */
+  _rocket(peer) {
+    if (!peer.state || peer.dead || peer.mode === 'spectator') return;
+    const now = performance.now() / 1000;
+    if (now - (peer.lastRocket || 0) < 0.2) return;
+    if (peer.mode !== 'creative' && !this._peerHasItem(peer, ItemIds.ROCKET)) return;
+    peer.lastRocket = now;
+    peer.link.send(Msg.ROCKET_OK, {});
+    this.broadcast(Msg.SOUND, { id: peer.userId, name: 'items/rocket_launch', x: peer.state[0], y: peer.state[1] + 1, z: peer.state[2], vol: 0.9 }, peer);
+  }
+
+  /** The guest's replicated inventory (its last INV / META sync) holds at least one of `itemId`; unknown inventories pass. */
+  _peerHasItem(peer, itemId) {
+    const row = this._guestRow(peer.userId);
+    const inv = row && row.inventory;
+    if (!inv || !Array.isArray(inv.slots)) return true;
+    return inv.slots.some((s) => s && s.id === itemId && s.n > 0);
+  }
+
   /** The guest's replicated inventory (its last INV / META sync) holds at least one arrow; unknown inventories pass. */
   _peerHasArrow(peer) {
     const row = this._guestRow(peer.userId);
@@ -617,7 +714,13 @@ export class HostServer {
   _storeGuest(peer, msg) {
     const meta = this.game.worldMeta;
     if (!meta) return;
-    meta.guests[peer.userId] = { name: peer.name, player: msg.player || null, inventory: msg.inventory || null, lastSeen: Date.now(), mode: peer.mode || this.defaultMode, canChangeMode: !!peer.canChangeMode };
+    // The spawn is the host's to decide (_spawnFor): a guest's self-reported spawn never replaces the one the host recorded.
+    const prev = meta.guests[peer.userId], player = msg.player && typeof msg.player === 'object' ? { ...msg.player } : null;
+    if (player) {
+      delete player.spawnX; delete player.spawnY; delete player.spawnZ;
+      if (prev && prev.player && typeof prev.player.spawnX === 'number') { player.spawnX = prev.player.spawnX; player.spawnY = prev.player.spawnY; player.spawnZ = prev.player.spawnZ; }
+    }
+    meta.guests[peer.userId] = { name: peer.name, player, inventory: msg.inventory || null, lastSeen: Date.now(), mode: peer.mode || this.defaultMode, canChangeMode: !!peer.canChangeMode };
     this.game.session.changedSinceSave = true;
   }
 

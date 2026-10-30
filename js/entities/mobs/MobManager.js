@@ -96,10 +96,10 @@ export class MobManager {
     this.byId.clear();
   }
 
-  _add(def, x, y, z, seed, yaw, health, id = null) {
+  _add(def, x, y, z, seed, yaw, health, id = null, ignoreCap = false) {
     if (id === null) {
-      if (def.hostile) { if (!this.hostileEnabled || this.hostileCount >= this._hostileCap()) return null; }
-      else if (this.passiveCount >= MOB_CAP) return null;
+      if (def.hostile) { if (!this.hostileEnabled || (!ignoreCap && this.hostileCount >= this._hostileCap())) return null; }
+      else if (!ignoreCap && this.passiveCount >= MOB_CAP) return null;
     }
     const mob = new Mob(def, this.textures, x, y, z, seed);
     if (yaw !== undefined) mob.yaw = mob.headYaw = yaw;

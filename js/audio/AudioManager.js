@@ -36,8 +36,8 @@ class LoopPlayer {
     src.start();
     this.src = src;
   }
-  /** Smoothly move toward a target volume (0..1). */
-  setLevel(level, time) { this.gain.gain.setTargetAtTime(level, time, 1.5); }
+  /** Smoothly move toward a target volume (0..1) over about `tau` seconds. */
+  setLevel(level, time, tau = 1.5) { this.gain.gain.setTargetAtTime(level, time, tau); }
   setRate(rate) { this.rate = rate; if (this.src) this.src.playbackRate.setTargetAtTime(Math.max(0.0001, rate), this.ctx.currentTime, 0.05); }
 }
 
@@ -54,6 +54,8 @@ export class AudioManager {
     this.bank = new SoundBank();
     this.spatial = null;
     this.wind = null;
+    this.glide = null;
+    this.glideLevel = 0;
     this.waterLoop = null;
     this.activeVoices = 0;
     this.lastPlay = new Map();
@@ -109,6 +111,8 @@ export class AudioManager {
     this.resume();
     this.wind = new LoopPlayer(ctx, this.buses.ambient); // starts once audio/ambient/wind is decoded (update())
     this.wind.setRate(this.timeScale);
+    this.glide = new LoopPlayer(ctx, this.buses.player); // the glide wind rush, louder with speed (update())
+    this.glide.setRate(this.timeScale);
     this.ready = true; // sounds still loading in the background are skipped until their buffers exist
     this.events.emit('audio:ready');
     await this.prerender(); // no-op when boot already started it
@@ -143,7 +147,8 @@ export class AudioManager {
     if (spread <= 0) return 1;
     const last = this._lastPitch.get(id);
     let rate = 1 + (Math.random() * 2 - 1) * spread;
-    if (last !== undefined && Math.abs(rate - last) < spread * 0.3) rate = last > 1 ? 1 - Math.random() * spread : 1 + Math.random() * spread;
+    // a repeat is pushed away from the previous pitch by at least 30 % of the spread (toward the far end of the range, so it stays inside it)
+    if (last !== undefined && Math.abs(rate - last) < spread * 0.3) { const step = spread * (0.3 + Math.random() * 0.7); rate = last > 1 ? last - step : last + step; rate = Math.min(1 + spread, Math.max(1 - spread, rate)); }
     this._lastPitch.set(id, rate);
     return rate;
   }
@@ -222,6 +227,13 @@ export class AudioManager {
       if (player.headInWater || player.headInLava) level *= 0.1;
       this.wind.setLevel(Math.min(level, 0.5), this.ctx.currentTime);
     }
+    if (this.glide) {
+      if (!this.glide.started) { const buffer = this.bank.get('player/glide_wind'); if (buffer) this.glide.start(buffer); }
+      const speed = player.gliding ? Math.hypot(player.velocity.x, player.velocity.y, player.velocity.z) : 0;
+      const level = player.gliding ? Math.min(0.9, 0.15 + speed / 45) * this.bank.volumeOf('player/glide_wind') : 0;
+      this.glide.setLevel(level, this.ctx.currentTime, 0.25);
+      this.glideLevel = level;
+    }
     this._updateWaterLoop();
     // Rare cave ambience when enclosed and deep.
     this._dripTimer -= dt;
@@ -275,6 +287,7 @@ export class AudioManager {
     this.timeScale = Math.max(0, scale);
     if (this.waterLoop && this.ctx) this.waterLoop.src.playbackRate.setTargetAtTime(Math.max(0.0001, this.timeScale), this.ctx.currentTime, 0.05);
     if (this.wind) this.wind.setRate(this.timeScale);
+    if (this.glide) this.glide.setRate(this.timeScale);
   }
 
   /** Stop ambient loops (leaving a world). */
@@ -282,5 +295,6 @@ export class AudioManager {
     this._nearWater = false;
     this._updateWaterLoop();
     if (this.wind) this.wind.setLevel(0, this.ctx.currentTime);
+    if (this.glide) this.glide.setLevel(0, this.ctx.currentTime, 0.25);
   }
 }

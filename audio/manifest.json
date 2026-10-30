@@ -28,6 +28,20 @@
    "volume": 1.0,
    "volumeVar": 0.0
   },
+  "blocks/chest_close": {
+   "file": "chest_close.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "blocks/chest_open": {
+   "file": "chest_open.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
   "breaking/dirt": {
    "file": "dirt.wav",
    "loop": false,
@@ -149,6 +163,13 @@
   },
   "items/pickup": {
    "file": "pickup.wav",
+   "loop": false,
+   "pitch": 0.06,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "items/rocket_launch": {
+   "file": "rocket_launch.wav",
    "loop": false,
    "pitch": 0.06,
    "volume": 1.0,
@@ -426,6 +447,13 @@
    "pitch": 0.05,
    "volume": 1.0,
    "volumeVar": 0.05
+  },
+  "player/glide_wind": {
+   "file": "glide_wind.wav",
+   "loop": true,
+   "pitch": 0.0,
+   "volume": 1.0,
+   "volumeVar": 0.0
   },
   "player/hurt": {
    "file": "hurt.wav",

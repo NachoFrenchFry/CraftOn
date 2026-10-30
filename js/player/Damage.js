@@ -80,6 +80,7 @@ export function causeText(cause) {
   if (cause.kind === 'zombie') return 'Slain by a Zombie';
   if (cause.kind === 'arrow') return `Shot by ${cause.by || 'another player'}`;
   if (cause.kind === 'explosion') return 'Blown up';
+  if (cause.kind === 'crash') return 'Crashed while gliding';
   return 'Died';
 }
 
@@ -94,5 +95,6 @@ export function deathMessage(name, cause) {
   if (cause.kind === 'zombie') return `${name} was slain by a Zombie`;
   if (cause.kind === 'arrow') return `${name} was shot by ${cause.by || 'another player'}`;
   if (cause.kind === 'explosion') return `${name} was blown up`;
+  if (cause.kind === 'crash') return `${name} crashed while gliding`;
   return `${name} died`;
 }

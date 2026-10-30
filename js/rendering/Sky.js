@@ -125,7 +125,7 @@ export class Sky {
       this.scene.background.copy(this.waterColor);
       this._tintSky(UNDERWATER_SKY_TINT);
     } else {
-      const dist = this.renderDistance * CHUNK_SIZE;
+      const dist = this.renderDistance * CHUNK_SIZE; // the fog ends at the render distance
       fog.color.copy(this.skyColor);
       fog.near = dist * 0.6;
       fog.far = dist * 0.95;

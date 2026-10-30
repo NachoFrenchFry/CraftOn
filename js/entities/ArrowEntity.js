@@ -11,6 +11,10 @@
 import * as THREE from 'three';
 import { ARROW_GRAVITY, ARROW_DRAG_PER_TICK, ARROW_STUCK_SECONDS, ARROW_FLIGHT_SECONDS, VOID_Y } from '../config/Constants.js';
 import { sameLight, copyLight, applyLight } from '../rendering/LightUniforms.js';
+import { isWater } from '../world/WaterLevels.js';
+
+/** Drag per 20 Hz tick while the arrow moves through water. */
+const ARROW_WATER_DRAG_PER_TICK = 0.6;
 
 export const ARROW_LENGTH = 0.8, ARROW_HEIGHT = 0.25;
 let sharedGeometry = null;
@@ -61,6 +65,12 @@ export class ArrowEntity {
     /** Guests mirror the host's arrow: the same physics locally, no damage, corrections from the host. */
     this.remote = !!o.remote;
     this.stuck = false;
+    /** The block a stuck arrow sits in; when it disappears the arrow comes loose and falls (set by land()). */
+    this.stuckBlock = null;
+    /** Set by the owner: the world, for the stuck-block check and the water drag. */
+    this.world = null;
+    /** True once an arrow came loose from a vanished block (it flies and falls like a shot one, keeping its pickup rules). */
+    this.loose = false;
     this.age = 0;
     this.stuckTime = 0;
     this.dead = false;
@@ -92,13 +102,17 @@ export class ArrowEntity {
     this.prevPosition.copy(this.position);
     if (this.stuck) {
       this.stuckTime += dt;
-      if (this.stuckTime >= ARROW_STUCK_SECONDS) this.dead = true;
-      return null;
+      if (this.stuckTime >= ARROW_STUCK_SECONDS) { this.dead = true; return null; }
+      // The block it sits in is gone (broken, exploded, replaced by air or a liquid): the arrow comes loose and falls.
+      const b = this.stuckBlock;
+      if (b && this.world && !this.world.isSolid(b.x, b.y, b.z)) this.unstick();
+      else return null;
     }
-    if (this.age > ARROW_FLIGHT_SECONDS || this.position.y < VOID_Y) { this.dead = true; return null; }
+    if ((!this.loose && this.age > ARROW_FLIGHT_SECONDS) || this.position.y < VOID_Y) { this.dead = true; return null; }
     const v = this.velocity;
     v.y -= ARROW_GRAVITY * dt;
-    const drag = Math.pow(ARROW_DRAG_PER_TICK, dt * 20);
+    const inWater = this.world && isWater(this.world.getBlock(Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z)));
+    const drag = Math.pow(inWater ? ARROW_WATER_DRAG_PER_TICK : ARROW_DRAG_PER_TICK, dt * 20);
     v.multiplyScalar(drag);
     const len = v.length() * dt;
     if (len <= 0) return null;
@@ -114,11 +128,29 @@ export class ArrowEntity {
     return null;
   }
 
-  /** Stick where it is (a block hit): no more movement; the tip stays a little inside the face it hit. */
-  land() {
+  /** Stick where it is (a block hit): no more movement; the tip stays a little inside the face it hit. `block` is the cell hit. */
+  land(block = null) {
     this.stuck = true;
     this.stuckTime = 0;
+    this.stuckBlock = block;
     this.velocity.multiplyScalar(0.001);
+  }
+
+  /** Come loose (the block vanished, or a blast shook it out): it falls from rest and sticks again where it lands. */
+  unstick() {
+    this.stuck = false;
+    this.stuckBlock = null;
+    this.loose = true;
+    this.stuckTime = 0;
+    this.velocity.set(0, 0, 0);
+  }
+
+  /** An explosion's push (outward direction × impact): loose and flying arrows fly off; a stuck one comes loose when the push is strong. */
+  push(dx, dy, dz, impact) {
+    if (this.stuck) { if (impact <= 0.3) return; this.unstick(); }
+    const k = 12 * impact;
+    this.velocity.x += dx * k; this.velocity.y += Math.max(dy, 0.25) * k; this.velocity.z += dz * k;
+    this._orient();
   }
 
   /** Visual update: interpolated position and the tint of the light where the arrow is (a factor or an [r, g, b]). */

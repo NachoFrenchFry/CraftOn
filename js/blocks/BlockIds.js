@@ -81,9 +81,14 @@ export const BlockIds = Object.freeze({
   DIAMOND_BLOCK: 72,
   /** Explosives (bloxd-style TNT): placing one primes it at once, so the block itself only exists as an item / icon or when set directly. */
   EXPLOSIVES: 73,
+  // The chest: a station with 36 slots of storage (its contents live in the chunk's edit data); the front faces the player.
+  CHEST: 74,
+  CHEST_N: 75,
+  CHEST_E: 76,
+  CHEST_W: 77,
 });
 
-export const BLOCK_COUNT = 74;
+export const BLOCK_COUNT = 78;
 
 /** Ids of blocks that no longer exist. Saved chunk edits holding them are converted to stone on load. */
 export const REMOVED_BLOCK_IDS = Object.freeze([16, 28, 29]);

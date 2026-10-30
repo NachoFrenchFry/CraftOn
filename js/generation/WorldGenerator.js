@@ -1,5 +1,5 @@
 // WorldGenerator.js — orchestrates all generation passes for one chunk, in order:
-// terrain → surface/bedrock → caves → water → ores → decorations. Deterministic per (seed, cx, cz).
+// terrain → surface/bedrock → caves → water → ores → structures → decorations. Deterministic per (seed, cx, cz).
 // Worker-safe; also usable on the main thread (e.g. for spawn finding).
 
 import { SEA_LEVEL, BLOCKS_PER_CHUNK, WORLD_HEIGHT, MIN_CAVE_Y, CHEESE_TOP_Y, CAVE_SPRING_MIN, CAVE_SPRING_MAX, CAVE_SPRING_CAVERN_BLOCKS, LAVA_POOL_CAVERN_BLOCKS, LAVA_POOL_MAX_Y, LAVA_POOL_MAX_CELLS, LAVA_POOL_CHANCE, LAVA_SEA_LEVEL, DESERT_LAKE_CHANCE, MEGA_CAVE_DIAMOND_FACTOR } from '../config/Constants.js';
@@ -12,6 +12,7 @@ import { NoiseCaves } from './NoiseCaves.js';
 import { OreGenerator } from './OreGenerator.js';
 import { RavineCarver } from './RavineCarver.js';
 import { Decorator } from './Decorator.js';
+import { StructurePlacer } from './StructurePlacer.js';
 import { BiomeIds, BIOMES } from './Biomes.js';
 import { SimplexNoise } from '../utils/noise/SimplexNoise.js';
 import { deriveSeed, chunkRandom } from '../utils/Random.js';
@@ -44,11 +45,20 @@ export class WorldGenerator {
     this._sample = createColumnSample();
     /** Desert lake parameters per chunk cell. */
     this._lakeCache = new Map();
+    /** Structures (StructurePlacer) once the structure files are known — setStructures(); null generates none. */
+    this.structures = null;
+  }
+
+  /** Install the structure registry (structures/*.json parsed by StructureRegistry.fromList); null disables structures. */
+  setStructures(registry) {
+    this.structures = registry ? new StructurePlacer(this, registry) : null;
+    this.decorator.structures = this.structures;
   }
 
   /**
    * Generate a chunk.
-   * @returns {{blocks:Uint8Array, heightMap:Uint8Array, biomeMap:Uint8Array}}
+   * @returns {{blocks:Uint8Array, heightMap:Uint8Array, biomeMap:Uint8Array, springs:Uint16Array, lavaPools:number, mega:number, containers:object[]|null}}
+   *   `containers`: structure chests in this chunk as { index, slots } (chunk-local block index, serialized chest slots)
    */
   generateChunk(cx, cz) {
     this.shaper.resetCache();
@@ -133,15 +143,20 @@ export class WorldGenerator {
     // Lava pools: closed floor basins of ordinary caves below LAVA_POOL_MAX_Y.
     let lavaPools = this._lavaPools(blocks, cx, cz, heightMap, cheeseBlocks) + (seaCells > 0 ? 1 : 0);
 
-    // 6. Trees, plants and other decorations.
-    this.decorator.decorate(blocks, cx, cz, biomeMap, this.heightMap16);
+    // 6. Structures (data files in structures/): after terrain, caves and ores, before trees and plants, so they are in
+    // place for the initial light pass and nothing grows inside their footprints.
+    let containers = null, mask = null;
+    if (this.structures) { const r = this.structures.place(blocks, cx, cz, this.heightMap16); containers = r.containers; mask = r.mask; }
+
+    // 7. Trees, plants and other decorations (never inside a structure's footprint).
+    this.decorator.decorate(blocks, cx, cz, biomeMap, this.heightMap16, mask);
     // Desert lava lakes (after the plants, so the crater is clear of cacti and bushes); they may span several chunks.
     lavaPools += this._desertLakes(blocks, cx, cz);
 
-    // 7. Safety: no air or water may touch bedrock, so bedrock is never visible from caves.
+    // 8. Safety: no air or water may touch bedrock, so bedrock is never visible from caves.
     this._sealBedrock(blocks);
 
-    return { blocks, heightMap, biomeMap, springs, lavaPools, mega };
+    return { blocks, heightMap, biomeMap, springs, lavaPools, mega, containers };
   }
 
   /**

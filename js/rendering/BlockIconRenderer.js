@@ -64,7 +64,7 @@ export class BlockIconRenderer {
   _drawCube(ctx, blockId) {
     const S = ICON_SIZE, half = S / 2, q = S / 4;
     const top = this.atlas.getTile(BlockRegistry.faceTexture(blockId, Direction.UP));
-    const left = this.atlas.getTile(BlockRegistry.faceTexture(blockId, Direction.NORTH));
+    const left = this.atlas.getTile(BlockRegistry.faceTexture(blockId, Direction.SOUTH)); // the base item's (south-facing) front for chests, furnaces, crafting tables; the side for everything else
     const right = this.atlas.getTile(BlockRegistry.faceTexture(blockId, Direction.EAST));
     const k = 16;
     const drawFace = (img, a, b, c, d, e, f, darken) => {

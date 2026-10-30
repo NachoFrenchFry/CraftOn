@@ -31,6 +31,8 @@ export class Decorator {
     this.biomes = biomes;
     this.ravines = ravines;
     this._sample = createColumnSample();
+    /** @type {import('./StructurePlacer.js').StructurePlacer|null} set by WorldGenerator.setStructures: no trees on structure columns */
+    this.structures = null;
   }
 
   /** Deterministic tree specs for a chunk (pure function of seed, chunk coords and terrain). */
@@ -69,12 +71,15 @@ export class Decorator {
    * @param {Uint8Array} blocks
    * @param {Uint8Array} biomeMap 16×16 biome ids
    * @param {Int16Array} heightMap16 16×16 terrain heights
+   * @param {Uint8Array|null} [mask] 16×16 columns covered by a structure (StructurePlacer.place): nothing grows there
    */
-  decorate(blocks, cx, cz, biomeMap, heightMap16) {
+  decorate(blocks, cx, cz, biomeMap, heightMap16, mask = null) {
     const wx0 = cx * 16, wz0 = cz * 16;
+    const structures = this.structures;
     const write = (wx, wy, wz, id, isTrunk) => {
       const lx = wx - wx0, lz = wz - wz0;
       if (lx < 0 || lx > 15 || lz < 0 || lz > 15 || wy < 1 || wy >= WORLD_HEIGHT) return;
+      if (mask && mask[lx + (lz << 4)]) return; // a structure's column: no leaves or cactus parts
       const i = lx + (lz << 4) + (wy << 8);
       const cur = blocks[i];
       if (isTrunk) {
@@ -91,6 +96,7 @@ export class Decorator {
         for (const spec of specs) {
           if (spec.x + TREE_MAX_RADIUS < wx0 || spec.x - TREE_MAX_RADIUS > wx0 + 15) continue;
           if (spec.z + TREE_MAX_RADIUS < wz0 || spec.z - TREE_MAX_RADIUS > wz0 + 15) continue;
+          if (structures && structures.columnBlocked(spec.x, spec.z)) continue; // the trunk would stand in a structure
           buildTree(spec, write);
           // Dirt under the trunk, like Minecraft.
           const lx = spec.x - wx0, lz = spec.z - wz0;
@@ -107,6 +113,7 @@ export class Decorator {
     for (let lz = 0; lz < 16; lz++) {
       for (let lx = 0; lx < 16; lx++) {
         const col = lx + (lz << 4);
+        if (mask && mask[col]) continue;
         const biome = BIOMES[biomeMap[col]];
         const h = heightMap16[col];
         if (h < SEA_LEVEL + 1 || h + 1 >= WORLD_HEIGHT) continue;

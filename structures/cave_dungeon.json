@@ -1,0 +1,55 @@
+{
+ "name": "cave_dungeon",
+ "size": [
+  9,
+  6,
+  9
+ ],
+ "anchor": [
+  4,
+  1,
+  4
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "cobblestone",
+  "mossy_cobblestone",
+  "chest[facing=south]",
+  "chest[facing=north]",
+  "torch[facing=north]",
+  "torch[facing=west]"
+ ],
+ "blocks": "1x2,3x3,1x2,3x3,1x2,1x3,1x2,3x3,1x2,5x3,1x2,3x3,1x2,5x3,1x2,3x3,1x2,1x3,1x2,3x3,1x2,3x3,1x2,1x3,1x2,3x3,1x2,5x3,1x2,3x3,1x2,5x3,1x2,3x3,1x2,1x3,1x2,3x3,1x2,3x3,1x2,3x3,1x2,3x3,1x2,1x3,1x2,1x4,6x1,1x2,1x3,7x1,2x3,7x1,2x3,8x1,1x2,7x1,1x2,1x3,7x1,2x3,6x1,1x5,4x3,1x2,3x3,1x2,3x3,1x2,3x3,1x2,3x3,7x1,1x3,1x2,7x1,1x2,1x3,7x1,2x3,8x1,1x3,7x1,1x3,1x2,7x1,1x2,1x3,7x1,3x3,1x2,3x3,1x2,3x3,1x2,3x3,1x2,4x3,3x1,1x6,3x1,2x3,7x1,1x3,1x2,7x1,1x2,1x3,1x7,6x1,2x3,7x1,2x3,7x1,1x3,1x2,7x1,1x2,1x3,1x2,3x3,1x2,3x3,1x2,3x3,1x2,3x3,1x2,1x3,7x1,2x3,7x1,2x3,7x1,1x3,1x2,7x1,1x2,1x3,7x1,2x3,7x1,2x3,7x1,1x3,1x2,3x3,1x2,3x3,1x2,3x3,1x2,3x3,1x2,1x3,1x2,3x3,1x2,3x3,1x2,1x3,1x2,3x3,1x2,5x3,1x2,3x3,1x2,5x3,1x2,3x3,1x2,1x3,1x2,3x3,1x2,3x3,1x2,1x3,1x2,3x3,1x2,5x3,1x2,3x3,1x2,5x3,1x2,3x3,1x2,1x3",
+ "containers": [
+  {
+   "pos": [
+    1,
+    1,
+    1
+   ],
+   "loot": "dungeon"
+  },
+  {
+   "pos": [
+    7,
+    1,
+    7
+   ],
+   "loot": "dungeon",
+   "chance": 0.5
+  }
+ ],
+ "placement": {
+  "biomes": [],
+  "mode": "underground",
+  "yRange": [
+   10,
+   50
+  ],
+  "spacing": 8,
+  "separation": 2,
+  "chance": 0.17,
+  "rotate": true
+ }
+}

@@ -6,6 +6,7 @@ import * as C from '../config/Constants.js';
 import { isWater, isLava, heightOf } from '../world/WaterLevels.js';
 import { isSolidAt, sweepAxis, hasSupport, hasHeadroom } from '../entities/EntityPhysics.js';
 import { stepHorizontal, stepFlyVertical } from './Movement.js';
+import { glideTick, rocketTick, crashDamage } from './Glide.js';
 
 const EPS = C.COLLISION_EPSILON;
 
@@ -16,6 +17,8 @@ export class PlayerPhysics {
    * @param {import('../core/EventBus.js').EventBus} events
    */
   constructor(player, world, events) {
+    this._look = { x: 0, y: 0, z: -1 };
+    this._tickV = { x: 0, y: 0, z: 0 };
     this.player = player;
     this.world = world;
     this.events = events;
@@ -97,7 +100,7 @@ export class PlayerPhysics {
 
   /** Noclip flight for spectators (speed scaled by the wheel-adjusted multiplier). */
   _stepSpectator(p, v, intent, dt) {
-    p.flying = true; p.swimming = false; p.crawling = false; p.sneaking = false; p.onGround = false;
+    p.flying = true; p.swimming = false; p.crawling = false; p.sneaking = false; p.onGround = false; p.gliding = false; p.rocketTime = 0;
     p.inWater = false; p.headInWater = false; p.inLava = false; p.headInLava = false; p.fallStartY = null;
     const sinY = Math.sin(p.yaw), cosY = Math.cos(p.yaw);
     let fx = -sinY * intent.forward + cosY * intent.strafe;
@@ -143,6 +146,14 @@ export class PlayerPhysics {
     if (p.inWater || p.inLava) p.flying = p.flying && p.isCreative;
     if (p.inLava) p.fallStartY = null;
 
+    // Gliding (a held glider, bloxd style): starts in the air while falling faster than GLIDE_START_FALL_SPEED or on a
+    // fresh jump press in mid-air; ends on landing, in water or lava, when the glider is put away, when flying.
+    const jumpPressed = intent.jump && !p.jumpWasDown;
+    p.jumpWasDown = !!intent.jump;
+    if (p.gliding && (p.onGround || p.inWater || p.inLava || !p.holdingGlider || p.flying)) { p.gliding = false; p.rocketTime = 0; }
+    else if (!p.gliding && p.holdingGlider && !p.onGround && !p.inWater && !p.inLava && !p.flying && (v.y < -C.GLIDE_START_FALL_SPEED || jumpPressed)) { p.gliding = true; p.glideAcc = 0; p.glideTime = 0; }
+    if (p.rocketCooldown > 0) p.rocketCooldown -= dt;
+
     this._updatePose(p, intent, midWater);
 
     // Flowing water pushes the player gently along its flow.
@@ -171,7 +182,24 @@ export class PlayerPhysics {
     else if (p.sneaking || p.crawling || p.drawProgress > 0) speed = C.SNEAK_SPEED; // drawing a bow slows to sneaking speed
     else speed = p.sprinting ? C.SPRINT_SPEED : C.WALK_SPEED;
 
-    if (p.swimming) {
+    if (p.gliding) {
+      // Minecraft's elytra formula at 20 Hz (blocks per tick), converted to and from blocks per second; between ticks the
+      // velocity carries on and the usual swept collision moves the box. A rocket adds its boost tick while it burns.
+      p.glideTime += dt;
+      p.glideAcc = (p.glideAcc || 0) + dt;
+      if (p.rocketTime > 0) p.rocketTime -= dt;
+      const look = this._look;
+      const cp = Math.cos(p.pitch);
+      look.x = -sinY * cp; look.y = Math.sin(p.pitch); look.z = -cosY * cp;
+      while (p.glideAcc >= C.GLIDE_TICK) {
+        p.glideAcc -= C.GLIDE_TICK;
+        this._tickV.x = v.x / 20; this._tickV.y = v.y / 20; this._tickV.z = v.z / 20;
+        glideTick(this._tickV, look, p.pitch);
+        if (p.rocketTime > 0) rocketTick(this._tickV, look);
+        v.x = this._tickV.x * 20; v.y = this._tickV.y * 20; v.z = this._tickV.z * 20;
+      }
+      p.fallStartY = p.position.y; // only the final descent after the glide counts as a fall
+    } else if (p.swimming) {
       // 3D movement along the look direction (pitch included); strafe stays horizontal.
       const cp = Math.cos(p.pitch);
       const tx = -sinY * cp * intent.forward * speed + cosY * intent.strafe * C.SWIM_SPEED;
@@ -272,6 +300,7 @@ export class PlayerPhysics {
 
     // Sneaking edge protection.
     const protect = p.sneaking && p.onGround && !p.flying;
+    const glideHv = p.gliding ? Math.hypot(v.x, v.z) : 0;
     let movedX = this._sweep(box, 0, dx);
     if (protect && movedX !== 0) {
       box.translate(movedX, 0, 0);
@@ -294,6 +323,13 @@ export class PlayerPhysics {
     p.blockedHorizontally = (blockedX && dx !== 0) || (blockedZ && dz !== 0);
     p.blockedDirX = blockedX ? Math.sign(dx) : 0;
     p.blockedDirZ = blockedZ ? Math.sign(dz) : 0;
+    // A glide into a wall: the horizontal speed lost in one tick (blocks per tick) decides the crash damage.
+    if (p.gliding && (blockedX || blockedZ)) {
+      const lost = (glideHv - Math.hypot(v.x, v.z)) / 20;
+      p.crashSpeed = lost;
+      const dmg = crashDamage(lost);
+      if (dmg > 0) this.events.emit('player:crash', dmg, lost);
+    }
 
     // Ground check when standing still (blocks removed underfoot).
     if (p.onGround && dy >= 0 && !this._hasSupport(box)) p.onGround = false;

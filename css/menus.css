@@ -87,7 +87,14 @@
   font-size: calc(16px * var(--gui-scale));
 }
 .menu-buttons { display: flex; flex-direction: column; gap: calc(4px * var(--gui-scale)); width: 100%; }
-.menu-footer { font-size: calc(8px * var(--gui-scale)); color: #ddd; margin-top: calc(10px * var(--gui-scale)); }
+/* The logo (assets/ui/logo.png, a transparent 1024×634 crop, scaled smoothly) replaces the title on the boot and main
+   menus: about min(70vw, 560px) wide at the usual GUI scale 2 and never taller than 38 % of the window; the splash line
+   tucks right under it and the buttons follow closely, so the logo + buttons centre as one balanced group. */
+.logo { width: min(70vw, calc(280px * var(--gui-scale))); max-height: 38vh; object-fit: contain; image-rendering: auto; display: block; margin: 0 auto; }
+.main-menu-content { width: min(96vw, calc(300px * var(--gui-scale))); gap: calc(4px * var(--gui-scale)); }
+.main-menu-content .subtitle { margin-top: calc(-4px * var(--gui-scale)); line-height: 1; }
+.main-menu-buttons { margin-top: calc(2px * var(--gui-scale)); width: calc(220px * var(--gui-scale)); max-width: 100%; }
+#boot-screen .logo { width: min(50vw, calc(200px * var(--gui-scale))); max-height: 30vh; }
 
 .mc-button {
   width: 100%;
@@ -225,6 +232,8 @@
 .option-row label { font-size: calc(8px * var(--gui-scale)); display: flex; justify-content: space-between; }
 .option-row .value { color: #ffff88; }
 .option-row .option-hint { font-size: calc(7px * var(--gui-scale)); color: #aaa; line-height: 1.3; }
+.option-row .option-warn { color: #ffd166; }
+.option-row.warn { border-color: #d0a02b; }
 .option-row input[type=range] { width: 100%; accent-color: #7f7f7f; }
 .option-row button.toggle { width: 100%; }
 

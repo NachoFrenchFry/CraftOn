@@ -22,7 +22,10 @@ async function pipe(bytes, stream) {
 
 /** @param {{indices: Uint16Array|number[], ids: Uint8Array|number[]}} diff */
 export async function encodeChunk(diff) {
-  const json = JSON.stringify({ v: FORMAT, i: Array.from(diff.indices), b: Array.from(diff.ids) });
+  const obj = { v: FORMAT, i: Array.from(diff.indices), b: Array.from(diff.ids) };
+  if (diff.containers && diff.containers.length) obj.c = diff.containers;
+  if (diff.generated) obj.g = 1; // structure chest loot already written (WorldEdits.generated)
+  const json = JSON.stringify(obj);
   const gz = await pipe(new TextEncoder().encode(json), new CompressionStream('gzip'));
   return bytesToBase64(gz);
 }
@@ -32,5 +35,8 @@ export async function decodeChunk(text) {
   const raw = await pipe(base64ToBytes(text), new DecompressionStream('gzip'));
   const obj = JSON.parse(new TextDecoder().decode(raw));
   if (!obj || obj.v !== FORMAT || !Array.isArray(obj.i) || !Array.isArray(obj.b) || obj.i.length !== obj.b.length) throw new Error('ChunkCodec: bad chunk data');
-  return { indices: Uint16Array.from(obj.i), ids: Uint8Array.from(obj.b) };
+  const out = { indices: Uint16Array.from(obj.i), ids: Uint8Array.from(obj.b) };
+  if (Array.isArray(obj.c)) out.containers = obj.c; // chest contents (absent in older data)
+  if (obj.g) out.generated = true;
+  return out;
 }

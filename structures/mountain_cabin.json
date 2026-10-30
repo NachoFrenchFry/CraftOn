@@ -1,0 +1,51 @@
+{
+ "name": "mountain_cabin",
+ "size": [
+  7,
+  6,
+  9
+ ],
+ "anchor": [
+  3,
+  1,
+  0
+ ],
+ "palette": [
+  "structure_void",
+  "air",
+  "cobblestone",
+  "log[axis=y]",
+  "log[axis=x]",
+  "log[axis=z]",
+  "crafting_table[facing=south]",
+  "furnace[facing=north]",
+  "chest[facing=north]",
+  "glass",
+  "torch[facing=south]",
+  "planks"
+ ],
+ "blocks": "63x2,1x3,2x4,1x1,2x4,1x3,1x5,1x6,4x1,2x5,5x1,2x5,5x1,2x5,5x1,2x5,5x1,2x5,5x1,2x5,1x7,3x1,1x8,1x5,1x3,5x4,2x3,2x4,1x1,2x4,1x3,1x5,5x1,2x5,5x1,2x5,5x1,1x5,1x9,5x1,1x9,1x5,5x1,2x5,5x1,2x5,5x1,1x5,1x3,2x4,1x9,2x4,2x3,5x4,1x3,1x5,5x1,2x5,5x1,2x5,5x1,2x5,5x1,2x5,5x1,2x5,5x1,2x5,2x1,1x10,2x1,1x5,1x3,5x4,1x3,63x11,2x0,3x11,4x0,3x11,4x0,3x11,4x0,3x11,4x0,3x11,4x0,3x11,4x0,3x11,4x0,3x11,4x0,3x11,2x0",
+ "containers": [
+  {
+   "pos": [
+    5,
+    1,
+    7
+   ],
+   "loot": "cabin"
+  }
+ ],
+ "placement": {
+  "biomes": [
+   "mountains"
+  ],
+  "mode": "surface",
+  "spacing": 10,
+  "separation": 3,
+  "chance": 0.7,
+  "rotate": true,
+  "foundation": "cobblestone",
+  "clearAbove": true,
+  "maxSlope": 8
+ }
+}

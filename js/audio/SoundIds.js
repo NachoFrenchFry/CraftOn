@@ -60,6 +60,10 @@ export const SOUND_CATALOG = (() => {
   add('player/burn', 'reserved for burning (not played yet)', '0.3–0.5 s');
   add('player/splash', 'entering water fast', '0.5–1 s');
   add('player/swim', 'a swim stroke (every 0.6 s while swimming)', '0.3–0.6 s');
+  add('player/glide_wind', 'the wind rush while gliding, louder with speed (a loop)', '4–8 s', true);
+  add('items/rocket_launch', 'a rocket fired while gliding', '0.4–0.8 s');
+  add('blocks/chest_open', 'a chest is opened', '0.2–0.5 s');
+  add('blocks/chest_close', 'a chest is closed', '0.2–0.5 s');
   add('player/equip_wood', 'putting on wooden armor', '0.2–0.3 s');
   add('player/equip_metal', 'putting on iron or diamond armor', '0.2–0.4 s');
   add('items/pickup', 'an item is picked up, a spawn egg is used', '0.1–0.2 s');

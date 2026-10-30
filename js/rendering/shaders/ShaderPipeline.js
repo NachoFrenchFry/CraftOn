@@ -11,7 +11,6 @@ import { PACKED_VERTEX_GLSL } from '../PackedVertex.js';
 import { createChunkMaterial, chunkPassDefines } from '../Materials.js';
 import { AO_BRIGHTNESS, SKY_COLOR } from '../../config/Constants.js';
 import { SHADER_PRESETS } from '../../config/DefaultSettings.js';
-import { PostFX } from './PostFX.js';
 import { LIGHT_UNIFORMS } from '../LightUniforms.js';
 import { LIGHT_CURVE_GLSL } from '../../world/lighting/LightCurve.js';
 
@@ -226,7 +225,6 @@ export class ShaderPipeline {
     this._frame = 0;
     this._casters = -1;
     this._right = new THREE.Vector3(); this._up = new THREE.Vector3(); this._tmp = new THREE.Vector3(); this._q = new THREE.Quaternion();
-    game.events.on('renderer:resize', (w, h) => { if (this.post) this.post.setSize(w, h); });
   }
 
   /** The two lights Game added for the character materials: [hemisphere, directional]. */
@@ -302,7 +300,7 @@ export class ShaderPipeline {
     this.uniforms.uNearShadow.value = 0;
     r.shadowMap.enabled = false;
     this._markShadowCasters(false);
-    if (this.post) { this.post.dispose(); this.post = null; g.renderer.post = null; }
+    if (this.post) { this.post = null; g.renderer.setPostFlags(null); }
     if (g.hand && g.hand.lights) g.hand.lights[1].position.set(0.5, 1, 0.3);
     this.uniforms.uUnderwater.value = 0;
   }
@@ -386,9 +384,8 @@ export class ShaderPipeline {
     const s = this.settings, g = this.game;
     const flags = { bloom: !!s.get('shBloom'), godRays: !!s.get('shGodRays'), toneMap: !!s.get('shToneMap'), vignette: !!s.get('shVignette'), underwater: !!s.get('shUnderwater') };
     const any = flags.bloom || flags.godRays || flags.toneMap || flags.vignette || flags.underwater;
-    if (!any) { if (this.post) { this.post.dispose(); this.post = null; g.renderer.post = null; } return; }
-    if (!this.post) { this.post = new PostFX(g.renderer); g.renderer.post = this.post; }
-    this.post.configure(flags);
+    g.renderer.setPostFlags(any ? flags : null); // the renderer owns the chain (FXAA may keep it alive without effects)
+    this.post = any ? g.renderer.post : null;
   }
 
   /** Per frame: time, sun light placement with texel snapping, underwater flag, hand light, post uniforms. */

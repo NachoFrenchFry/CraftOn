@@ -48,6 +48,8 @@ export class GuestClient {
     this.applyingRemote = false;
     this.pendingBlocks = new Map();
     this.seq = 0;
+    this.chestSeq = 0;
+    this.chestPending = new Map();
     this.snapTimer = 0;
     this.invTimer = 0;
     this.invDirty = false;
@@ -125,6 +127,7 @@ export class GuestClient {
     on('inventory:selected', () => this._sendMeta());
     on('gamemode:changed', () => this._sendMeta());
     on('player:attack', (mobId, damage, crit, kb) => this.link.send(Msg.ATTACK, { id: mobId, damage, crit, kb: kb || 1 }));
+    on('player:spawnEgg', (type, x, y, z) => this.link.send(Msg.SPAWN_EGG, { type, x, y, z }));
     // Health: hits on other players go to the host; our health and deaths are reported.
     on('player:hitPlayer', (targetId, crit) => this.link.send(Msg.HIT, { target: targetId, crit }));
     on('player:damaged', () => { this.link.send(Msg.HEALTH, { hp: g.player.health, hurt: true }); this.healthDirty = false; });
@@ -144,6 +147,23 @@ export class GuestClient {
 
   /** Shoot through the host: it validates (origin near the eyes, power, cooldown, arrows) and spawns the arrow for everyone. */
   shoot(eye, dir, power) { if (this.link && this.link.open) this.link.send(Msg.SHOOT, { ox: eye.x, oy: eye.y, oz: eye.z, dx: dir.x, dy: dir.y, dz: dir.z, power }); }
+
+  /** A chest opened: the host sends its real contents. */
+  chestOpen(x, y, z) { if (this.link && this.link.open) this.link.send(Msg.CHEST_OPEN, { x, y, z }); }
+
+  /** A chest operation: resolves with the host's CHEST_ACK (ok, cursor / stack / n), or { ok: false } after 5 s. */
+  chestOp(x, y, z, op) {
+    if (!this.link || !this.link.open) return Promise.resolve({ ok: false });
+    const seq = ++this.chestSeq;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { this.chestPending.delete(seq); resolve({ ok: false }); }, 5000);
+      this.chestPending.set(seq, (ack) => { clearTimeout(timer); resolve(ack); });
+      this.link.send(Msg.CHEST_OP, { seq, x, y, z, ...op });
+    });
+  }
+
+  /** A rocket while gliding: the host checks the inventory and the cooldown and answers ROCKET_OK. */
+  rocket() { if (this.link && this.link.open) this.link.send(Msg.ROCKET, {}); }
 
   /** A placed explosive goes through the host (it primes the entity for everyone, or refuses when explosives are off). */
   prime(x, y, z) { if (this.link && this.link.open) this.link.send(Msg.PRIME, { x, y, z }); }
@@ -198,6 +218,10 @@ export class GuestClient {
       case Msg.ARROW_REMOVE: g.entities.removeArrow(g.entities.arrowById(msg.id)); return;
       case Msg.EXPLOSIVE_SPAWN: g.entities.primeExplosive(msg.x, msg.y, msg.z, msg.fuse, { vx: msg.vx, vy: msg.vy, vz: msg.vz, id: msg.id, remote: true, exact: true }); return;
       case Msg.EXPLOSION: g.entities.explodeRemote(msg.id, msg.x, msg.y, msg.z, msg.power); return;
+      case Msg.ROCKET_OK: g._fireRocket(); return;
+      case Msg.CHEST_CONTENTS: g.chests.applyRemoteContents(msg.x, msg.y, msg.z, msg.slots); return;
+      case Msg.CHEST_SLOT: if (msg.slot === -1) g.chests.applyRemoteContents(msg.x, msg.y, msg.z, msg.slots); else g.chests.applyRemoteSlot(msg.x, msg.y, msg.z, msg.slot | 0, msg.stack || null); return;
+      case Msg.CHEST_ACK: { const fn = this.chestPending.get(msg.seq); if (fn) { this.chestPending.delete(msg.seq); fn(msg); } return; }
       case Msg.ITEM_GRANT: { const left = g.inventory.addItem(msg.item, msg.n); if (left < msg.n) g.events.emit('item:pickup', msg.item, msg.n - left); return; }
       case Msg.SPAWN_AT: g.health.placeAt(Number(msg.x) || 0, Number(msg.y) || 0, Number(msg.z) || 0, msg.reason); return;
       case Msg.HOST_CLOSED: this._closed('host closed'); return;
