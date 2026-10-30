@@ -39,9 +39,16 @@ export const ItemIds = Object.freeze({
   STRING: 308,
   BOW: 309,
   ARROW: 310,
+<<<<<<< HEAD
   ZOMBIE_SPAWN_EGG: 311,
   GLIDER: 312,
   ROCKET: 313,
+=======
+  FEATHER: 311,
+  RAW_CHICKEN: 312,
+  COOKED_CHICKEN: 313,
+  CHICKEN_SPAWN_EGG: 314,
+>>>>>>> 311ebb9572c8a574395ce27011a6a72c3cd38c78
 });
 
 /** Knockback points of the empty hand; an item's `knockback` replaces it (a stick: 10). Knockback strength scales with points / 5. */
@@ -123,6 +130,9 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COOKED_BEEF, name: 'cooked_beef', displayName: 'Cooked Beef', texture: 'cooked_beef', stackSize: 64, placeable: false, food: { heal: 30 } },
   { id: ItemIds.COOKED_PORKCHOP, name: 'cooked_porkchop', displayName: 'Cooked Porkchop', texture: 'cooked_porkchop', stackSize: 64, placeable: false, food: { heal: 30 } },
   { id: ItemIds.COOKED_MUTTON, name: 'cooked_mutton', displayName: 'Cooked Mutton', texture: 'cooked_mutton', stackSize: 64, placeable: false, food: { heal: 25 } },
+  { id: ItemIds.RAW_CHICKEN, name: 'raw_chicken', displayName: 'Raw Chicken', texture: 'raw_chicken', stackSize: 64, placeable: false, food: { heal: 10 } },
+  { id: ItemIds.COOKED_CHICKEN, name: 'cooked_chicken', displayName: 'Cooked Chicken', texture: 'cooked_chicken', stackSize: 64, placeable: false, food: { heal: 20 } },
+  { id: ItemIds.FEATHER, name: 'feather', displayName: 'Feather', texture: 'feather', stackSize: 64, placeable: false },
   // axes (wood-type blocks)
   { id: ItemIds.WOODEN_AXE, name: 'wooden_axe', displayName: 'Wooden Axe', texture: 'wooden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.wooden, damage: TOOL_DAMAGE.axe.wooden } },
   { id: ItemIds.STONE_AXE, name: 'stone_axe', displayName: 'Stone Axe', texture: 'stone_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.stone, damage: TOOL_DAMAGE.axe.stone } },
@@ -134,8 +144,12 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COW_SPAWN_EGG, name: 'cow_spawn_egg', displayName: 'Cow Spawn Egg', texture: 'cow_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'cow' },
   { id: ItemIds.PIG_SPAWN_EGG, name: 'pig_spawn_egg', displayName: 'Pig Spawn Egg', texture: 'pig_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'pig' },
   { id: ItemIds.SHEEP_SPAWN_EGG, name: 'sheep_spawn_egg', displayName: 'Sheep Spawn Egg', texture: 'sheep_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'sheep' },
+<<<<<<< HEAD
   { id: ItemIds.ZOMBIE_SPAWN_EGG, name: 'zombie_spawn_egg', displayName: 'Zombie Spawn Egg', texture: 'zombie_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'zombie' },
   // The glider (held in the hand like bloxd's: no recipe yet, Creative only) and the rockets that boost a glide.
   { id: ItemIds.GLIDER, name: 'glider', displayName: 'Glider', texture: 'glider', stackSize: 1, placeable: false, glider: true, creativeOnly: true }, // no recipe yet: the Creative catalog only
   { id: ItemIds.ROCKET, name: 'rocket', displayName: 'Rocket', texture: 'rocket', stackSize: 64, placeable: false, rocket: true },
+=======
+  { id: ItemIds.CHICKEN_SPAWN_EGG, name: 'chicken_spawn_egg', displayName: 'Chicken Spawn Egg', texture: 'chicken_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'chicken' },
+>>>>>>> 311ebb9572c8a574395ce27011a6a72c3cd38c78
 ]);

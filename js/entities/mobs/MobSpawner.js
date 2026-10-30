@@ -8,11 +8,12 @@ import { MOB_SPAWN_CHANCE, MOB_GROUP_MIN, MOB_GROUP_MAX } from '../../config/Con
 import { COW } from './Cow.js';
 import { PIG } from './Pig.js';
 import { SHEEP } from './Sheep.js';
+import { CHICKEN } from './Chicken.js';
 import { ZOMBIE } from './Zombie.js';
 
 const SALT_MOBS = 0x0b0b5;
 /** The passive mobs (natural groups and respawns); hostile mobs spawn through MobManager's darkness spawner. */
-export const MOB_TYPES = Object.freeze([COW, PIG, SHEEP]);
+export const MOB_TYPES = Object.freeze([COW, PIG, SHEEP, CHICKEN]);
 export const HOSTILE_TYPES = Object.freeze([ZOMBIE]);
 export const MOB_BY_TYPE = Object.freeze(Object.fromEntries([...MOB_TYPES, ...HOSTILE_TYPES].map((d) => [d.type, d])));
 

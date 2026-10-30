@@ -25,16 +25,16 @@ export const GENERATED_TEXTURES = Object.freeze([
   'coal', 'iron_ingot', 'gold_ingot', 'diamond', 'wooden_pickaxe', 'iron_pickaxe', 'diamond_pickaxe',
   // tools, buckets, meats
   'stone_pickaxe', 'wooden_sword', 'stone_sword', 'iron_sword', 'diamond_sword', 'bucket', 'water_bucket',
-  'raw_beef', 'raw_mutton', 'raw_porkchop',
+  'raw_beef', 'raw_mutton', 'raw_porkchop', 'raw_chicken', 'feather',
   // cooked meats
-  'cooked_beef', 'cooked_porkchop', 'cooked_mutton',
+  'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken',
   // axes
   'wooden_axe', 'stone_axe', 'iron_axe', 'diamond_axe',
   // armor and spawn eggs
   'wooden_helmet', 'wooden_chestplate', 'wooden_gauntlets', 'wooden_leggings', 'wooden_boots',
   'iron_helmet', 'iron_chestplate', 'iron_gauntlets', 'iron_leggings', 'iron_boots',
   'diamond_helmet', 'diamond_chestplate', 'diamond_gauntlets', 'diamond_leggings', 'diamond_boots',
-  'cow_spawn_egg', 'pig_spawn_egg', 'sheep_spawn_egg',
+  'cow_spawn_egg', 'pig_spawn_egg', 'sheep_spawn_egg', 'chicken_spawn_egg',
   // particle sprite
   'crit_star',
   // lava, sticks, torches, the gold tier, the cornflower, storage blocks
@@ -63,7 +63,11 @@ export const EXTRA_ATLAS_TEXTURES = Object.freeze([...PARTICLE_TEXTURES, ...HELD
  * Entity sheets in textures/entity/ (not part of the atlas): the mob sheets (64×32 Minecraft-style box-UV nets), the
  * player skin and the zombie (64×64, the standard Minecraft skin layout, see js/player/models/SkinLayout.js) and the arrow.
  */
+<<<<<<< HEAD
 export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool', 'zombie', 'player', 'arrow', 'glider']);
+=======
+export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool', 'chicken', 'zombie', 'player', 'arrow']);
+>>>>>>> 311ebb9572c8a574395ce27011a6a72c3cd38c78
 export const ENTITY_TEXTURE_SIZE = Object.freeze([64, 32]);
 /** Sheets that are not 64×32. */
 export const ENTITY_TEXTURE_SIZES = Object.freeze({ zombie: [64, 64], player: [64, 64], arrow: [16, 16], glider: [32, 32] });
