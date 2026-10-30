@@ -63,11 +63,17 @@ export const EXTRA_ATLAS_TEXTURES = Object.freeze([...PARTICLE_TEXTURES, ...HELD
  * Entity sheets in textures/entity/ (not part of the atlas): the mob sheets (64×32 Minecraft-style box-UV nets), the
  * player skin and the zombie (64×64, the standard Minecraft skin layout, see js/player/models/SkinLayout.js) and the arrow.
  */
-<<<<<<< HEAD
-export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool', 'zombie', 'player', 'arrow', 'glider']);
-=======
-export const ENTITY_TEXTURES = Object.freeze(['cow', 'pig', 'sheep', 'sheep_wool', 'chicken', 'zombie', 'player', 'arrow']);
->>>>>>> 311ebb9572c8a574395ce27011a6a72c3cd38c78
+export const ENTITY_TEXTURES = Object.freeze([
+    'cow',
+    'pig',
+    'sheep',
+    'sheep_wool',
+    'chicken',
+    'zombie',
+    'player',
+    'arrow',
+    'glider'
+]);
 export const ENTITY_TEXTURE_SIZE = Object.freeze([64, 32]);
 /** Sheets that are not 64×32. */
 export const ENTITY_TEXTURE_SIZES = Object.freeze({ zombie: [64, 64], player: [64, 64], arrow: [16, 16], glider: [32, 32] });
