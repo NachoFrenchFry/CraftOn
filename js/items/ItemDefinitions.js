@@ -141,12 +141,8 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.COW_SPAWN_EGG, name: 'cow_spawn_egg', displayName: 'Cow Spawn Egg', texture: 'cow_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'cow' },
   { id: ItemIds.PIG_SPAWN_EGG, name: 'pig_spawn_egg', displayName: 'Pig Spawn Egg', texture: 'pig_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'pig' },
   { id: ItemIds.SHEEP_SPAWN_EGG, name: 'sheep_spawn_egg', displayName: 'Sheep Spawn Egg', texture: 'sheep_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'sheep' },
-<<<<<<< HEAD
   { id: ItemIds.ZOMBIE_SPAWN_EGG, name: 'zombie_spawn_egg', displayName: 'Zombie Spawn Egg', texture: 'zombie_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'zombie' },
-  // The glider (held in the hand like bloxd's: no recipe yet, Creative only) and the rockets that boost a glide.
-  { id: ItemIds.GLIDER, name: 'glider', displayName: 'Glider', texture: 'glider', stackSize: 1, placeable: false, glider: true, creativeOnly: true }, // no recipe yet: the Creative catalog only
+  { id: ItemIds.GLIDER, name: 'glider', displayName: 'Glider', texture: 'glider', stackSize: 1, placeable: false, glider: true, creativeOnly: true },
   { id: ItemIds.ROCKET, name: 'rocket', displayName: 'Rocket', texture: 'rocket', stackSize: 64, placeable: false, rocket: true },
-=======
   { id: ItemIds.CHICKEN_SPAWN_EGG, name: 'chicken_spawn_egg', displayName: 'Chicken Spawn Egg', texture: 'chicken_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'chicken' },
->>>>>>> 311ebb9572c8a574395ce27011a6a72c3cd38c78
 ]);
