@@ -18,7 +18,9 @@ export class HUD {
     this.underwater = document.getElementById('underwater-overlay');
     this.lavaOverlay = document.getElementById('lava-overlay');
     this.fireOverlay = document.getElementById('fire-overlay');
-    this._lavaShown = false; this._fireShown = false;
+    /** The rocket rush vignette: opacity = the camera's rushVisible (a glider boost), display none when idle so it costs nothing. */
+    this.rocketOverlay = document.getElementById('rocket-overlay');
+    this._lavaShown = false; this._fireShown = false; this._rocketShown = false; this._rocketOpacity = -1;
     this.fpsCounter = document.getElementById('fps-counter');
     this.tickBadge = document.getElementById('tick-badge');
     this.healthBar = document.getElementById('health-bar');
@@ -180,5 +182,8 @@ export class HUD {
     if (lv !== this._lavaShown) { this._lavaShown = lv; this.lavaOverlay.classList.toggle('hidden', !lv); }
     const fire = !!this.game.player.onFire && !this.game.player.dead && this.game.cameraController.isFirstPerson;
     if (fire !== this._fireShown) { this._fireShown = fire; this.fireOverlay.classList.toggle('hidden', !fire); }
+    const rush = this.game.cameraController.rushVisible, rocket = rush > 0.01 && !this.game.player.dead && this.game.cameraController.isFirstPerson;
+    if (rocket !== this._rocketShown) { this._rocketShown = rocket; this.rocketOverlay.classList.toggle('hidden', !rocket); }
+    if (rocket) { const op = Math.round(rush * 50) / 50; if (op !== this._rocketOpacity) { this._rocketOpacity = op; this.rocketOverlay.style.opacity = String(op); } }
   }
 }

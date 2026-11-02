@@ -1,4 +1,4 @@
-// Tools.js — mining speed and attack damage rules for held items, plus the tooltip stat lines. Pure.
+// Tools.js — mining speed and attack damage rules for held items, plus the tooltip lines (number stats + one description). Pure.
 
 import { ItemRegistry } from './ItemRegistry.js';
 import { BREAK_TIME, STONE_TYPE, WOOD_TYPE } from '../blocks/BlockRegistry.js';
@@ -33,6 +33,18 @@ export function isSword(itemId) {
   return !!(tool && tool.type === 'sword');
 }
 
+/** The mace: velocity-based damage and smash attacks (Damage.js); mines like the hand, never breaks blocks in Creative. */
+export function isMace(itemId) {
+  const tool = itemId != null ? ItemRegistry.tool(itemId) : null;
+  return !!(tool && tool.type === 'mace');
+}
+
+/** Spears: damage from the horizontal closing speed (Damage.js); like swords otherwise (reach, knockback, no block breaking in Creative). */
+export function isSpear(itemId) {
+  const tool = itemId != null ? ItemRegistry.tool(itemId) : null;
+  return !!(tool && tool.type === 'spear');
+}
+
 export function isBow(itemId) { return itemId != null && ItemRegistry.isBow(itemId); }
 export function isGlider(itemId) { return itemId != null && ItemRegistry.isGlider(itemId); }
 export function isRocket(itemId) { return itemId != null && ItemRegistry.isRocket(itemId); }
@@ -41,23 +53,23 @@ export function isRocket(itemId) { return itemId != null && ItemRegistry.isRocke
 export function knockbackPoints(itemId) { return itemId != null ? ItemRegistry.knockback(itemId) : HAND_KNOCKBACK; }
 export function knockbackScale(itemId) { return knockbackPoints(itemId) / HAND_KNOCKBACK; }
 
-/** Minecraft-style stat lines for tooltips: [{ text, color: 'green' | 'gray' }]. Empty for plain items. */
+/**
+ * Tooltip lines: the plain green number stats (`+N Attack Damage`, `+N Armor`, `+N Knockback`, `+N Health`) and then the item's
+ * one short gray description from its definition (what it does, never how to use it). Empty for blocks and materials.
+ */
 export function itemStatLines(itemId) {
   const lines = [];
-  const armor = itemId != null ? ItemRegistry.armor(itemId) : null;
-  if (armor) lines.push({ text: `+${armor.points} Armor`, color: 'green' });
-  const food = itemId != null ? ItemRegistry.food(itemId) : null;
-  if (food) lines.push({ text: `Restores +${food.heal} Health (hold right click)`, color: 'green' });
-  const kb = knockbackPoints(itemId) - HAND_KNOCKBACK;
-  if (itemId != null && kb !== 0) lines.push({ text: `${kb > 0 ? '+' : ''}${kb} Knockback`, color: 'green' }); // only items whose knockback differs from the hand
-  if (isBow(itemId)) { lines.push({ text: 'Hold right click to draw, release to shoot', color: 'gray' }); lines.push({ text: 'Up to 9 damage (×5 to players), critical when fully drawn', color: 'gray' }); }
-  if (isGlider(itemId)) { lines.push({ text: 'Hold it and fall (or press jump in mid-air) to glide', color: 'gray' }); lines.push({ text: 'Right click with rockets in the inventory to boost', color: 'gray' }); }
-  if (isRocket(itemId)) lines.push({ text: 'Boosts a glide for about a second (right click while gliding)', color: 'gray' });
-  const tool = itemId != null ? ItemRegistry.tool(itemId) : null;
-  if (!tool) return lines;
-  const bonus = (tool.damage || HAND_ATTACK_DAMAGE) - HAND_ATTACK_DAMAGE;
+  if (itemId == null) return lines;
+  const tool = ItemRegistry.tool(itemId);
+  const bonus = tool ? (tool.damage || HAND_ATTACK_DAMAGE) - HAND_ATTACK_DAMAGE : 0;
   if (bonus > 0) lines.push({ text: `+${bonus} Attack Damage`, color: 'green' });
-  if (tool.type === 'pickaxe') lines.push({ text: `Mining Speed \u00d7${tool.speed} (stone blocks)`, color: 'gray' });
-  if (tool.type === 'axe') lines.push({ text: `Mining Speed \u00d7${tool.speed} (wood blocks)`, color: 'gray' });
+  const armor = ItemRegistry.armor(itemId);
+  if (armor) lines.push({ text: `+${armor.points} Armor`, color: 'green' });
+  const kb = knockbackPoints(itemId) - HAND_KNOCKBACK;
+  if (kb !== 0) lines.push({ text: `${kb > 0 ? '+' : ''}${kb} Knockback`, color: 'green' }); // only items whose knockback differs from the hand
+  const food = ItemRegistry.food(itemId);
+  if (food) lines.push({ text: `+${food.heal} Health`, color: 'green' });
+  const description = ItemRegistry.description(itemId);
+  if (description) lines.push({ text: description, color: 'gray' });
   return lines;
 }

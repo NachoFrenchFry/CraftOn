@@ -29,7 +29,7 @@ export const Msg = Object.freeze({
   HELLO: 'hello', REJECT: 'reject', WELCOME: 'welcome', CHUNKS: 'chunks',
   BLOCK: 'block', BLOCK_REJECT: 'blockReject', MODE: 'mode', // MODE: host → guest, the guest's game mode + whether it may change it
   ATTACK: 'attack', MOB_HURT: 'mobHurt', MOB_SPAWN: 'mobSpawn', MOB_REMOVE: 'mobRemove',
-  // HIT attacker → host (a player hit), DAMAGE host → victim (validated amount), HURT host → everyone
+  // HIT attacker → host (a player hit: { target, crit, mace, vy }), DAMAGE host → victim (validated amount), HURT host → everyone
   // else (flash / sound), HEALTH guest → host (its health, after fall damage too), DEATH (guest → host → all), WORLD (pvp / keep inventory)
   HIT: 'hit', DAMAGE: 'damage', HURT: 'hurt', HEALTH: 'health', DEATH: 'death', WORLD: 'world',
   PICKUP: 'pickup', ITEM_GRANT: 'itemGrant', ITEM_SPAWN: 'itemSpawn', ITEM_REMOVE: 'itemRemove',
@@ -54,6 +54,13 @@ export const Msg = Object.freeze({
   ROCKET: 'rocket', ROCKET_OK: 'rocketOk',
   // Spawn eggs: SPAWN_EGG guest → host { type, x, y, z } (the host spawns the mob past the caps and broadcasts MOB_SPAWN)
   SPAWN_EGG: 'spawnEgg',
+  // The mace: HIT and ATTACK carry { mace: true, vy } (the attacker's velocity.y at the click; the host clamps it and checks it against the
+  // guest's recent snapshots); SMASH host → everyone but the attacker { id, x, y, z } when the host confirms a smash (the burst effects at the target).
+  // Spears: HIT and ATTACK carry { spear: true, vx, vz } (the attacker's horizontal velocity, checked the same way).
+  SMASH: 'smash',
+  // ROCKET_DASH guest → host {} (a rocket used as a dash, already applied locally and the rocket removed; the host checks the inventory
+  // and the 0.75 s cooldown, then plays / broadcasts the launch sound — a rejected dash is only logged)
+  ROCKET_DASH: 'rocketDash',
   // Chests (host-authoritative): CHEST_OPEN guest → host { x, y, z }; CHEST_CONTENTS host → guest { x, y, z, slots }; CHEST_OP guest → host
   // { seq, x, y, z, op: 'exchange' | 'takeAll' | 'put', slot, button, cursor, id, n }; CHEST_ACK host → guest { seq, ok, cursor, stack, n };
   // CHEST_SLOT host → all { x, y, z, slot, stack }
@@ -79,7 +86,7 @@ export function poseBits(p) {
   return (p.onGround ? Pose.ON_GROUND : 0) | (p.sneaking ? Pose.SNEAKING : 0) | (p.swimming ? Pose.SWIMMING : 0) | (p.crawling ? Pose.CRAWLING : 0)
     | (p.flying ? Pose.FLYING : 0) | (p.inWater ? Pose.IN_WATER : 0) | (p.sprinting ? Pose.SPRINTING : 0) | (p.isSpectator ? Pose.SPECTATOR : 0)
     | (p.onFire ? Pose.ON_FIRE : 0) | (p.inLava ? Pose.IN_LAVA : 0) | (p.dead ? Pose.DEAD : 0) | (((p.bowFrame | 0) & 3) << Pose.BOW_SHIFT)
-    | (p.gliding ? Pose.GLIDING : 0) | (p.rocketTime > 0 ? Pose.ROCKET : 0);
+    | (p.gliding ? Pose.GLIDING : 0) | (p.rocketTime > 0 || p.dashTime > 0 ? Pose.ROCKET : 0); // the rocket trail: a glide boost or a dash
 }
 /** The bow draw frame carried in pose bits (0 when not drawing). */
 export function bowFrameOf(pose) { return (pose >> Pose.BOW_SHIFT) & 3; }

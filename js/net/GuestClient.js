@@ -126,10 +126,10 @@ export class GuestClient {
     on('inventory:changed', () => { this._sendMeta(); this.invDirty = true; });
     on('inventory:selected', () => this._sendMeta());
     on('gamemode:changed', () => this._sendMeta());
-    on('player:attack', (mobId, damage, crit, kb) => this.link.send(Msg.ATTACK, { id: mobId, damage, crit, kb: kb || 1 }));
+    on('player:attack', (mobId, damage, crit, kb, extra) => this.link.send(Msg.ATTACK, { id: mobId, damage, crit, kb: kb || 1, ...(extra || {}) })); // a mace hit adds { mace, vy }, a spear hit { spear, vx, vz }
     on('player:spawnEgg', (type, x, y, z) => this.link.send(Msg.SPAWN_EGG, { type, x, y, z }));
     // Health: hits on other players go to the host; our health and deaths are reported.
-    on('player:hitPlayer', (targetId, crit) => this.link.send(Msg.HIT, { target: targetId, crit }));
+    on('player:hitPlayer', (targetId, crit, extra) => this.link.send(Msg.HIT, { target: targetId, crit, ...(extra || {}) })); // a mace hit adds { mace, vy } (the burst was predicted locally), a spear hit { spear, vx, vz }
     on('player:damaged', () => { this.link.send(Msg.HEALTH, { hp: g.player.health, hurt: true }); this.healthDirty = false; });
     on('player:health', () => { this.healthDirty = true; });
     on('player:died', (cause) => this.link.send(Msg.DEATH, { cause }));
@@ -164,6 +164,9 @@ export class GuestClient {
 
   /** A rocket while gliding: the host checks the inventory and the cooldown and answers ROCKET_OK. */
   rocket() { if (this.link && this.link.open) this.link.send(Msg.ROCKET, {}); }
+
+  /** A rocket dash (applied locally already): the host checks the inventory and the cooldown and plays the sound for the others. */
+  rocketDash() { if (this.link && this.link.open) this.link.send(Msg.ROCKET_DASH, {}); }
 
   /** A placed explosive goes through the host (it primes the entity for everyone, or refuses when explosives are off). */
   prime(x, y, z) { if (this.link && this.link.open) this.link.send(Msg.PRIME, { x, y, z }); }
@@ -201,6 +204,7 @@ export class GuestClient {
       case Msg.MODE: { this.canChangeMode = !!msg.canChange; if (msg.mode && g.player.gameMode !== msg.mode) g.setGameMode(msg.mode, true); return; }
       case Msg.DAMAGE: { g.health.damage(msg.n, { kind: msg.kind || 'pvp', by: msg.by }, { kx: msg.kx || 0, kz: msg.kz || 0, crit: !!msg.crit, ignoreInvuln: true }); if (msg.ky) { g.player.velocity.y += Number(msg.ky) || 0; g.cameraController.shake(0.6); } return; }
       case Msg.HURT: { const rp = this.remote.get(msg.id); if (rp) rp.hurt(!!msg.crit, msg.n | 0); return; }
+      case Msg.SMASH: g.smashEffects(Number(msg.x) || 0, Number(msg.y) || 0, Number(msg.z) || 0); return; // another player's confirmed mace smash
       case Msg.DEATH: if (msg.text) g.ui.chat.system(String(msg.text).slice(0, 256), 'yellow'); return;
       case Msg.CHAT: if (msg.system !== undefined) g.ui.chat.system(String(msg.system).slice(0, 256), msg.color === 'gray' || msg.color === 'red' ? msg.color : 'yellow'); else if (msg.name && msg.text) g.ui.chat.add({ name: String(msg.name).slice(0, 16), text: String(msg.text).slice(0, 256), host: !!msg.host }); return;
       case Msg.TICK: g.setTickRate(Number(msg.rate) || 20, true); g.setTickFrozen(!!msg.frozen, true); return;

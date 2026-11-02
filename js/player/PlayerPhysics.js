@@ -98,10 +98,19 @@ export class PlayerPhysics {
     p.updateAABB();
   }
 
+  /** A dash ends (time over, or water / lava / flight): ROCKET_DASH_CARRY of the speed stays, the fall restarts after it, a short landing grace. */
+  _endDash(p, v) {
+    p.dashTime = 0;
+    const k = C.ROCKET_DASH_SPEED * C.ROCKET_DASH_CARRY;
+    v.x = p.dashDir.x * k; v.y = p.dashDir.y * k; v.z = p.dashDir.z * k;
+    p.dashGrace = C.ROCKET_DASH_LAND_GRACE;
+    p.fallStartY = null;
+  }
+
   /** Noclip flight for spectators (speed scaled by the wheel-adjusted multiplier). */
   _stepSpectator(p, v, intent, dt) {
     p.flying = true; p.swimming = false; p.crawling = false; p.sneaking = false; p.onGround = false; p.gliding = false; p.rocketTime = 0;
-    p.inWater = false; p.headInWater = false; p.inLava = false; p.headInLava = false; p.fallStartY = null;
+    p.inWater = false; p.headInWater = false; p.inLava = false; p.headInLava = false; p.fallStartY = null; p.fallIgnoreAboveY = null; p.dashTime = 0;
     const sinY = Math.sin(p.yaw), cosY = Math.cos(p.yaw);
     let fx = -sinY * intent.forward + cosY * intent.strafe;
     let fz = -cosY * intent.forward - sinY * intent.strafe;
@@ -153,6 +162,9 @@ export class PlayerPhysics {
     if (p.gliding && (p.onGround || p.inWater || p.inLava || !p.holdingGlider || p.flying)) { p.gliding = false; p.rocketTime = 0; }
     else if (!p.gliding && p.holdingGlider && !p.onGround && !p.inWater && !p.inLava && !p.flying && (v.y < -C.GLIDE_START_FALL_SPEED || jumpPressed)) { p.gliding = true; p.glideAcc = 0; p.glideTime = 0; }
     if (p.rocketCooldown > 0) p.rocketCooldown -= dt;
+    if (p.dashCooldown > 0) p.dashCooldown -= dt;
+    if (p.dashGrace > 0) p.dashGrace -= dt;
+    if (p.dashTime > 0 && (p.inWater || p.inLava || p.flying)) this._endDash(p, v); // water, lava and flight end a dash at once
 
     this._updatePose(p, intent, midWater);
 
@@ -182,21 +194,31 @@ export class PlayerPhysics {
     else if (p.sneaking || p.crawling || p.drawProgress > 0) speed = C.SNEAK_SPEED; // drawing a bow slows to sneaking speed
     else speed = p.sprinting ? C.SPRINT_SPEED : C.WALK_SPEED;
 
-    if (p.gliding) {
-      // Minecraft's elytra formula at 20 Hz (blocks per tick), converted to and from blocks per second; between ticks the
-      // velocity carries on and the usual swept collision moves the box. A rocket adds its boost tick while it burns.
+    if (p.dashTime > 0) {
+      // A rocket dash: the velocity is the look direction × ROCKET_DASH_SPEED for ROCKET_DASH_SECONDS, gravity off, walking input
+      // ignored; the swept collision below still stops it at walls. The last step is scaled to the time left, so the dash covers
+      // exactly ROCKET_DASH_SPEED × ROCKET_DASH_SECONDS (5 blocks) at any frame rate. When it ends, ROCKET_DASH_CARRY of the speed stays.
+      const k = C.ROCKET_DASH_SPEED * Math.min(1, p.dashTime / dt);
+      v.x = p.dashDir.x * k; v.y = p.dashDir.y * k; v.z = p.dashDir.z * k;
+      p.dashTime -= dt;
+      if (p.dashTime <= 0) this._endDash(p, v);
+    } else if (p.gliding) {
+      // Minecraft's elytra formula at 20 Hz (blocks per tick), converted to and from blocks per second with 20 × GLIDE_SPEED_SCALE
+      // (the same path shape and glide ratio at half the speed); between ticks the velocity carries on and the usual swept
+      // collision moves the box. A rocket adds its boost tick while it burns.
       p.glideTime += dt;
       p.glideAcc = (p.glideAcc || 0) + dt;
       if (p.rocketTime > 0) p.rocketTime -= dt;
       const look = this._look;
       const cp = Math.cos(p.pitch);
       look.x = -sinY * cp; look.y = Math.sin(p.pitch); look.z = -cosY * cp;
+      const k = 20 * C.GLIDE_SPEED_SCALE;
       while (p.glideAcc >= C.GLIDE_TICK) {
         p.glideAcc -= C.GLIDE_TICK;
-        this._tickV.x = v.x / 20; this._tickV.y = v.y / 20; this._tickV.z = v.z / 20;
+        this._tickV.x = v.x / k; this._tickV.y = v.y / k; this._tickV.z = v.z / k;
         glideTick(this._tickV, look, p.pitch);
         if (p.rocketTime > 0) rocketTick(this._tickV, look);
-        v.x = this._tickV.x * 20; v.y = this._tickV.y * 20; v.z = this._tickV.z * 20;
+        v.x = this._tickV.x * k; v.y = this._tickV.y * k; v.z = this._tickV.z * k;
       }
       p.fallStartY = p.position.y; // only the final descent after the glide counts as a fall
     } else if (p.swimming) {
@@ -227,7 +249,7 @@ export class PlayerPhysics {
       // Vertical motion.
       if (p.flying) {
         v.y = stepFlyVertical(v.y, (intent.up ? 1 : 0) - (intent.down ? 1 : 0), speed * 0.8, dt);
-        p.fallStartY = null;
+        p.fallStartY = null; p.fallIgnoreAboveY = null;
       } else if (p.inLava) {
         // Lava: sink slowly, climb slowly while holding jump; standing on the bottom of shallow lava a normal (slightly
         // reduced) jump gets you out, as in shallow water.
@@ -286,11 +308,18 @@ export class PlayerPhysics {
       if (dy < 0) {
         p.onGround = true;
         if (!wasOnGround) {
-          const fall = p.fallStartY !== null ? p.fallStartY - p.position.y : 0;
+          // After a mace smash (fallIgnoreAboveY = the hit's height) only the drop below the hit counts: the fall that led into the
+          // smash was forgiven at the hit and the burst's height never adds up, so chained smashes never cost health.
+          let start = p.fallStartY;
+          if (p.fallIgnoreAboveY !== null) start = start === null ? p.fallIgnoreAboveY : Math.min(start, p.fallIgnoreAboveY);
+          let fall = start !== null ? start - p.position.y : 0;
+          // Landing during a rocket dash or just after it: only the fall before the dash counts, never the dash's own speed.
+          if (p.dashTime > 0 || p.dashGrace > 0) fall = p.dashFallBefore;
           p.lastLandingFall = fall;
           this.events.emit('player:land', fall);
         }
         p.fallStartY = null;
+        p.fallIgnoreAboveY = null;
       }
       v.y = 0;
     } else if (dy !== 0) {
@@ -323,9 +352,9 @@ export class PlayerPhysics {
     p.blockedHorizontally = (blockedX && dx !== 0) || (blockedZ && dz !== 0);
     p.blockedDirX = blockedX ? Math.sign(dx) : 0;
     p.blockedDirZ = blockedZ ? Math.sign(dz) : 0;
-    // A glide into a wall: the horizontal speed lost in one tick (blocks per tick) decides the crash damage.
+    // A glide into a wall: the horizontal speed lost in one tick (blocks per tick, in the scaled glide units) decides the crash damage.
     if (p.gliding && (blockedX || blockedZ)) {
-      const lost = (glideHv - Math.hypot(v.x, v.z)) / 20;
+      const lost = (glideHv - Math.hypot(v.x, v.z)) / (20 * C.GLIDE_SPEED_SCALE);
       p.crashSpeed = lost;
       const dmg = crashDamage(lost);
       if (dmg > 0) this.events.emit('player:crash', dmg, lost);

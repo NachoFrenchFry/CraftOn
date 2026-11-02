@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { clamp, damp } from '../utils/MathUtils.js';
-import { WALK_SPEED, POSE_TRANSITION_SECONDS, BOB_SIDE, BOB_VERTICAL, BOB_ROLL, BOB_DEFAULT_INTENSITY, BOB_PHASE_PER_BLOCK, BOW_ZOOM, FOV_SPRINT, FOV_SPEED_START, FOV_SPEED_FULL, FOV_SPEED_MAX, FOV_ROCKET_PUNCH, FOV_EASE_IN, FOV_EASE_OUT, FOV_MAX_DEGREES } from '../config/Constants.js';
+import { WALK_SPEED, POSE_TRANSITION_SECONDS, BOB_SIDE, BOB_VERTICAL, BOB_ROLL, BOB_DEFAULT_INTENSITY, BOB_PHASE_PER_BLOCK, BOW_ZOOM, FOV_SPRINT, FOV_SPEED_START, FOV_SPEED_FULL, FOV_SPEED_MAX, FOV_ROCKET_PUNCH, FOV_ROCKET_RUSH, FOV_ROCKET_RUSH_EASE_IN, FOV_ROCKET_RUSH_FADE, FOV_EASE_IN, FOV_EASE_OUT, FOV_MAX_DEGREES } from '../config/Constants.js';
 
 export const Perspective = Object.freeze({ FIRST: 0, THIRD_BACK: 1, THIRD_FRONT: 2 });
 const THIRD_PERSON_DISTANCE = 4;
@@ -20,8 +20,15 @@ export class CameraController {
     this.hurtTilt = 0; this.hurtSide = 1;
     /** Explosion shake: amplitude in blocks, decaying. */
     this.shakeAmp = 0;
-    /** A rocket boost: a quick extra FOV punch that decays over about half a second. */
+    /** A rocket dash: a quick extra FOV punch that decays over about half a second. */
     this.rocketPunch = 0;
+    /**
+     * The "rocket rush" of a glider rocket boost: rushLevel 0..1 slams in with FOV_ROCKET_RUSH_EASE_IN while the boost burns
+     * (player.rocketTime > 0 — another rocket restarts the hold), then fades from rushPeak over FOV_ROCKET_RUSH_FADE seconds
+     * (rushFadeT counts the fade). `rush` is its FOV contribution this frame (× FOV_ROCKET_RUSH × the FOV Effects setting),
+     * `rushVisible` the level × the setting for the HUD vignette.
+     */
+    this.rushLevel = 0; this.rushPeak = 0; this.rushFadeT = 0; this.rush = 0; this.rushVisible = 0;
     /** The FOV widening target of the last frame (before the bow zoom), for the debug line and the tests. */
     this.fovTarget = 1;
     this.camera = camera;
@@ -59,7 +66,7 @@ export class CameraController {
   /** A nearby explosion: a short camera shake of `strength` (0..1). */
   shake(strength) { this.shakeAmp = Math.max(this.shakeAmp, Math.min(1, strength) * 0.25); }
 
-  /** A rocket fired: punch the FOV in for a moment. */
+  /** A rocket dash: punch the FOV in for a moment (a glider boost gets the rocket rush instead, driven by player.rocketTime). */
   rocket() { this.rocketPunch = 1; }
 
   update(dt) {
@@ -83,11 +90,24 @@ export class CameraController {
     const hurtRoll = Math.sin(Math.min(1, this.hurtTilt) * Math.PI) * 0.14 * this.hurtSide;
 
     // FOV effects, all scaled by the "FOV Effects" option: +20 % sprinting; a speed widening while falling fast, flying
-    // fast or gliding (from FOV_SPEED_START up to +50 % at FOV_SPEED_FULL); a rocket's quick punch-in; the bow zoom-in.
+    // fast or gliding (from FOV_SPEED_START up to +50 % at FOV_SPEED_FULL); a rocket dash's quick punch-in; the bow zoom-in.
     // Every contribution feeds ONE target, which is smoothed with exponential easing (time constants FOV_EASE_IN toward a
     // wider view — including the zoom easing back when the bow is released — and FOV_EASE_OUT toward a narrower one, in
     // game time, frame-rate independent); nothing sets the camera FOV directly. The shown FOV is clamped to FOV_MAX_DEGREES.
+    // The one exception to the slow easing is the rocket rush of a glider boost below: +FOV_ROCKET_RUSH on top of the eased
+    // scale, with its own fast ease-in (full in about 0.15 s), held while the boost burns, then a smooth fade over
+    // FOV_ROCKET_RUSH_FADE — about 3 s in all. The dash keeps the small punch.
     const effects = clamp((this.settings.get('fovEffects') ?? 100) / 100, 0, 1);
+    if (p.rocketTime > 0) {
+      this.rushLevel += (1 - this.rushLevel) * (1 - Math.exp(-dt / FOV_ROCKET_RUSH_EASE_IN));
+      this.rushPeak = this.rushLevel; this.rushFadeT = 0;
+    } else if (this.rushLevel > 0) {
+      this.rushFadeT += dt;
+      const t = Math.min(1, this.rushFadeT / FOV_ROCKET_RUSH_FADE);
+      this.rushLevel = t >= 1 ? 0 : this.rushPeak * (1 - t * t * (3 - 2 * t)); // smoothstep out
+    }
+    this.rushVisible = this.rushLevel * effects;
+    this.rush = this.rushVisible * FOV_ROCKET_RUSH;
     let widen = 0;
     if (p.sprinting) widen += FOV_SPRINT;
     const falling = !p.onGround && !p.inWater && !p.inLava && p.velocity.y < 0;
@@ -103,7 +123,7 @@ export class CameraController {
     const tau = targetScale > this.fovScale ? FOV_EASE_IN : FOV_EASE_OUT;
     this.fovScale += (targetScale - this.fovScale) * (1 - Math.exp(-dt / tau));
     this.shakeAmp = damp(this.shakeAmp, 0, 6, dt);
-    const fov = Math.min(FOV_MAX_DEGREES, this.settings.get('fov') * this.fovScale);
+    const fov = Math.min(FOV_MAX_DEGREES, this.settings.get('fov') * (this.fovScale + this.rush));
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
 
     if (this.perspective === Perspective.FIRST) {

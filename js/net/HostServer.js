@@ -13,13 +13,13 @@
 import { PeerLink } from './PeerLink.js';
 import { getIceServers } from './IceServers.js';
 import { playerBlocksAt, playerHeightForPose, mobBlocksAt } from '../player/PlacementRules.js';
-import { pvpDamage, PVP_REACH, PVP_REACH_SLACK, deathMessage, zombieDamage, arrowPlayerDamage, explosionPlayerDamage } from '../player/Damage.js';
+import { pvpDamage, PVP_REACH, PVP_REACH_SLACK, deathMessage, zombieDamage, arrowPlayerDamage, explosionPlayerDamage, maceClosingSpeed, macePlayerDamage, isMaceSmash, spearClosingSpeed, spearPlayerDamage, isSpearFast, horizontalDir, SPEAR_VELOCITY_CLAMP } from '../player/Damage.js';
 import { cleanChatText } from '../ui/Chat.js';
 
 /** Chat rate limit per guest: at most this many messages per window. */
 const CHAT_LIMIT = 5;
 const CHAT_WINDOW_MS = 5000;
-import { attackDamage } from '../items/Tools.js';
+import { attackDamage, isMace, isSpear } from '../items/Tools.js';
 import { ARMOR_POINTS, ItemIds } from '../items/ItemDefinitions.js';
 import { ItemStack } from '../items/ItemStack.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
@@ -32,7 +32,7 @@ import { BlockRegistry, BREAK_TIME, SOLID } from '../blocks/BlockRegistry.js';
 import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
 import { isWater, isLiquid } from '../world/WaterLevels.js';
-import { REACH_CREATIVE, ITEM_PICKUP_EXPAND_XZ, ITEM_PICKUP_EXPAND_Y, PLAYER_WIDTH, PLAYER_HEIGHT, EXPLOSION_KNOCKBACK } from '../config/Constants.js';
+import { REACH_CREATIVE, ITEM_PICKUP_EXPAND_XZ, ITEM_PICKUP_EXPAND_Y, PLAYER_WIDTH, PLAYER_HEIGHT, EXPLOSION_KNOCKBACK, TERMINAL_VELOCITY, ROCKET_DASH_COOLDOWN } from '../config/Constants.js';
 import { ITEM_HALF } from '../entities/ItemEntity.js';
 
 const LOBBY_HEARTBEAT_MS = 10000;
@@ -43,6 +43,9 @@ const MAX_REJECTED_SNAPSHOTS = 3;
 /** After a host-side respawn, snapshots that still carry the guest's DEAD bit are ignored for this long (they were sent before SPAWN_AT arrived). */
 const RESPAWN_GRACE_SECONDS = 3;
 const CHUNK_SEND_HIGH_WATER = 1 << 20;
+/** A mace / spear hit's claimed velocity must sit within MACE_VY_SLACK blocks/s of the min / max of the guest's replicated velocities (the same component) of the last MACE_VY_WINDOW seconds. */
+const MACE_VY_WINDOW = 0.5;
+const MACE_VY_SLACK = 10;
 
 const MODES = ['survival', 'creative', 'spectator'];
 
@@ -194,7 +197,7 @@ export class HostServer {
       try { stale.link && stale.link.close(); } catch (e) { /* ignore */ }
       this.pending.delete(userId);
     }
-    const peer = { userId, name: null, link: null, ready: false, state: null, stateTime: 0, mode: 'survival', held: 0, armor: null, remote: null, lastHit: 0, lastHurt: 0, health: 100, since: performance.now(), attempt, kicked: null, dead: false, rejected: 0 };
+    const peer = { userId, name: null, link: null, ready: false, state: null, stateTime: 0, mode: 'survival', held: 0, armor: null, remote: null, lastHit: 0, lastHurt: 0, health: 100, since: performance.now(), attempt, kicked: null, dead: false, rejected: 0, vyHistory: [] };
     this.pending.set(userId, peer);
     const ice = await getIceServers(this.game.cloud, { mock: this.game.cloudMock }); // cached; refreshed before the credentials expire
     this.ice = ice;
@@ -217,6 +220,7 @@ export class HostServer {
       case Msg.ATTACK: return this._attack(peer, msg);
       case Msg.SHOOT: return this._shoot(peer, msg);
       case Msg.ROCKET: return this._rocket(peer);
+      case Msg.ROCKET_DASH: return this._rocketDash(peer);
       case Msg.SPAWN_EGG: return this._spawnEgg(peer, msg);
       case Msg.CHEST_OPEN: return this._chestOpen(peer, msg);
       case Msg.CHEST_OP: return this._chestOp(peer, msg);
@@ -301,6 +305,10 @@ export class HostServer {
     if (peer.dead) s[8] |= Pose.DEAD; else s[8] &= ~Pose.DEAD; // only the host's respawn clears it
     peer.state = s;
     peer.stateTime = now;
+    // The guest's recent velocities [t, vx, vy, vz]: a mace / spear hit's claimed velocity is checked against them.
+    const h = peer.vyHistory || (peer.vyHistory = []);
+    h.push([now, Number(s[3]) || 0, Number(s[4]) || 0, Number(s[5]) || 0]);
+    while (h.length && now - h[0][0] > MACE_VY_WINDOW * 2) h.shift();
     if (peer.remote) peer.remote.snapshot(now, s);
   }
 
@@ -412,36 +420,88 @@ export class HostServer {
     return n;
   }
 
-  /** A guest hit someone (HIT { target, crit }). */
+  /** A guest hit someone (HIT { target, crit, mace, vy }). */
   _hit(peer, msg) {
     if (!peer.state || peer.dead) return;
-    this._applyHit({ id: peer.userId, name: peer.name, held: peer.held, mode: peer.mode, x: peer.state[0], y: peer.state[1], z: peer.state[2], peer }, String(msg.target || ''), !!msg.crit);
+    this._applyHit({ id: peer.userId, name: peer.name, held: peer.held, mode: peer.mode, x: peer.state[0], y: peer.state[1], z: peer.state[2], peer }, String(msg.target || ''), !!msg.crit, msg.mace ? { mace: true, vy: msg.vy } : msg.spear ? { spear: true, vx: msg.vx, vz: msg.vz } : null);
   }
 
-  /** The host hit a guest (BlockInteraction 'player:hitPlayer'). */
-  hitPlayer(targetId, crit) {
+  /**
+   * The host hit a guest (BlockInteraction 'player:hitPlayer'). A mace / spear hit carries the host's own velocity from the click
+   * (`extra`, trusted: same process) — for the mace the predicted burst has already set the live velocity to +MACE_BURST_VELOCITY by now.
+   */
+  hitPlayer(targetId, crit, extra = null) {
     const g = this.game, p = g.player;
     const held = g.inventory.getSelected();
-    this._applyHit({ id: this.userId, name: this.name, held: held ? held.itemId : 0, mode: p.gameMode, x: p.position.x, y: p.position.y, z: p.position.z, peer: null }, targetId, crit);
+    const num = (v, fallback) => (typeof v === 'number' ? v : fallback);
+    const vel = extra && extra.mace ? { mace: true, vy: num(extra.vy, p.velocity.y) } : extra && extra.spear ? { spear: true, vx: num(extra.vx, p.velocity.x), vz: num(extra.vz, p.velocity.z) } : null;
+    this._applyHit({ id: this.userId, name: this.name, held: held ? held.itemId : 0, mode: p.gameMode, x: p.position.x, y: p.position.y, z: p.position.z, peer: null }, targetId, crit, vel);
   }
 
-  /** Reach, cooldown, modes and the PvP toggle, then the damage goes to the victim and everyone sees the hit. */
-  _applyHit(att, targetId, crit) {
+  /**
+   * A guest's claimed velocity component (`index` 3 = vx, 4 = vy, 5 = vz of its snapshots) at a mace / spear hit: clamped to
+   * ±`bound`, and rejected (null) when it is more than MACE_VY_SLACK off the min / max of that component in its replicated
+   * velocities of the last MACE_VY_WINDOW seconds (the latest snapshot when none are that recent). The host's own hits (no peer) use the real value.
+   */
+  _checkedVel(peer, claimed, index, bound) {
+    const v = Math.max(-bound, Math.min(bound, Number(claimed) || 0));
+    if (!peer) return v;
+    const now = performance.now() / 1000;
+    let lo = Infinity, hi = -Infinity;
+    for (const h of peer.vyHistory || []) if (now - h[0] <= MACE_VY_WINDOW) { const c = h[index - 2]; if (c < lo) lo = c; if (c > hi) hi = c; }
+    if (lo === Infinity) { lo = hi = peer.state ? Number(peer.state[index]) || 0 : 0; }
+    if (v < lo - MACE_VY_SLACK || v > hi + MACE_VY_SLACK) { console.info(`CraftOn net: ${peer.name || peer.userId} claimed a ${['vx', 'vy', 'vz'][index - 3]} of ${v.toFixed(1)} blocks/s for a hit (recent ${lo.toFixed(1)} to ${hi.toFixed(1)}): rejected`); return null; }
+    return v;
+  }
+  _checkedVy(peer, claimed) { return this._checkedVel(peer, claimed, 4, TERMINAL_VELOCITY); }
+
+  /** A confirmed smash by a guest: everyone else gets SMASH (the attacker predicted it) and the host plays the effects itself. */
+  _confirmSmash(attPeer, x, y, z) {
+    this.broadcast(Msg.SMASH, { id: attPeer.userId, x, y, z }, attPeer);
+    this.game.smashEffects(x, y, z);
+  }
+
+  /** The host's own smash (BlockInteraction predicted it with the real velocities): the guests see it. */
+  broadcastSmash(x, y, z) { this.broadcast(Msg.SMASH, { id: this.userId, x, y, z }); }
+
+  /**
+   * Reach, cooldown, modes and the PvP toggle, then the damage goes to the victim and everyone sees the hit. A mace hit
+   * (`mace: { vy }`, only when the attacker really holds one) takes its damage from the closing speed between the attacker's
+   * checked velocity.y and the victim's latest one (no 1.5× crit; a smash shows the crit stars and is announced with SMASH).
+   */
+  _applyHit(att, targetId, crit, vel = null) {
     const g = this.game;
     if (!this.pvp || att.mode === 'spectator') return;
     const now = performance.now() / 1000;
     const attPeer = att.peer || this;
     if (now - (attPeer.lastHit || 0) < 0.45) return;
-    let vx, vy, vz, vMode, vPoints, victimPeer = null;
-    if (targetId === this.userId) { const p = g.player; if (p.dead) return; vx = p.position.x; vy = p.position.y; vz = p.position.z; vMode = p.gameMode; vPoints = g.inventory.armorPoints(); }
-    else { victimPeer = this.peers.get(targetId); if (!victimPeer || !victimPeer.state || victimPeer.dead) return; vx = victimPeer.state[0]; vy = victimPeer.state[1]; vz = victimPeer.state[2]; vMode = victimPeer.mode; vPoints = this._peerArmorPoints(victimPeer); }
+    let vx, vy, vz, vMode, vPoints, victimPeer = null, victimVy, victimVx, victimVz;
+    if (targetId === this.userId) { const p = g.player; if (p.dead) return; vx = p.position.x; vy = p.position.y; vz = p.position.z; vMode = p.gameMode; vPoints = g.inventory.armorPoints(); victimVy = p.velocity.y; victimVx = p.velocity.x; victimVz = p.velocity.z; }
+    else { victimPeer = this.peers.get(targetId); if (!victimPeer || !victimPeer.state || victimPeer.dead) return; vx = victimPeer.state[0]; vy = victimPeer.state[1]; vz = victimPeer.state[2]; vMode = victimPeer.mode; vPoints = this._peerArmorPoints(victimPeer); victimVx = Number(victimPeer.state[3]) || 0; victimVy = Number(victimPeer.state[4]) || 0; victimVz = Number(victimPeer.state[5]) || 0; }
     if (vMode !== 'survival') return;
     const victim = victimPeer || this;
     if (now - (victim.lastHurt || 0) < 0.45) return;
     const dist = Math.hypot(vx - att.x, vy + 0.9 - (att.y + 1.6), vz - att.z);
     if (dist > PVP_REACH + PVP_REACH_SLACK) return;
+    let n, smash = false;
+    if (vel && vel.mace && isMace(att.held)) {
+      // The mace: the damage comes from the closing speed between the attacker's (checked) velocity.y and the victim's latest one; no 1.5× crit.
+      const attVy = this._checkedVy(att.peer, vel.vy);
+      if (attVy === null) return;
+      const closing = maceClosingSpeed(attVy, victimVy);
+      n = macePlayerDamage(closing, vPoints);
+      smash = isMaceSmash(closing);
+      crit = smash; // a smash shows the crit stars
+    } else if (vel && vel.spear && isSpear(att.held)) {
+      // A spear: the horizontal closing speed between the attacker's (checked) vx / vz and the victim's latest ones, along the line between them; no 1.5× crit.
+      const attVx = this._checkedVel(att.peer, vel.vx, 3, SPEAR_VELOCITY_CLAMP), attVz = this._checkedVel(att.peer, vel.vz, 5, SPEAR_VELOCITY_CLAMP);
+      if (attVx === null || attVz === null) return;
+      const d = horizontalDir(att.x, att.z, vx, vz);
+      const closing = spearClosingSpeed(attVx, attVz, victimVx, victimVz, d.dx, d.dz);
+      n = spearPlayerDamage(attackDamage(att.held), closing, vPoints);
+      crit = isSpearFast(closing); // a fast hit shows the crit stars
+    } else n = pvpDamage(attackDamage(att.held), crit, vPoints);
     attPeer.lastHit = now; victim.lastHurt = now;
-    const n = pvpDamage(attackDamage(att.held), crit, vPoints);
     const dx = vx - att.x, dz = vz - att.z, len = Math.hypot(dx, dz) || 1;
     const kx = dx / len, kz = dz / len;
     if (victimPeer) {
@@ -449,6 +509,7 @@ export class HostServer {
       if (victimPeer.remote) victimPeer.remote.hurt(crit, n);
     } else g.health.damage(n, { kind: 'pvp', by: att.name }, { kx, kz, crit, ignoreInvuln: true });
     this.broadcast(Msg.HURT, { id: targetId, crit, n }, victimPeer);
+    if (smash && att.peer) this._confirmSmash(att.peer, vx, vy, vz);
   }
 
   /** A guest reports its health (after fall damage: others see the flash). */
@@ -512,15 +573,23 @@ export class HostServer {
     this.broadcast(Msg.HURT, { id: userId, crit: false, n }, peer);
   }
 
+  /**
+   * A guest hit a mob (ATTACK { id, damage, crit, kb, mace, vy } or { …, spear, vx, vz }): the damage is applied as sent (no limit
+   * for any item; only a non-number is guarded; a spear's fast-hit flag travels as `crit`), and a mace hit's smash is confirmed from
+   * the checked velocities (the mob's real velocity.y is here).
+   */
   _attack(peer, msg) {
     const mobs = this.game.entities.mobs;
     const mob = mobs.byId.get(msg.id);
     if (!mob || !peer.state || peer.dead) return;
     const d = Math.hypot(mob.position.x - peer.state[0], mob.position.z - peer.state[2]);
     if (d > 6) return;
-    const damage = Math.max(1, Math.min(10, Number(msg.damage) || 1));
+    const damage = Math.max(0, Number(msg.damage) || 1);
     const kb = Math.max(0.5, Math.min(3, Number(msg.kb) || 1)); // a stick: ×2
-    mobs.hit(mob, damage, peer.state[0], peer.state[2], !!msg.crit, true, kb);
+    let smash = false;
+    if (msg.mace && isMace(peer.held)) { const vy = this._checkedVy(peer, msg.vy); smash = vy !== null && isMaceSmash(maceClosingSpeed(vy, mob.velocity.y)); }
+    mobs.hit(mob, damage, peer.state[0], peer.state[2], !!msg.crit || smash, true, kb);
+    if (smash) this._confirmSmash(peer, mob.position.x, mob.position.y, mob.position.z);
   }
 
   /**
@@ -617,6 +686,22 @@ export class HostServer {
     if (peer.mode !== 'creative' && !this._peerHasItem(peer, ItemIds.ROCKET)) return;
     peer.lastRocket = now;
     peer.link.send(Msg.ROCKET_OK, {});
+    this.game.audio.playAt('items/rocket_launch', peer.state[0], peer.state[1] + 1, peer.state[2], 'blocks', 0.9); // the host hears it too
+    this.broadcast(Msg.SOUND, { id: peer.userId, name: 'items/rocket_launch', x: peer.state[0], y: peer.state[1] + 1, z: peer.state[2], vol: 0.9 }, peer);
+  }
+
+  /**
+   * A guest used a rocket as a dash (ROCKET_DASH, already applied on its side): a Survival guest needs a rocket in its replicated
+   * inventory and the dash cooldown must have passed; then the launch sound plays here and goes to the other guests. A rejected
+   * dash is only logged — it cannot be undone smoothly (the guest already moved).
+   */
+  _rocketDash(peer) {
+    if (!peer.state || peer.dead || peer.mode === 'spectator') return;
+    const now = performance.now() / 1000;
+    const reason = now - (peer.lastDash || 0) < ROCKET_DASH_COOLDOWN ? 'cooldown' : peer.mode !== 'creative' && !this._peerHasItem(peer, ItemIds.ROCKET) ? 'no rocket' : null;
+    if (reason) { console.info(`CraftOn net: ${peer.name || peer.userId} dashed with a rocket (${reason}): ignored`); return; }
+    peer.lastDash = now;
+    this.game.audio.playAt('items/rocket_launch', peer.state[0], peer.state[1] + 1, peer.state[2], 'blocks', 0.9);
     this.broadcast(Msg.SOUND, { id: peer.userId, name: 'items/rocket_launch', x: peer.state[0], y: peer.state[1] + 1, z: peer.state[2], vol: 0.9 }, peer);
   }
 

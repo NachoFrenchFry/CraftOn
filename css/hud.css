@@ -121,6 +121,9 @@
 }
 @keyframes fire-flicker { 0% { opacity: 0.75; transform: scaleY(1); } 100% { opacity: 1; transform: scaleY(1.06); } }
 #lava-overlay.hidden, #fire-overlay.hidden { display: none; }
+/* The rocket rush vignette (a glider boost): the screen edges darken with the camera's rush level; display none when idle. */
+#rocket-overlay { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 52%, rgba(255, 255, 255, 0.08) 70%, rgba(10, 10, 20, 0.5) 100%); }
+#rocket-overlay.hidden { display: none; }
 
 #debug-overlay {
   position: fixed;

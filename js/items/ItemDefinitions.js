@@ -46,6 +46,8 @@ export const ItemIds = Object.freeze({
   RAW_CHICKEN: 315,
   COOKED_CHICKEN: 316,
   CHICKEN_SPAWN_EGG: 317,
+  MACE: 318,
+  WOODEN_SPEAR: 319, STONE_SPEAR: 320, GOLDEN_SPEAR: 321, IRON_SPEAR: 322, DIAMOND_SPEAR: 323,
 });
 
 /** Knockback points of the empty hand; an item's `knockback` replaces it (a stick: 10). Knockback strength scales with points / 5. */
@@ -73,7 +75,7 @@ function armorDefs() {
     for (const slot of ARMOR_SLOTS) {
       const name = `${MATERIAL_PREFIX[material]}_${slot}`;
       out.push({ id: id++, name, displayName: `${MATERIAL_NAMES[material]} ${PIECE_NAMES[slot]}`, texture: name, stackSize: 1, placeable: false,
-        armor: { slot, material, points: ARMOR_POINTS[material][slot] } });
+        armor: { slot, material, points: ARMOR_POINTS[material][slot] }, description: 'Protects you' });
     }
   }
   return out;
@@ -90,11 +92,14 @@ export const TOOL_DAMAGE = Object.freeze({
   pickaxe: { wooden: 2, stone: 3, golden: 4, iron: 5, diamond: 6 },
   axe: { wooden: 3, stone: 4, golden: 5, iron: 6, diamond: 7 },
   sword: { wooden: 4, stone: 5, golden: 6, iron: 7, diamond: 8 },
+  spear: { wooden: 1, stone: 2, golden: 3, iron: 4, diamond: 5 }, // sword − 3: the horizontal closing speed makes up the rest (Damage.js)
 });
 
 /**
  * Fields: id, name, displayName, texture (16×16 icon / held sprite), stackSize, placeable (always false),
- * tool: { type: 'pickaxe' | 'axe' | 'sword', speed (pickaxes / axes), damage } for tools and weapons;
+ * tool: { type: 'pickaxe' | 'axe' | 'sword' | 'mace' | 'spear', speed (pickaxes / axes), damage } for tools and weapons (the mace's and the
+ * spears' real damage grows with the closing speed, see Damage.js; they mine like the hand and never break blocks in Creative, like the swords);
+ * description: one short gray tooltip line saying what the item does (never how to use it; items without one show only their stats);
  * armor: { slot, material, points } for armor; spawnEgg: mob type (creative-only, never dropped or crafted);
  * food: { heal } for things you can eat (hold right click 1.6 s); knockback: knockback points when hitting with it
  * (the hand has HAND_KNOCKBACK); bow: true for the bow (hold right click to draw, release to shoot an arrow).
@@ -104,45 +109,52 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.IRON_INGOT, name: 'iron_ingot', displayName: 'Iron Ingot', texture: 'iron_ingot', stackSize: 64, placeable: false },
   { id: ItemIds.GOLD_INGOT, name: 'gold_ingot', displayName: 'Gold Ingot', texture: 'gold_ingot', stackSize: 64, placeable: false },
   { id: ItemIds.DIAMOND, name: 'diamond', displayName: 'Diamond', texture: 'diamond', stackSize: 64, placeable: false },
-  { id: ItemIds.WOODEN_PICKAXE, name: 'wooden_pickaxe', displayName: 'Wooden Pickaxe', texture: 'wooden_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.wooden, damage: TOOL_DAMAGE.pickaxe.wooden } },
-  { id: ItemIds.STONE_PICKAXE, name: 'stone_pickaxe', displayName: 'Stone Pickaxe', texture: 'stone_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.stone, damage: TOOL_DAMAGE.pickaxe.stone } },
-  { id: ItemIds.IRON_PICKAXE, name: 'iron_pickaxe', displayName: 'Iron Pickaxe', texture: 'iron_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.iron, damage: TOOL_DAMAGE.pickaxe.iron } },
-  { id: ItemIds.DIAMOND_PICKAXE, name: 'diamond_pickaxe', displayName: 'Diamond Pickaxe', texture: 'diamond_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.diamond, damage: TOOL_DAMAGE.pickaxe.diamond } },
-  { id: ItemIds.GOLDEN_PICKAXE, name: 'golden_pickaxe', displayName: 'Golden Pickaxe', texture: 'golden_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.golden, damage: TOOL_DAMAGE.pickaxe.golden } },
-  { id: ItemIds.WOODEN_SWORD, name: 'wooden_sword', displayName: 'Wooden Sword', texture: 'wooden_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.wooden } },
-  { id: ItemIds.STONE_SWORD, name: 'stone_sword', displayName: 'Stone Sword', texture: 'stone_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.stone } },
-  { id: ItemIds.IRON_SWORD, name: 'iron_sword', displayName: 'Iron Sword', texture: 'iron_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.iron } },
-  { id: ItemIds.DIAMOND_SWORD, name: 'diamond_sword', displayName: 'Diamond Sword', texture: 'diamond_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.diamond } },
-  { id: ItemIds.GOLDEN_SWORD, name: 'golden_sword', displayName: 'Golden Sword', texture: 'golden_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.golden } },
-  { id: ItemIds.BUCKET, name: 'bucket', displayName: 'Bucket', texture: 'bucket', stackSize: 16, placeable: false },
-  { id: ItemIds.WATER_BUCKET, name: 'water_bucket', displayName: 'Water Bucket', texture: 'water_bucket', stackSize: 1, placeable: false },
-  { id: ItemIds.LAVA_BUCKET, name: 'lava_bucket', displayName: 'Lava Bucket', texture: 'lava_bucket', stackSize: 1, placeable: false },
-  { id: ItemIds.STICK, name: 'stick', displayName: 'Stick', texture: 'stick', stackSize: 1, placeable: false, knockback: HAND_KNOCKBACK + 5 }, // a knockback weapon: no extra damage, +5 knockback, does not stack
+  { id: ItemIds.WOODEN_PICKAXE, name: 'wooden_pickaxe', displayName: 'Wooden Pickaxe', texture: 'wooden_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.wooden, damage: TOOL_DAMAGE.pickaxe.wooden }, description: 'Mines stone faster' },
+  { id: ItemIds.STONE_PICKAXE, name: 'stone_pickaxe', displayName: 'Stone Pickaxe', texture: 'stone_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.stone, damage: TOOL_DAMAGE.pickaxe.stone }, description: 'Mines stone faster' },
+  { id: ItemIds.IRON_PICKAXE, name: 'iron_pickaxe', displayName: 'Iron Pickaxe', texture: 'iron_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.iron, damage: TOOL_DAMAGE.pickaxe.iron }, description: 'Mines stone faster' },
+  { id: ItemIds.DIAMOND_PICKAXE, name: 'diamond_pickaxe', displayName: 'Diamond Pickaxe', texture: 'diamond_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.diamond, damage: TOOL_DAMAGE.pickaxe.diamond }, description: 'Mines stone faster' },
+  { id: ItemIds.GOLDEN_PICKAXE, name: 'golden_pickaxe', displayName: 'Golden Pickaxe', texture: 'golden_pickaxe', stackSize: 1, placeable: false, tool: { type: 'pickaxe', speed: PICKAXE_SPEED.golden, damage: TOOL_DAMAGE.pickaxe.golden }, description: 'Mines stone faster' },
+  { id: ItemIds.WOODEN_SWORD, name: 'wooden_sword', displayName: 'Wooden Sword', texture: 'wooden_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.wooden }, description: 'Does damage' },
+  { id: ItemIds.STONE_SWORD, name: 'stone_sword', displayName: 'Stone Sword', texture: 'stone_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.stone }, description: 'Does damage' },
+  { id: ItemIds.IRON_SWORD, name: 'iron_sword', displayName: 'Iron Sword', texture: 'iron_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.iron }, description: 'Does damage' },
+  { id: ItemIds.DIAMOND_SWORD, name: 'diamond_sword', displayName: 'Diamond Sword', texture: 'diamond_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.diamond }, description: 'Does damage' },
+  { id: ItemIds.GOLDEN_SWORD, name: 'golden_sword', displayName: 'Golden Sword', texture: 'golden_sword', stackSize: 1, placeable: false, tool: { type: 'sword', damage: TOOL_DAMAGE.sword.golden }, description: 'Does damage' },
+  { id: ItemIds.MACE, name: 'mace', displayName: 'Mace', texture: 'mace', stackSize: 1, placeable: false, tool: { type: 'mace', damage: 5 }, description: 'Hits harder the faster you fall' }, // damage = MACE_BASE_DAMAGE (Damage.js): 5 standing, more the faster you come down on the target
+  // Spears: base 1–5 plus half the horizontal closing speed (Damage.js); held like swords, 1 material + 2 sticks.
+  { id: ItemIds.WOODEN_SPEAR, name: 'wooden_spear', displayName: 'Wooden Spear', texture: 'wooden_spear', stackSize: 1, placeable: false, tool: { type: 'spear', damage: TOOL_DAMAGE.spear.wooden }, description: 'Hits harder the faster you move' },
+  { id: ItemIds.STONE_SPEAR, name: 'stone_spear', displayName: 'Stone Spear', texture: 'stone_spear', stackSize: 1, placeable: false, tool: { type: 'spear', damage: TOOL_DAMAGE.spear.stone }, description: 'Hits harder the faster you move' },
+  { id: ItemIds.GOLDEN_SPEAR, name: 'golden_spear', displayName: 'Golden Spear', texture: 'golden_spear', stackSize: 1, placeable: false, tool: { type: 'spear', damage: TOOL_DAMAGE.spear.golden }, description: 'Hits harder the faster you move' },
+  { id: ItemIds.IRON_SPEAR, name: 'iron_spear', displayName: 'Iron Spear', texture: 'iron_spear', stackSize: 1, placeable: false, tool: { type: 'spear', damage: TOOL_DAMAGE.spear.iron }, description: 'Hits harder the faster you move' },
+  { id: ItemIds.DIAMOND_SPEAR, name: 'diamond_spear', displayName: 'Diamond Spear', texture: 'diamond_spear', stackSize: 1, placeable: false, tool: { type: 'spear', damage: TOOL_DAMAGE.spear.diamond }, description: 'Hits harder the faster you move' },
+  { id: ItemIds.BUCKET, name: 'bucket', displayName: 'Bucket', texture: 'bucket', stackSize: 16, placeable: false, description: 'Picks up liquids' },
+  { id: ItemIds.WATER_BUCKET, name: 'water_bucket', displayName: 'Water Bucket', texture: 'water_bucket', stackSize: 1, placeable: false, description: 'Places water' },
+  { id: ItemIds.LAVA_BUCKET, name: 'lava_bucket', displayName: 'Lava Bucket', texture: 'lava_bucket', stackSize: 1, placeable: false, description: 'Places lava' },
+  { id: ItemIds.STICK, name: 'stick', displayName: 'Stick', texture: 'stick', stackSize: 1, placeable: false, knockback: HAND_KNOCKBACK + 5, description: 'Knocks things back' }, // a knockback weapon: no extra damage, +5 knockback, does not stack
   { id: ItemIds.STRING, name: 'string', displayName: 'String', texture: 'string', stackSize: 64, placeable: false },
-  { id: ItemIds.BOW, name: 'bow', displayName: 'Bow', texture: 'bow', stackSize: 1, placeable: false, bow: true },
-  { id: ItemIds.ARROW, name: 'arrow', displayName: 'Arrow', texture: 'arrow', stackSize: 64, placeable: false },
-  { id: ItemIds.RAW_BEEF, name: 'raw_beef', displayName: 'Raw Beef', texture: 'raw_beef', stackSize: 64, placeable: false, food: { heal: 12 } },
-  { id: ItemIds.RAW_PORKCHOP, name: 'raw_porkchop', displayName: 'Raw Porkchop', texture: 'raw_porkchop', stackSize: 64, placeable: false, food: { heal: 12 } },
-  { id: ItemIds.RAW_MUTTON, name: 'raw_mutton', displayName: 'Raw Mutton', texture: 'raw_mutton', stackSize: 64, placeable: false, food: { heal: 10 } },
-  { id: ItemIds.COOKED_BEEF, name: 'cooked_beef', displayName: 'Cooked Beef', texture: 'cooked_beef', stackSize: 64, placeable: false, food: { heal: 30 } },
-  { id: ItemIds.COOKED_PORKCHOP, name: 'cooked_porkchop', displayName: 'Cooked Porkchop', texture: 'cooked_porkchop', stackSize: 64, placeable: false, food: { heal: 30 } },
-  { id: ItemIds.COOKED_MUTTON, name: 'cooked_mutton', displayName: 'Cooked Mutton', texture: 'cooked_mutton', stackSize: 64, placeable: false, food: { heal: 25 } },
-  { id: ItemIds.RAW_CHICKEN, name: 'raw_chicken', displayName: 'Raw Chicken', texture: 'raw_chicken', stackSize: 64, placeable: false, food: { heal: 10 } },
-  { id: ItemIds.COOKED_CHICKEN, name: 'cooked_chicken', displayName: 'Cooked Chicken', texture: 'cooked_chicken', stackSize: 64, placeable: false, food: { heal: 20 } },
+  { id: ItemIds.BOW, name: 'bow', displayName: 'Bow', texture: 'bow', stackSize: 1, placeable: false, bow: true, description: 'Shoots arrows' },
+  { id: ItemIds.ARROW, name: 'arrow', displayName: 'Arrow', texture: 'arrow', stackSize: 64, placeable: false, description: 'Ammo for bows' },
+  { id: ItemIds.RAW_BEEF, name: 'raw_beef', displayName: 'Raw Beef', texture: 'raw_beef', stackSize: 64, placeable: false, food: { heal: 12 }, description: 'Restores health' },
+  { id: ItemIds.RAW_PORKCHOP, name: 'raw_porkchop', displayName: 'Raw Porkchop', texture: 'raw_porkchop', stackSize: 64, placeable: false, food: { heal: 12 }, description: 'Restores health' },
+  { id: ItemIds.RAW_MUTTON, name: 'raw_mutton', displayName: 'Raw Mutton', texture: 'raw_mutton', stackSize: 64, placeable: false, food: { heal: 10 }, description: 'Restores health' },
+  { id: ItemIds.COOKED_BEEF, name: 'cooked_beef', displayName: 'Cooked Beef', texture: 'cooked_beef', stackSize: 64, placeable: false, food: { heal: 30 }, description: 'Restores health' },
+  { id: ItemIds.COOKED_PORKCHOP, name: 'cooked_porkchop', displayName: 'Cooked Porkchop', texture: 'cooked_porkchop', stackSize: 64, placeable: false, food: { heal: 30 }, description: 'Restores health' },
+  { id: ItemIds.COOKED_MUTTON, name: 'cooked_mutton', displayName: 'Cooked Mutton', texture: 'cooked_mutton', stackSize: 64, placeable: false, food: { heal: 25 }, description: 'Restores health' },
+  { id: ItemIds.RAW_CHICKEN, name: 'raw_chicken', displayName: 'Raw Chicken', texture: 'raw_chicken', stackSize: 64, placeable: false, food: { heal: 10 }, description: 'Restores health' },
+  { id: ItemIds.COOKED_CHICKEN, name: 'cooked_chicken', displayName: 'Cooked Chicken', texture: 'cooked_chicken', stackSize: 64, placeable: false, food: { heal: 20 }, description: 'Restores health' },
   { id: ItemIds.FEATHER, name: 'feather', displayName: 'Feather', texture: 'feather', stackSize: 64, placeable: false },
   // axes (wood-type blocks)
-  { id: ItemIds.WOODEN_AXE, name: 'wooden_axe', displayName: 'Wooden Axe', texture: 'wooden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.wooden, damage: TOOL_DAMAGE.axe.wooden } },
-  { id: ItemIds.STONE_AXE, name: 'stone_axe', displayName: 'Stone Axe', texture: 'stone_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.stone, damage: TOOL_DAMAGE.axe.stone } },
-  { id: ItemIds.IRON_AXE, name: 'iron_axe', displayName: 'Iron Axe', texture: 'iron_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.iron, damage: TOOL_DAMAGE.axe.iron } },
-  { id: ItemIds.DIAMOND_AXE, name: 'diamond_axe', displayName: 'Diamond Axe', texture: 'diamond_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.diamond, damage: TOOL_DAMAGE.axe.diamond } },
-  { id: ItemIds.GOLDEN_AXE, name: 'golden_axe', displayName: 'Golden Axe', texture: 'golden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.golden, damage: TOOL_DAMAGE.axe.golden } },
+  { id: ItemIds.WOODEN_AXE, name: 'wooden_axe', displayName: 'Wooden Axe', texture: 'wooden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.wooden, damage: TOOL_DAMAGE.axe.wooden }, description: 'Chops wood faster' },
+  { id: ItemIds.STONE_AXE, name: 'stone_axe', displayName: 'Stone Axe', texture: 'stone_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.stone, damage: TOOL_DAMAGE.axe.stone }, description: 'Chops wood faster' },
+  { id: ItemIds.IRON_AXE, name: 'iron_axe', displayName: 'Iron Axe', texture: 'iron_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.iron, damage: TOOL_DAMAGE.axe.iron }, description: 'Chops wood faster' },
+  { id: ItemIds.DIAMOND_AXE, name: 'diamond_axe', displayName: 'Diamond Axe', texture: 'diamond_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.diamond, damage: TOOL_DAMAGE.axe.diamond }, description: 'Chops wood faster' },
+  { id: ItemIds.GOLDEN_AXE, name: 'golden_axe', displayName: 'Golden Axe', texture: 'golden_axe', stackSize: 1, placeable: false, tool: { type: 'axe', speed: AXE_SPEED.golden, damage: TOOL_DAMAGE.axe.golden }, description: 'Chops wood faster' },
   // armor (15 pieces) and creative-only spawn eggs
   ...armorDefs(),
-  { id: ItemIds.COW_SPAWN_EGG, name: 'cow_spawn_egg', displayName: 'Cow Spawn Egg', texture: 'cow_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'cow' },
-  { id: ItemIds.PIG_SPAWN_EGG, name: 'pig_spawn_egg', displayName: 'Pig Spawn Egg', texture: 'pig_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'pig' },
-  { id: ItemIds.SHEEP_SPAWN_EGG, name: 'sheep_spawn_egg', displayName: 'Sheep Spawn Egg', texture: 'sheep_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'sheep' },
-  { id: ItemIds.ZOMBIE_SPAWN_EGG, name: 'zombie_spawn_egg', displayName: 'Zombie Spawn Egg', texture: 'zombie_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'zombie' },
-  { id: ItemIds.GLIDER, name: 'glider', displayName: 'Glider', texture: 'glider', stackSize: 1, placeable: false, glider: true, creativeOnly: true },
-  { id: ItemIds.ROCKET, name: 'rocket', displayName: 'Rocket', texture: 'rocket', stackSize: 64, placeable: false, rocket: true },
-  { id: ItemIds.CHICKEN_SPAWN_EGG, name: 'chicken_spawn_egg', displayName: 'Chicken Spawn Egg', texture: 'chicken_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'chicken' },
+  { id: ItemIds.COW_SPAWN_EGG, name: 'cow_spawn_egg', displayName: 'Cow Spawn Egg', texture: 'cow_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'cow', description: 'Spawns a cow' },
+  { id: ItemIds.PIG_SPAWN_EGG, name: 'pig_spawn_egg', displayName: 'Pig Spawn Egg', texture: 'pig_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'pig', description: 'Spawns a pig' },
+  { id: ItemIds.SHEEP_SPAWN_EGG, name: 'sheep_spawn_egg', displayName: 'Sheep Spawn Egg', texture: 'sheep_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'sheep', description: 'Spawns a sheep' },
+  { id: ItemIds.ZOMBIE_SPAWN_EGG, name: 'zombie_spawn_egg', displayName: 'Zombie Spawn Egg', texture: 'zombie_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'zombie', description: 'Spawns a zombie' },
+  { id: ItemIds.GLIDER, name: 'glider', displayName: 'Glider', texture: 'glider', stackSize: 1, placeable: false, glider: true, creativeOnly: true, description: 'Lets you fly' },
+  { id: ItemIds.ROCKET, name: 'rocket', displayName: 'Rocket', texture: 'rocket', stackSize: 64, placeable: false, rocket: true, description: 'Boosts you forward' },
+  { id: ItemIds.CHICKEN_SPAWN_EGG, name: 'chicken_spawn_egg', displayName: 'Chicken Spawn Egg', texture: 'chicken_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'chicken', description: 'Spawns a chicken' },
 ]);

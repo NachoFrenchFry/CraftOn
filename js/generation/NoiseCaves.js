@@ -123,8 +123,9 @@ export class NoiseCaves {
   /**
    * @param {Uint8Array} blocks
    * @param {Int16Array} carveMaxY per column (16×16)
-   * @param {number} maxHeight highest terrain in the chunk
-   * @param {Int16Array} [heights] 16×16 terrain heights (for the cliff notches)
+   * @param {number} maxHeight highest terrain in the chunk (bounds the per-column loop; above a column's own surface the
+   *   carvers only ever see air, and the mega-cave roof refill is bounded by `heights` so it never fills that sky)
+   * @param {Int16Array} [heights] 16×16 terrain heights (for the cliff notches and the mega-cave roof)
    * @param {Uint8Array} [cliffMask] 16×16: 1 where steep high mountain faces may get overhangs / notches
    */
   carve(blocks, cx, cz, carveMaxY, maxHeight, heights = null, cliffMask = null) {
@@ -239,11 +240,15 @@ export class NoiseCaves {
           }
           if (cheese && !isPillar) { if (!carve) cheeseBlocks++; carve = true; } // cheese cavern minus pillars
           // Mega caves keep a solid roof: inside a region nothing is carved in the 8 blocks under the surface, and the
-          // worm tunnels that ran before are filled back there, so a chamber never opens the ground.
+          // worm tunnels that ran before are filled back there, so a chamber never opens the ground. The refill stays at or
+          // below THIS column's own surface (heights[col]): the loop runs up to the chunk's highest terrain point (`top`), and
+          // filling the open sky above a lower column turned whole mega chunks into flat stone slabs (fixed Nov 1 2026).
           if (mm > 0.15 && y > megaCeiling) {
             carve = false;
-            const ri = col + (y << 8);
-            if (blocks[ri] === B.AIR) blocks[ri] = B.STONE;
+            if (!heights || y <= heights[col]) {
+              const ri = col + (y << 8);
+              if (blocks[ri] === B.AIR) blocks[ri] = B.STONE;
+            }
           }
           if (carve) {
             const i = col + (y << 8);

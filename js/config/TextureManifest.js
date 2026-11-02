@@ -45,6 +45,8 @@ export const GENERATED_TEXTURES = Object.freeze([
   'string', 'bow', 'bow_pulling_0', 'bow_pulling_1', 'bow_pulling_2', 'arrow', 'explosives_top', 'explosives_side', 'explosives_bottom',
   // the zombie egg, the glider and rockets, the chest
   'zombie_spawn_egg', 'glider', 'rocket', 'chest_front', 'chest_side', 'chest_top',
+  // the mace and the spears
+  'mace', 'wooden_spear', 'stone_spear', 'golden_spear', 'iron_spear', 'diamond_spear',
 ]);
 
 /**

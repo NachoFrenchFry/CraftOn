@@ -50,6 +50,8 @@ export class Player {
     this.horizontalSpeed = 0;
     this.fallStartY = null;
     this.lastLandingFall = 0;
+    /** After a mace smash: the height of the hit. On the next landing only the drop below it counts as a fall (the burst's height never does). */
+    this.fallIgnoreAboveY = null;
     /** Bow: draw progress 0..1 while the use button is held with a bow (slows movement, zooms the view) and the frame carried in pose bits. */
     this.drawProgress = 0;
     this.bowFrame = 0;
@@ -61,6 +63,12 @@ export class Player {
     this.rocketCooldown = 0;
     /** Set by the physics when a glide ended against a wall: the horizontal speed lost (blocks per tick). */
     this.crashSpeed = 0;
+    /** A rocket dash (a rocket used directly): seconds left, its unit direction, the cooldown, the post-dash landing grace and the fall before it. */
+    this.dashTime = 0;
+    this.dashDir = new THREE.Vector3();
+    this.dashCooldown = 0;
+    this.dashGrace = 0;
+    this.dashFallBefore = 0;
     /** Health: 100 max, saved with the player; `dead` while the death screen shows. */
     this.maxHealth = 100;
     this.health = 100;
@@ -102,6 +110,8 @@ export class Player {
     this.renderPosition.set(x, y, z);
     this.velocity.set(0, 0, 0);
     this.fallStartY = null;
+    this.fallIgnoreAboveY = null;
+    this.dashTime = 0; this.dashGrace = 0;
     this.blockedHorizontally = false;
     this.climbTimer = 0;
   }

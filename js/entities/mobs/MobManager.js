@@ -189,7 +189,9 @@ export class MobManager {
         m.position.set(o.x, o.y, o.z);
         m.yaw = o.yaw;
         m.headYaw = typeof o.extra === 'number' ? o.extra : o.yaw;
-        m.velocity.set(o.vx, 0, o.vz);
+        // The snapshots carry no vertical speed: estimate it from the sampled height, so a guest's mace hit sees a falling or rising mob.
+        const vy = dt > 0 ? Math.max(-80, Math.min(80, (o.y - m.prevPosition.y) / dt)) : 0;
+        m.velocity.set(o.vx, vy, o.vz);
         m.intent.speed = Math.hypot(o.vx, o.vz) > 0.1 ? 1 : 0;
       }
       const moved = m.position.distanceTo(m.prevPosition);

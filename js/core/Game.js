@@ -13,7 +13,7 @@ import { KeyBindingStore } from './KeyBindingStore.js';
 import { PAUSE_CODE, CHAT_ENTER_CODE, CHAT_SLASH_CODE, DROP_STACK_MODIFIERS } from '../config/KeyBindings.js';
 import { createCommands } from '../commands/index.js';
 import { LOCATE_MAX_DISTANCE } from '../generation/Locate.js';
-import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX, EXPLOSION_KNOCKBACK, ROCKET_SECONDS, ROCKET_COOLDOWN } from '../config/Constants.js';
+import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX, EXPLOSION_KNOCKBACK, ROCKET_SECONDS, ROCKET_COOLDOWN, ROCKET_DASH_SECONDS, ROCKET_DASH_COOLDOWN, ROCKET_DASH_SPEED } from '../config/Constants.js';
 import { Renderer, msaaSamplesOf } from '../rendering/Renderer.js';
 import { TextureAtlas } from '../rendering/TextureAtlas.js';
 import { ChunkMeshManager } from '../rendering/ChunkMeshManager.js';
@@ -264,6 +264,7 @@ export class Game {
       entityBlocks: (x, y, z) => remotePlayersBlockAt(this.remotePlayers, x, y, z) || mobBlocksAt(this.entities.mobs.mobs, x, y, z),
       canEat: () => this.health.canEat(),
       explosivesAllowed: () => !this.worldMeta || this.worldMeta.explosives !== false,
+      pvpAllowed: () => !this.worldMeta || this.worldMeta.pvp !== false,
     });
     this.entities.explosivesAllowed = () => !this.worldMeta || this.worldMeta.explosives !== false; // arrows set explosives off only while they are on
     this.health = new HealthSystem(this);
@@ -358,7 +359,10 @@ export class Game {
     });
     ev.on('player:void', () => this.health.onVoid());
     // Multiplayer: the host validates its own hits like any guest's; deaths are announced.
-    ev.on('player:hitPlayer', (targetId, crit) => { if (this.net && this.net.isHost) this.net.hitPlayer(targetId, crit); });
+    ev.on('player:hitPlayer', (targetId, crit, extra) => { if (this.net && this.net.isHost) this.net.hitPlayer(targetId, crit, extra); });
+    // A mace smash (predicted at the click): the thud, the whoosh, the wind ring at the target and a short camera shake; the host's own
+    // velocities are the real ones, so its smashes go straight to the guests (a guest's are confirmed by the host first).
+    ev.on('player:smash', (x, y, z) => { this.smashEffects(x, y, z); this.cameraController.shake(0.5); if (this.net && this.net.isHost) this.net.broadcastSmash(x, y, z); });
     ev.on('player:died', (cause) => { if (this.net && this.net.isHost) this.net.announceOwnDeath(cause); });
     // Eating: chewing sounds + crumbs of the food's icon from the mouth; healing when done.
     ev.on('player:eating', (itemId) => {
@@ -374,6 +378,7 @@ export class Game {
     // Gliding: a crash into a wall hurts ((lost speed × 10 − 3) × 5 before armor); a rocket boosts the glide.
     ev.on('player:crash', (dmg) => { if (this.health.active && !this.player.dead) this.health.damage(Math.round(dmg * armorReduction(this.inventory.armorPoints())), { kind: 'crash' }, { ignoreInvuln: true }); });
     ev.on('player:rocket', () => this._useRocket());
+    ev.on('player:dash', () => this._dash());
     ev.on('player:toast', (text) => this.ui.hud.showToast(text, false));
     ev.on('player:shoot', (power) => this._shoot(power));
     // Explosives: placing one primes an entity at once (the host does it for a guest).
@@ -591,14 +596,37 @@ export class Game {
     this._fireRocket();
   }
 
+  /**
+   * A rocket used directly (right click with a rocket in the hand, not gliding): a dash of about 5 blocks along the look, pitch
+   * included (ROCKET_DASH_SPEED for ROCKET_DASH_SECONDS, gravity off, see PlayerPhysics), one rocket in Survival, a 0.75 s cooldown.
+   * Applied locally at once (a guest tells the host, which checks its inventory and the cooldown for the sound — never undone);
+   * not while dead, a spectator, flying, gliding, or in water / lava (then nothing happens and no rocket is used).
+   */
+  _dash() {
+    const p = this.player;
+    if (p.dead || p.isSpectator || p.flying || p.gliding || p.inWater || p.inLava || p.dashCooldown > 0 || p.dashTime > 0) return;
+    if (!p.isCreative) { const slot = this._findItemSlot(ItemIds.ROCKET); if (slot < 0) return; this.inventory.removeFromSlot(slot, 1); }
+    p.getLookDirection(p.dashDir);
+    p.velocity.copy(p.dashDir).multiplyScalar(ROCKET_DASH_SPEED); // from this very frame on; the physics keeps it for the dash's duration
+    p.onGround = false;
+    p.dashTime = ROCKET_DASH_SECONDS;
+    p.dashCooldown = ROCKET_DASH_COOLDOWN;
+    p.dashGrace = 0;
+    p.dashFallBefore = p.fallStartY !== null ? Math.max(0, p.fallStartY - p.position.y) : 0; // a landing during / right after the dash counts only this
+    p.fallStartY = null;
+    this.cameraController.rocket();
+    this.audio.playAt('items/rocket_launch', p.position.x, p.position.y + 1, p.position.z, 'player', 0.9);
+    this.events.emit('player:rocketFired'); // when hosting, the launch sound goes to the guests
+    if (this.net && !this.net.isHost) this.net.rocketDash();
+  }
+
   /** The boost itself (after the host's OK for a guest). */
   _fireRocket() {
     const p = this.player;
     if (!p.gliding || p.dead) return;
     if (!p.isCreative) { const slot = this._findItemSlot(ItemIds.ROCKET); if (slot < 0) return; this.inventory.removeFromSlot(slot, 1); }
-    p.rocketTime = ROCKET_SECONDS;
+    p.rocketTime = ROCKET_SECONDS; // the camera's rocket rush (the huge FOV) follows rocketTime; the HUD vignette follows the camera
     p.rocketCooldown = ROCKET_COOLDOWN;
-    this.cameraController.rocket();
     this.audio.playAt('items/rocket_launch', p.position.x, p.position.y + 1, p.position.z, 'player', 0.9);
     this.events.emit('player:rocketFired');
   }
@@ -648,6 +676,13 @@ export class Game {
       return;
     }
     if (this.net && this.net.isHost) this.net.projectileHit(shooter, hit);
+  }
+
+  /** A mace smash at (x, y, z) (ours, or another player's SMASH): the heavy thud, the wind whoosh and a ring of white dust at the target's feet. */
+  smashEffects(x, y, z) {
+    this.audio.playAt('player.mace_smash', x, y, z, 'blocks', 1.0);
+    this.audio.playAt('player.wind_burst', x, y, z, 'blocks', 0.9);
+    this.particles.spawnWindRing(x, y, z, 28);
   }
 
   /** The flash, the smoke cloud, the boom (louder close by) and the camera shake of an explosion at (x, y, z). */
@@ -1037,7 +1072,7 @@ export class Game {
       this.ui.hud.setHotbarVisible(!spectator && !this.state.is(State.INVENTORY));
       this.sky.setLiquid(p.headInLava ? 'lava' : p.headInWater ? 'water' : null);
       if (p.onFire && !p.dead && !spectator) this.particles.spawnFlame(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, first ? 1 : 2, 0.35, 0.9); // burning
-      if (p.rocketTime > 0 && !p.dead) this.rocketTrail(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, p.velocity.x, p.velocity.y, p.velocity.z);
+      if ((p.rocketTime > 0 || p.dashTime > 0) && !p.dead) this.rocketTrail(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, p.velocity.x, p.velocity.y, p.velocity.z); // a glide boost or a dash
       this.sky.update(this.renderer.camera);
       this.audio.update(dt, this.renderer.camera, p, this.world);
       this._footsteps();

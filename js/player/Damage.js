@@ -1,6 +1,8 @@
 // Damage.js — the health numbers, pure so Node checks can print them: 100 health, +1 every 7 s,
 // gentle fall damage with armor (boots count double), player-vs-player damage scaled ×5 with armor reduction
-// and critical hits, and the death messages.
+// and critical hits, the mace's and the spears' velocity-based damage, and the death messages.
+
+import { GRAVITY, TERMINAL_VELOCITY } from '../config/Constants.js';
 
 export const MAX_HEALTH = 100;
 export const REGEN_SECONDS = 7;
@@ -50,6 +52,60 @@ export function lethalFall(armorPoints = 0, bootsPoints = 0) {
 export function pvpDamage(attackDamage, crit, victimArmorPoints = 0) {
   return Math.max(0, Math.round(attackDamage * PVP_DAMAGE_SCALE * (crit ? CRIT_MULTIPLIER : 1) * armorReduction(victimArmorPoints)));
 }
+
+// ---- The mace: damage from the vertical closing speed, smash attacks and the wind burst ----
+/** Base damage in weapon units (×5 against players like every weapon); the same number as the item's `tool.damage`. */
+export const MACE_BASE_DAMAGE = 5;
+/** The "decimal": each block/s of closing speed adds MACE_VELOCITY_FACTOR × MACE_DAMAGE_PER_UNIT (0.5) damage. Tune these three to rebalance. */
+export const MACE_VELOCITY_FACTOR = 0.05;
+export const MACE_DAMAGE_PER_UNIT = 10;
+/** Closing speed of a smash attack: the speed after a 1.5-block fall, √(2 × GRAVITY 32 × 1.5) ≈ 9.8 blocks/s. */
+export const MACE_SMASH_SPEED = 9.8;
+/** The wind burst: the attacker's velocity.y after a smash (23.5 ≈ 8.6 blocks up with gravity 32, about 0.73 s to the peak; was 21 ≈ 7 blocks). */
+export const MACE_BURST_VELOCITY = 23.5;
+/** Both velocities are clamped to ±TERMINAL_VELOCITY before the formula, so the damage tops out at 5 + 156 × 0.5 = 83 (415 to an unarmored player). */
+export const MACE_VELOCITY_CLAMP = TERMINAL_VELOCITY;
+
+export function clampMaceVelocity(vy) { const v = Number(vy) || 0; return Math.max(-MACE_VELOCITY_CLAMP, Math.min(MACE_VELOCITY_CLAMP, v)); }
+/** Closing speed: how fast the attacker comes down onto the target, relative to it (y is up, falling is negative); 0 when not closing in. */
+export function maceClosingSpeed(attackerVy, targetVy) { return Math.max(0, clampMaceVelocity(targetVy) - clampMaceVelocity(attackerVy)); }
+/** Mace damage before armor and the player scale (the same units as the other weapons against mobs). */
+export function maceDamage(closingSpeed) { return MACE_BASE_DAMAGE + Math.max(0, closingSpeed) * MACE_VELOCITY_FACTOR * MACE_DAMAGE_PER_UNIT; }
+/** A smash attack: closing at MACE_SMASH_SPEED or more (the "fell more than 1.5 blocks" rule, as a speed). */
+export function isMaceSmash(closingSpeed) { return closingSpeed >= MACE_SMASH_SPEED; }
+/** Mace damage to a player: ×5 then the victim's armor; no 1.5× critical multiplier (the velocity bonus replaces it). */
+export function macePlayerDamage(closingSpeed, victimArmorPoints = 0) { return Math.max(0, Math.round(maceDamage(closingSpeed) * PVP_DAMAGE_SCALE * armorReduction(victimArmorPoints))); }
+/** Speed after falling `blocks` from rest, √(2 × GRAVITY × blocks), capped at the terminal velocity (for tables and tests). */
+export function fallSpeedAfter(blocks) { return Math.min(TERMINAL_VELOCITY, Math.sqrt(2 * GRAVITY * Math.max(0, blocks))); }
+
+// ---- Spears: damage from the horizontal closing speed, relative to the target ----
+/** The "decimal": each block/s of closing speed adds SPEAR_VELOCITY_FACTOR × SPEAR_DAMAGE_PER_UNIT (0.5) damage. */
+export const SPEAR_VELOCITY_FACTOR = 0.05;
+export const SPEAR_DAMAGE_PER_UNIT = 10;
+/** A hit closing at this speed or more is a "fast hit": the crit stars and the crit sound (there is no 1.5× multiplier). */
+export const SPEAR_FAST_SPEED = 8;
+/** Velocity components are clamped to this before the formula: the fastest a player moves horizontally (a rocket dash is 20, a rocket-boosted dive a little more). */
+export const SPEAR_VELOCITY_CLAMP = 30;
+
+export function clampSpearVelocity(v) { const n = Number(v) || 0; return Math.max(-SPEAR_VELOCITY_CLAMP, Math.min(SPEAR_VELOCITY_CLAMP, n)); }
+/** Unit horizontal vector from the attacker to the target ({ dx: 0, dz: 0 } when they share the column). */
+export function horizontalDir(attackerX, attackerZ, targetX, targetZ) {
+  const dx = targetX - attackerX, dz = targetZ - attackerZ, len = Math.hypot(dx, dz);
+  return len > 1e-6 ? { dx: dx / len, dz: dz / len } : { dx: 0, dz: 0 };
+}
+/**
+ * Horizontal closing speed: how fast attacker and target come together along the line between them (x / z only; `dx, dz`
+ * is the unit vector from the attacker to the target). Never below 0 — running away from a target, or sideways past it,
+ * counts for nothing; only the part of the relative velocity toward the target counts.
+ */
+export function spearClosingSpeed(attackerVx, attackerVz, targetVx, targetVz, dx, dz) {
+  return Math.max(0, (clampSpearVelocity(attackerVx) - clampSpearVelocity(targetVx)) * dx + (clampSpearVelocity(attackerVz) - clampSpearVelocity(targetVz)) * dz);
+}
+/** Spear damage before armor and the player scale: the tier's base (1–5) plus half the closing speed. */
+export function spearDamage(baseDamage, closingSpeed) { return baseDamage + Math.max(0, closingSpeed) * SPEAR_VELOCITY_FACTOR * SPEAR_DAMAGE_PER_UNIT; }
+export function isSpearFast(closingSpeed) { return closingSpeed >= SPEAR_FAST_SPEED; }
+/** Spear damage to a player: ×5 then the victim's armor; no 1.5× critical multiplier. */
+export function spearPlayerDamage(baseDamage, closingSpeed, victimArmorPoints = 0) { return Math.max(0, Math.round(spearDamage(baseDamage, closingSpeed) * PVP_DAMAGE_SCALE * armorReduction(victimArmorPoints))); }
 
 // ---- Zombies, arrows and explosions ----
 /** A zombie's melee hit after the victim's armor (15 before it: Minecraft's 3 hearts × 5). */

@@ -1,5 +1,5 @@
 // Particles.js — pooled camera-facing quads in one geometry: block-break chips (a random 2–4 texel sub-rectangle of
-// the block's texture), smoke puffs, flames and critical-hit stars (the crit_star tile, spinning, fading out). Real
+// the block's texture), smoke puffs, flames, critical-hit stars (the crit_star tile, spinning, fading out) and the mace's wind ring. Real
 // physics: chips spawn inside the broken block and fly outward, fall with PARTICLE_GRAVITY and a little air drag,
 // stop (never push) under a ceiling, bounce once on the ground and slide to a stop, bounce off walls. Positions are
 // rewritten per frame; nothing allocates while running. The Particles setting scales every spawn (All / 50 % / 15 %).
@@ -240,6 +240,31 @@ export class ParticleSystem {
 
   /** Ordinary hit: a small puff of about 5 particles. */
   spawnHitPuff(x, y, z) { this.spawnPuff(x, y, z, 5, 22); }
+
+  /**
+   * A mace smash: a ring of white wind / dust at the target's feet — about `n` flecks of the snow texture racing outward
+   * horizontally at 5–8 blocks/s and fading in 0.3–0.5 s (no gravity), every fourth one drifting up instead.
+   */
+  spawnWindRing(x, y, z, n = 28) {
+    n = this._budget(n);
+    const t4 = getTileIndex('snow') * 4;
+    const u0 = TILE_UVS[t4], u1 = TILE_UVS[t4 + 2], v1 = TILE_UVS[t4 + 3];
+    const texel = (u1 - u0) / TILE_SIZE;
+    for (let k = 0; k < n; k++) {
+      if (this.count >= MAX_PARTICLES) return;
+      const i = this.count++;
+      this._reset(i);
+      const a = (k / n) * Math.PI * 2 + (Math.random() - 0.5) * 0.3, up = k % 4 === 0;
+      const sp = up ? 1.5 + Math.random() : 5 + Math.random() * 3;
+      this.pos[i * 3] = x + Math.cos(a) * 0.3; this.pos[i * 3 + 1] = y + 0.1 + Math.random() * 0.15; this.pos[i * 3 + 2] = z + Math.sin(a) * 0.3;
+      this.vel[i * 3] = Math.cos(a) * sp; this.vel[i * 3 + 1] = up ? 1.5 + Math.random() : 0.3; this.vel[i * 3 + 2] = Math.sin(a) * sp;
+      this.maxLife[i] = this.life[i] = 0.3 + Math.random() * 0.2;
+      const tx = Math.floor(Math.random() * (TILE_SIZE - 3)), ty = Math.floor(Math.random() * (TILE_SIZE - 3));
+      this.uvRect[i * 4] = u0 + tx * texel; this.uvRect[i * 4 + 1] = v1 - (ty + 3) * texel; this.uvRect[i * 4 + 2] = u0 + (tx + 3) * texel; this.uvRect[i * 4 + 3] = v1 - ty * texel;
+      this.shade[i] = 1.2; this.sizes[i] = SIZE * (1.3 + Math.random() * 0.8);
+      this.fade[i] = 1; this.gravityScale[i] = 0;
+    }
+  }
 
   /** @deprecated kept for older callers: the small pre-Update-#6 star burst. */
   spawnCritSmall(x, y, z, n = 14, blockId = 22) {

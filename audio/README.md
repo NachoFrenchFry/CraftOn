@@ -112,6 +112,8 @@ columns are the variation the manifest gives each sound right now.
 | `player/splash` | entering water fast | 0.5–1 s | no | 8 % | 5 % |
 | `player/swim` | a swim stroke (every 0.6 s while swimming) | 0.3–0.6 s | no | 8 % | 5 % |
 | `player/glide_wind` | the wind rush while gliding, louder with speed (a loop) | 4–8 s | yes | 0 % | 0 % |
+| `player/mace_smash` | a mace smash attack lands (the heavy thud, at the target) | 0.4–0.6 s | no | 5 % | 5 % |
+| `player/wind_burst` | the wind burst that launches the attacker after a mace smash | 0.6–0.9 s | no | 5 % | 5 % |
 | `items/rocket_launch` | a rocket fired while gliding | 0.4–0.8 s | no | 6 % | 5 % |
 | `blocks/chest_open` | a chest is opened | 0.2–0.5 s | no | 5 % | 5 % |
 | `blocks/chest_close` | a chest is closed | 0.2–0.5 s | no | 5 % | 5 % |

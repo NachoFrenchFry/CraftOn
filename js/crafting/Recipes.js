@@ -30,6 +30,14 @@ export const RECIPES = Object.freeze([
   { id: 'stone_sword', result: { item: 'stone_sword', count: 1 }, inputs: [{ item: 'cobblestone', count: 2 }, { item: 'planks', count: 1 }], stations: ['crafting_table'] },
   { id: 'iron_sword', result: { item: 'iron_sword', count: 1 }, inputs: [{ item: 'iron_ingot', count: 2 }, { item: 'planks', count: 1 }], stations: ['crafting_table'] },
   { id: 'diamond_sword', result: { item: 'diamond_sword', count: 1 }, inputs: [{ item: 'diamond', count: 2 }, { item: 'planks', count: 1 }], stations: ['crafting_table'] },
+  // Spears (1 material + 2 sticks, Minecraft's recipe): base 1–5 plus the horizontal closing speed.
+  { id: 'wooden_spear', result: { item: 'wooden_spear', count: 1 }, inputs: [{ item: 'planks', count: 1 }, { item: 'stick', count: 2 }], stations: ['crafting_table'] },
+  { id: 'stone_spear', result: { item: 'stone_spear', count: 1 }, inputs: [{ item: 'cobblestone', count: 1 }, { item: 'stick', count: 2 }], stations: ['crafting_table'] },
+  { id: 'golden_spear', result: { item: 'golden_spear', count: 1 }, inputs: [{ item: 'gold_ingot', count: 1 }, { item: 'stick', count: 2 }], stations: ['crafting_table'] },
+  { id: 'iron_spear', result: { item: 'iron_spear', count: 1 }, inputs: [{ item: 'iron_ingot', count: 1 }, { item: 'stick', count: 2 }], stations: ['crafting_table'] },
+  { id: 'diamond_spear', result: { item: 'diamond_spear', count: 1 }, inputs: [{ item: 'diamond', count: 1 }, { item: 'stick', count: 2 }], stations: ['crafting_table'] },
+  // The mace (velocity-based smash weapon): a late-game cost, crafting table only.
+  { id: 'mace', result: { item: 'mace', count: 1 }, inputs: [{ item: 'iron_ingot', count: 10 }, { item: 'diamond', count: 5 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'bucket', result: { item: 'bucket', count: 1 }, inputs: [{ item: 'iron_ingot', count: 3 }], stations: ['crafting_table'] },
   // Axes: same pattern as the pickaxes.
   { id: 'wooden_axe', result: { item: 'wooden_axe', count: 1 }, inputs: [{ item: 'planks', count: 4 }], stations: ['crafting_table'] },

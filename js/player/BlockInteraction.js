@@ -7,10 +7,10 @@ import { ItemRegistry } from '../items/ItemRegistry.js';
 import { EAT_SECONDS } from './Damage.js';
 import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemStack } from '../items/ItemStack.js';
-import { effectiveBreakTime, attackDamage, isSword, isBow, knockbackScale } from '../items/Tools.js';
+import { effectiveBreakTime, attackDamage, isSword, isMace, isSpear, isBow, knockbackScale } from '../items/Tools.js';
 import { ItemIds } from '../items/ItemDefinitions.js';
 import { BOW_DRAW_SECONDS, BOW_MIN_DRAW_SECONDS } from '../config/Constants.js';
-import { bowPower } from './Damage.js';
+import { bowPower, maceClosingSpeed, maceDamage, isMaceSmash, MACE_BURST_VELOCITY, spearClosingSpeed, spearDamage, isSpearFast, horizontalDir } from './Damage.js';
 import { RaycastHit } from './BlockRaycaster.js';
 import { isSource, isLavaSource, isLiquid } from '../world/WaterLevels.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
@@ -25,7 +25,7 @@ const SWING_INTERVAL = 0.25;
 export class BlockInteraction {
   /**
    * @param {object} deps world, player, inventory, raycaster, selectionBox, breakOverlay, particles,
-   *   entities, audio, events, actions, input
+   *   entities, audio, events, actions, input (optional: isGuest, remotePlayers, entityBlocks, canEat, explosivesAllowed, pvpAllowed)
    */
   constructor(deps) {
     Object.assign(this, deps);
@@ -57,6 +57,8 @@ export class BlockInteraction {
     this.drawTimer = 0;
     /** Swinging at air: a click with nothing targeted swings once (no hold-to-repeat; SWING_INTERVAL only paces mining). */
     this.airSwinging = false;
+    /** Time of the last hit sent on another player (the host allows one every 0.45 s; the mace's burst prediction follows the same rule). */
+    this.lastPlayerHit = -Infinity;
   }
 
   get eatProgress() { return this.eatTimer > 0 ? Math.min(1, this.eatTimer / EAT_SECONDS) : 0; }
@@ -131,7 +133,7 @@ export class BlockInteraction {
       // A ray that hits a mob only ever attacks; the block behind it is never touched.
       this._stopMining();
       if (this.actions.wasPressed('attack')) this._attackMob(this.targetMob);
-    } else if (attack && t.hit && !this.attackLatched && this.attackLockTimer <= 0 && !(this.player.isCreative && isSword(held))) this._mine(dt); // swords never break blocks in Creative
+    } else if (attack && t.hit && !this.attackLatched && this.attackLockTimer <= 0 && !(this.player.isCreative && (isSword(held) || isMace(held) || isSpear(held)))) this._mine(dt); // swords, the mace and spears never break blocks in Creative
     else this._stopMining();
     // Swinging at air: a click with nothing under the crosshair still swings, once per click (holding does not repeat it;
     // holding while mining still works as before).
@@ -175,28 +177,97 @@ export class BlockInteraction {
 
   /**
    * Hit a mob with the held item's damage; the mob is knocked away from the player. A hit while falling
-   * (moving down, off the ground, not in water, not flying) is a critical hit for 1.5× damage.
+   * (moving down, off the ground, not in water, not flying) is a critical hit for 1.5× damage. The mace instead
+   * takes its damage from the closing speed (no 1.5×) and a smash launches the player (the wind burst) at once —
+   * a guest predicts the burst locally and sends its velocity with the attack; the host decides the damage.
    */
   _attackMob(mob) {
     const p = this.player;
-    const crit = p.velocity.y < 0 && !p.onGround && !p.inWater && !p.flying;
+    const held = this.heldItemId;
+    const mace = isMace(held), spear = isSpear(held);
+    const crit = !mace && !spear && p.velocity.y < 0 && !p.onGround && !p.inWater && !p.flying;
     this.events.emit('player:swing');
     this.attackLockTimer = ATTACK_BLOCK_SECONDS;
     this.attackLatched = true; // holding the button through a kill must not start mining the block behind
-    const damage = attackDamage(this.heldItemId) * (crit ? 1.5 : 1);
-    const kb = knockbackScale(this.heldItemId); // a stick doubles the knockback (no extra damage)
-    if (this.guest) { this.events.emit('player:attack', mob.id, damage, crit, kb); return; } // the host applies it and tells everyone
-    this.entities.mobs.hit(mob, damage, p.position.x, p.position.z, crit, true, kb);
+    const kb = knockbackScale(held); // a stick doubles the knockback (no extra damage)
+    let damage = attackDamage(held) * (crit ? 1.5 : 1), smash = false, fast = false, extra = null;
+    if (mace) {
+      const hit = this._maceHit(mob.velocity.y);
+      damage = hit.damage; smash = hit.smash; extra = { mace: true, vy: p.velocity.y };
+      if (smash) this._windBurst(mob.position.x, mob.position.y, mob.position.z); // a smash also shows the crit stars
+    } else if (spear) {
+      const hit = this._spearHit(mob.position.x, mob.position.z, mob.velocity.x, mob.velocity.z);
+      damage = hit.damage; fast = hit.fast; extra = { spear: true, vx: p.velocity.x, vz: p.velocity.z }; // a fast hit shows the crit stars; no lunge
+    }
+    if (this.guest) { this.events.emit('player:attack', mob.id, damage, crit || smash || fast, kb, extra); return; } // the host applies it and tells everyone
+    this.entities.mobs.hit(mob, damage, p.position.x, p.position.z, crit || smash || fast, true, kb);
   }
 
-  /** Hit another player (multiplayer): the host validates and applies the damage; the swing shows at once. */
+  /**
+   * Hit another player (multiplayer): the host validates and applies the damage; the swing shows at once. A mace hit
+   * sends the attacker's velocity.y along (the host sanity-checks it and uses the victim's latest one) and predicts the
+   * burst locally on a target the host could damage (Survival, PvP on, alive — the raycast saw it in reach — and outside the
+   * attacker's 0.45 s cooldown), so the bounce never waits for the network; the damage is always the host's number.
+   */
   _attackPlayer(rp) {
     const p = this.player;
-    const crit = p.velocity.y < 0 && !p.onGround && !p.inWater && !p.flying;
+    const mace = isMace(this.heldItemId), spear = isSpear(this.heldItemId);
+    const crit = !mace && !spear && p.velocity.y < 0 && !p.onGround && !p.inWater && !p.flying;
     this.events.emit('player:swing');
     this.attackLockTimer = ATTACK_BLOCK_SECONDS;
     this.attackLatched = true;
-    this.events.emit('player:hitPlayer', rp.id, crit);
+    if (spear) { // the host recomputes the closing speed from its own view of both velocities; a fast hit shows the crit stars
+      const hit = this._spearHit(rp.position.x, rp.position.z, rp.state.velocity.x, rp.state.velocity.z);
+      this.events.emit('player:hitPlayer', rp.id, hit.fast, { spear: true, vx: p.velocity.x, vz: p.velocity.z });
+      return;
+    }
+    if (!mace) { this.events.emit('player:hitPlayer', rp.id, crit); return; }
+    const now = performance.now() / 1000;
+    const hit = this._maceHit(rp.state.velocity.y);
+    const extra = { mace: true, vy: p.velocity.y };
+    const canHurt = rp.mode === 'survival' && !rp.dead && !p.isSpectator && (!this.pvpAllowed || this.pvpAllowed()) && now - this.lastPlayerHit >= 0.45;
+    this.lastPlayerHit = now;
+    if (hit.smash && canHurt) this._windBurst(rp.position.x, rp.position.y, rp.position.z);
+    this.events.emit('player:hitPlayer', rp.id, hit.smash, extra);
+  }
+
+  /**
+   * A mace hit (Damage.js): the closing speed is the target's velocity.y minus the attacker's, never below 0, from the real
+   * physics velocities at the click (never the fall distance); closing at MACE_SMASH_SPEED or more is a smash attack, which
+   * also launches the attacker unless gliding, flying, in water or in lava.
+   */
+  _maceHit(targetVy) {
+    const closing = maceClosingSpeed(this.player.velocity.y, targetVy);
+    return { closing, damage: maceDamage(closing), smash: isMaceSmash(closing) && this._canBurst() };
+  }
+
+  _canBurst() { const p = this.player; return !p.gliding && !p.flying && !p.isSpectator && !p.inWater && !p.inLava; }
+
+  /**
+   * A spear hit (Damage.js): the horizontal closing speed is the attacker's velocity minus the target's, projected on the line
+   * from the attacker to the target (x / z only, never below 0): sprinting into a standing target counts, running after one that
+   * flees at the same speed counts nothing, and only the part toward the target counts. Damage = the tier's base plus half of
+   * it; a hit closing at 8 blocks/s or more is a "fast hit" (crit stars and sound, no multiplier). Nothing pushes the attacker.
+   */
+  _spearHit(tx, tz, targetVx, targetVz) {
+    const p = this.player;
+    const d = horizontalDir(p.position.x, p.position.z, tx, tz);
+    const closing = spearClosingSpeed(p.velocity.x, p.velocity.z, targetVx, targetVz, d.dx, d.dz);
+    return { closing, damage: spearDamage(attackDamage(this.heldItemId), closing), fast: isSpearFast(closing) };
+  }
+
+  /**
+   * The wind burst: straight up at MACE_BURST_VELOCITY (the horizontal velocity stays, so a well-aimed bounce can hit again), the
+   * fall so far forgiven and the burst's height never counted (fallIgnoreAboveY, see PlayerPhysics); 'player:smash' plays the
+   * effects at the target (and, when hosting, tells the guests).
+   */
+  _windBurst(tx, ty, tz) {
+    const p = this.player;
+    p.velocity.y = MACE_BURST_VELOCITY;
+    p.onGround = false;
+    p.fallIgnoreAboveY = p.position.y;
+    p.fallStartY = null;
+    this.events.emit('player:smash', tx, ty, tz);
   }
 
   /** Spawn egg (Creative catalog only): the mob appears on top of the clicked face. */
@@ -343,6 +414,8 @@ export class BlockInteraction {
     if (armor) { if (!repeat) this._equipArmor(armor); return; }
     // The glider: right click while gliding fires a rocket from the inventory (Game checks the rockets and the cooldown).
     if (ItemRegistry.isGlider(stack.itemId)) { if (!repeat && this.player.gliding) this.events.emit('player:rocket'); return; }
+    // A rocket in the hand: right click dashes about 5 blocks along the look (Game checks the cooldown, water, flight; Survival uses one rocket).
+    if (ItemRegistry.isRocket(stack.itemId)) { if (!repeat) this.events.emit('player:dash'); return; }
     if (!t.hit) return;
     if (stack.itemId === ItemIds.BUCKET || stack.itemId === ItemIds.WATER_BUCKET || stack.itemId === ItemIds.LAVA_BUCKET) { this._useBucket(stack.itemId); return; }
     const item = ItemRegistry.get(stack.itemId);

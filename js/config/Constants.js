@@ -201,7 +201,13 @@ export const FOV_SPRINT = 0.20;               // +20 % while sprinting
 export const FOV_SPEED_START = 15;            // blocks/s where the speed widening begins (falling fast, flying fast, gliding)
 export const FOV_SPEED_FULL = 50;             // blocks/s where it reaches FOV_SPEED_MAX
 export const FOV_SPEED_MAX = 0.50;            // +50 %
-export const FOV_ROCKET_PUNCH = 0.17;         // the quick extra punch-in of a rocket boost (decays over ~0.5 s)
+export const FOV_ROCKET_PUNCH = 0.17;         // the quick extra punch-in of a rocket dash (decays over ~0.5 s)
+/** The "rocket rush" of a glider rocket boost: +90 % (on top of the speed widening, still under FOV_MAX_DEGREES and the FOV Effects
+ * setting), slammed in with its own time constant (full in about 0.15 s), held while the boost burns (ROCKET_SECONDS), then faded
+ * out smoothly over FOV_ROCKET_RUSH_FADE seconds — about 3 s in all. The rocket dash keeps the small punch instead. */
+export const FOV_ROCKET_RUSH = 0.9;
+export const FOV_ROCKET_RUSH_EASE_IN = 0.06;
+export const FOV_ROCKET_RUSH_FADE = 1.5;
 export const FOV_MAX_DEGREES = 140;           // the shown FOV never exceeds this, whatever the base setting and the effects
 export const FOV_EASE_IN = 0.3;               // time constant (s, game time) toward a wider FOV — also the bow zoom easing back
 export const FOV_EASE_OUT = 0.45;             // time constant toward a narrower FOV
@@ -210,8 +216,22 @@ export const FOV_EASE_OUT = 0.45;             // time constant toward a narrower
 export const GLIDE_TICK = 1 / 20;
 export const GLIDE_START_FALL_SPEED = 4;      // blocks/s of falling that starts a glide while holding the glider
 export const GLIDE_CRASH_SPEED = 0.5;         // blocks per tick lost against a wall before the crash damage starts ((lost × 10 − 3) × 5)
-export const ROCKET_SECONDS = 1.1;            // the boost lasts this long
+export const ROCKET_SECONDS = 1.4;            // the boost lasts this long (was 1.1)
+/** The boost tick, v += L × ROCKET_BOOST_ACCEL + (L × ROCKET_BOOST_TARGET − v) × 0.5, in the scaled glide units (blocks per tick, 1 = 10 blocks/s
+ * with GLIDE_SPEED_SCALE 0.5): Minecraft's own numbers. The tick converges on target + 2 × accel = 1.7 blocks per tick, so a level boost settles
+ * at about 17 blocks/s (16.9 with the glide drag) within half a second. (2.6 / 0.15, about 29 blocks/s, was tried on Nov 1 2026 and put back.) */
+export const ROCKET_BOOST_TARGET = 1.5;
+export const ROCKET_BOOST_ACCEL = 0.1;
 export const ROCKET_COOLDOWN = 0.2;           // seconds of game time between rockets
+/** Every glide speed is scaled by this: the elytra ticks run in blocks per tick, converted with 20 × GLIDE_SPEED_SCALE instead of 20 (the rocket boost's own target is set in these scaled units). */
+export const GLIDE_SPEED_SCALE = 0.5;
+/** A rocket used directly (right click, not gliding): a dash of ROCKET_DASH_SPEED × ROCKET_DASH_SECONDS = 5 blocks along the look, gravity off, then ROCKET_DASH_CARRY of the speed stays. */
+export const ROCKET_DASH_SPEED = 20;
+export const ROCKET_DASH_SECONDS = 0.25;
+export const ROCKET_DASH_COOLDOWN = 0.75;
+export const ROCKET_DASH_CARRY = 0.3;
+/** A landing during the dash or this long after it counts only the fall before the dash (never the dash's own speed). */
+export const ROCKET_DASH_LAND_GRACE = 0.1;
 export const ROCKET_RECIPE_COUNT = 3;
 
 // ---- Chests ----

@@ -130,5 +130,5 @@ export const BLOCK_DEFINITIONS = [
   storageBlock(B.DIAMOND_BLOCK, 'diamond_block', 'Block of Diamond'),
   // Explosives: placing one turns it into a primed explosive entity at once (BlockInteraction / EntityManager), so the
   // block is an item and an icon first; a block set directly (tests, chain reactions) is primed by any blast that reaches it.
-  { id: B.EXPLOSIVES, name: 'explosives', displayName: 'Explosives', textures: { top: 'explosives_top', bottom: 'explosives_bottom', side: 'explosives_side' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 0, soundGroup: S.GRASS, drops: 'explosives', placeable: true, blast: 0 },
+  { id: B.EXPLOSIVES, name: 'explosives', displayName: 'Explosives', description: 'Explodes', textures: { top: 'explosives_top', bottom: 'explosives_bottom', side: 'explosives_side' }, opaque: true, solid: true, renderType: 'cube', pass: 'opaque', breakTime: 0, soundGroup: S.GRASS, drops: 'explosives', placeable: true, blast: 0 },
 ];

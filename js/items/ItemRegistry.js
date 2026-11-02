@@ -26,6 +26,7 @@ for (const def of BLOCK_DEFINITIONS) {
     food: null,
     knockback: HAND_KNOCKBACK,
     bow: false,
+    description: def.description || null,
     def,
   });
 }
@@ -47,6 +48,7 @@ for (const def of ITEM_DEFINITIONS) {
     bow: !!def.bow,
     glider: !!def.glider,
     rocket: !!def.rocket,
+    description: def.description || null,
     def,
   });
 }
@@ -54,7 +56,7 @@ for (const it of items.values()) idByName.set(it.name, it.id);
 
 // ---- Catalog order: by category, then tier (wood → stone → gold → iron → diamond), then data order ----
 const TIER_ORDER = { wooden: 0, wood: 0, stone: 1, golden: 2, gold: 2, iron: 3, diamond: 4 };
-const TOOL_ORDER = { pickaxe: 0, axe: 1, sword: 2 };
+const TOOL_ORDER = { pickaxe: 0, axe: 1, sword: 2, mace: 3, spear: 4 }; // the mace sits after the swords, the spears after the mace, then the bow
 const PIECE_ORDER = { helmet: 0, chestplate: 1, gauntlets: 2, leggings: 3, boots: 4 };
 const tierOf = (name) => { const t = name.split('_')[0]; return TIER_ORDER[t] !== undefined ? TIER_ORDER[t] : 9; };
 /** Blocks by kind: building, natural, ores + storage, plants, functional. */
@@ -113,11 +115,13 @@ export const ItemRegistry = {
   /** Knockback points when hitting with the item (the empty hand has HAND_KNOCKBACK). */
   knockback(id) { const it = items.get(id); return it ? it.knockback : HAND_KNOCKBACK; },
   isBow(id) { const it = items.get(id); return !!(it && it.bow); },
+  /** The short gray tooltip line (what the item does), or null. */
+  description(id) { const it = items.get(id); return it ? it.description : null; },
   isGlider(id) { const it = items.get(id); return !!(it && it.glider); },
   isRocket(id) { const it = items.get(id); return !!(it && it.rocket); },
   /** Every item, including creative-only ones, in definition order. */
   all() { return [...items.values()]; },
-  /** Every item in catalog order: building, natural, ores / storage, plants, functional blocks, tools (wood → stone → gold → iron → diamond, then bow, arrows, stick), armor, food, materials, buckets, spawn eggs. */
+  /** Every item in catalog order: building, natural, ores / storage, plants, functional blocks, tools (wood → stone → gold → iron → diamond, the mace, the spears, then bow, arrows, stick), armor, food, materials, buckets, spawn eggs. */
   catalog() { return CATALOG.slice(); },
   /** Sort key of an item in that order (compare with compareCatalog). */
   catalogRank(id) { return ranks.get(id) || [99, 0, 0, 0]; },

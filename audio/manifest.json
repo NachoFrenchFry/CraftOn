@@ -476,6 +476,13 @@
    "volume": 1.0,
    "volumeVar": 0.05
   },
+  "player/mace_smash": {
+   "file": "mace_smash.wav",
+   "loop": false,
+   "pitch": 0.05,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
   "player/splash": {
    "file": "splash.wav",
    "loop": false,
@@ -487,6 +494,13 @@
    "file": "swim.wav",
    "loop": false,
    "pitch": 0.08,
+   "volume": 1.0,
+   "volumeVar": 0.05
+  },
+  "player/wind_burst": {
+   "file": "wind_burst.wav",
+   "loop": false,
+   "pitch": 0.05,
    "volume": 1.0,
    "volumeVar": 0.05
   },
