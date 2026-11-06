@@ -1071,6 +1071,7 @@ export class Game {
       }
       this.ui.hud.setHotbarVisible(!spectator && !this.state.is(State.INVENTORY));
       this.sky.setLiquid(p.headInLava ? 'lava' : p.headInWater ? 'water' : null);
+      this.renderer.liquidView = !!(p.headInLava || p.headInWater); // the underwater wobble runs the post chain only now
       if (p.onFire && !p.dead && !spectator) this.particles.spawnFlame(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, first ? 1 : 2, 0.35, 0.9); // burning
       if ((p.rocketTime > 0 || p.dashTime > 0) && !p.dead) this.rocketTrail(p.renderPosition.x, p.renderPosition.y + 0.9, p.renderPosition.z, p.velocity.x, p.velocity.y, p.velocity.z); // a glide boost or a dash
       this.sky.update(this.renderer.camera);

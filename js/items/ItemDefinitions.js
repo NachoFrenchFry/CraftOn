@@ -154,7 +154,7 @@ export const ITEM_DEFINITIONS = Object.freeze([
   { id: ItemIds.PIG_SPAWN_EGG, name: 'pig_spawn_egg', displayName: 'Pig Spawn Egg', texture: 'pig_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'pig', description: 'Spawns a pig' },
   { id: ItemIds.SHEEP_SPAWN_EGG, name: 'sheep_spawn_egg', displayName: 'Sheep Spawn Egg', texture: 'sheep_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'sheep', description: 'Spawns a sheep' },
   { id: ItemIds.ZOMBIE_SPAWN_EGG, name: 'zombie_spawn_egg', displayName: 'Zombie Spawn Egg', texture: 'zombie_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'zombie', description: 'Spawns a zombie' },
-  { id: ItemIds.GLIDER, name: 'glider', displayName: 'Glider', texture: 'glider', stackSize: 1, placeable: false, glider: true, creativeOnly: true, description: 'Lets you fly' },
+  { id: ItemIds.GLIDER, name: 'glider', displayName: 'Glider', texture: 'glider', stackSize: 1, placeable: false, glider: true, description: 'Lets you fly' }, // craftable since Nov 5 2026 (10 iron ingots + 2 obsidian)
   { id: ItemIds.ROCKET, name: 'rocket', displayName: 'Rocket', texture: 'rocket', stackSize: 64, placeable: false, rocket: true, description: 'Boosts you forward' },
   { id: ItemIds.CHICKEN_SPAWN_EGG, name: 'chicken_spawn_egg', displayName: 'Chicken Spawn Egg', texture: 'chicken_spawn_egg', stackSize: 64, placeable: false, creativeOnly: true, spawnEgg: 'chicken', description: 'Spawns a chicken' },
 ]);

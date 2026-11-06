@@ -4,11 +4,12 @@
 // vertex AO, fog and alpha test) that add directional sun light + sky ambient, sun shadows from two cascades
 // snapped to texel steps (a near one for tight contact shadows, the far one for distance), procedural fancy
 // water, waving plants and leaves and underwater caustics, and a post-process
-// chain (PostFX.js) for bloom, god rays, tone mapping, vignette and the underwater wobble. The sun direction is
-// Sky.sunDir (no day / night cycle). Everything is client-only; game logic never reads it.
+// chain (PostFX.js) for bloom, god rays and the underwater wobble (the colour grade is always on for everyone, shaders or
+// not — Grade.js / Renderer.js; the vignette is a CSS overlay). The sun direction is Sky.sunDir (no day / night cycle).
+// Everything is client-only; game logic never reads it.
 import * as THREE from 'three';
 import { PACKED_VERTEX_GLSL } from '../PackedVertex.js';
-import { createChunkMaterial, chunkPassDefines } from '../Materials.js';
+import { createChunkMaterial, chunkPassDefines, FOG_RAW_UNIFORM, CHUNK_FOG_GLSL } from '../Materials.js';
 import { AO_BRIGHTNESS, SKY_COLOR } from '../../config/Constants.js';
 import { SHADER_PRESETS } from '../../config/DefaultSettings.js';
 import { LIGHT_UNIFORMS } from '../LightUniforms.js';
@@ -128,6 +129,7 @@ uniform vec3 uSkyAmbient;
 uniform float uNearShadow;
 uniform float uShadowSlope;
 uniform float uNearSlope;
+uniform vec3 craftonFogRaw;
 float craftonSkyTerm = 1.0;
 ${LIGHT_CURVE_GLSL}`;
 
@@ -168,8 +170,11 @@ if (uLighting > 0.5) {
   outgoingLight = diffuseColor.rgb * max(vec3(craftonSkyTerm), craftonBlockTerm);
 }`;
 
-const FRAGMENT_TAIL = `#include <dithering_fragment>
-{
+/**
+ * Fancy water and the underwater caustics, inserted right before `tonemapping_fragment` (after the linear fog mix): on linear,
+ * ungraded colour — the order the post chain had, where this ran on the raw frame and the grade pass came after.
+ */
+const FRAGMENT_TAIL = `{
   float bits = floor(vExtra / 8.0);
   float isWater = mod(floor(bits / 4.0), 2.0);
   float face = mod(vExtra, 8.0);
@@ -380,10 +385,11 @@ export class ShaderPipeline {
     return moved;
   }
 
+  /** The post chain's flags: bloom, god rays and the underwater wobble (the grade is always on, the vignette a CSS overlay). */
   _applyPost() {
     const s = this.settings, g = this.game;
-    const flags = { bloom: !!s.get('shBloom'), godRays: !!s.get('shGodRays'), toneMap: !!s.get('shToneMap'), vignette: !!s.get('shVignette'), underwater: !!s.get('shUnderwater') };
-    const any = flags.bloom || flags.godRays || flags.toneMap || flags.vignette || flags.underwater;
+    const flags = { bloom: !!s.get('shBloom'), godRays: !!s.get('shGodRays'), underwater: !!s.get('shUnderwater') };
+    const any = flags.bloom || flags.godRays || flags.underwater;
     g.renderer.setPostFlags(any ? flags : null); // the renderer owns the chain (FXAA may keep it alive without effects)
     this.post = any ? g.renderer.post : null;
   }
@@ -450,6 +456,7 @@ export class ShaderPipeline {
       m.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, this.uniforms);
         shader.uniforms.uTiles = { value: atlas.arrayTexture };
+        shader.uniforms.craftonFogRaw = FOG_RAW_UNIFORM;
         shader.vertexShader = shader.vertexShader
           .replace('#include <common>', VERTEX_HEAD + '\nvarying float vTile;')
           .replace('#include <uv_vertex>', VERTEX_UV)
@@ -462,7 +469,9 @@ export class ShaderPipeline {
           .replace('#include <shadowmap_pars_fragment>', SHADOW_GLSL)
           .replace('#include <map_fragment>', 'vec4 sampledDiffuseColor = texture(uTiles, vec3(fract(vMapUv), vTile));\ndiffuseColor *= sampledDiffuseColor;')
           .replace('vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;', LIGHT_MODEL)
-          .replace('#include <dithering_fragment>', FRAGMENT_TAIL);
+          // Fog in linear space with the raw colour, then the water / caustics, then the grade (Three's fog_fragment, after the sRGB encode, is dropped).
+          .replace('#include <fog_fragment>', '')
+          .replace('#include <tonemapping_fragment>', CHUNK_FOG_GLSL + '\n' + FRAGMENT_TAIL + '\n#include <tonemapping_fragment>');
       };
       m.customProgramCacheKey = () => 'crafton-lit-' + key;
       // Never BackSide (and never null, which Three treats as BackSide for a FrontSide material): the chunk meshes are open

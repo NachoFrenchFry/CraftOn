@@ -4,9 +4,9 @@
 
 import * as C from '../config/Constants.js';
 import { isWater, isLava, heightOf } from '../world/WaterLevels.js';
-import { isSolidAt, sweepAxis, hasSupport, hasHeadroom } from '../entities/EntityPhysics.js';
+import { isSolidAt, sweepAxis, hasSupport, hasHeadroom, liquidUnderBox } from '../entities/EntityPhysics.js';
 import { stepHorizontal, stepFlyVertical } from './Movement.js';
-import { glideTick, rocketTick, crashDamage } from './Glide.js';
+import { glideTick, glideBoostTick, crashDamage } from './Glide.js';
 
 const EPS = C.COLLISION_EPSILON;
 
@@ -205,7 +205,7 @@ export class PlayerPhysics {
     } else if (p.gliding) {
       // Minecraft's elytra formula at 20 Hz (blocks per tick), converted to and from blocks per second with 20 × GLIDE_SPEED_SCALE
       // (the same path shape and glide ratio at half the speed); between ticks the velocity carries on and the usual swept
-      // collision moves the box. A rocket adds its boost tick while it burns.
+      // collision moves the box. A rocket adds its boost tick while it burns — and never slows a fast glide (glideBoostTick).
       p.glideTime += dt;
       p.glideAcc = (p.glideAcc || 0) + dt;
       if (p.rocketTime > 0) p.rocketTime -= dt;
@@ -216,8 +216,8 @@ export class PlayerPhysics {
       while (p.glideAcc >= C.GLIDE_TICK) {
         p.glideAcc -= C.GLIDE_TICK;
         this._tickV.x = v.x / k; this._tickV.y = v.y / k; this._tickV.z = v.z / k;
-        glideTick(this._tickV, look, p.pitch);
-        if (p.rocketTime > 0) rocketTick(this._tickV, look);
+        if (p.rocketTime > 0) glideBoostTick(this._tickV, look, p.pitch);
+        else glideTick(this._tickV, look, p.pitch);
         v.x = this._tickV.x * k; v.y = this._tickV.y * k; v.z = this._tickV.z * k;
       }
       p.fallStartY = p.position.y; // only the final descent after the glide counts as a fall
@@ -315,6 +315,9 @@ export class PlayerPhysics {
           let fall = start !== null ? start - p.position.y : 0;
           // Landing during a rocket dash or just after it: only the fall before the dash counts, never the dash's own speed.
           if (p.dashTime > 0 || p.dashGrace > 0) fall = p.dashFallBefore;
+          // Landing in water or lava of any level is a splash: the liquid samples above ran before the move and miss a thin sheet
+          // (or a 1-deep pool at terminal velocity) crossed within this step, so the whole fall would count (lava still burns).
+          if (fall > 0 && liquidUnderBox(this.world, box, movedY)) fall = 0;
           p.lastLandingFall = fall;
           this.events.emit('player:land', fall);
         }

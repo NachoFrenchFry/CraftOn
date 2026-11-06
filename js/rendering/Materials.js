@@ -3,13 +3,27 @@
 // the chunk passes are ShaderMaterials over the texture array (one 16×16 layer per atlas tile): a
 // vertex is the packed 8-byte word pair of PackedVertex.js, decoded in the vertex shader into its position, tile-local
 // coordinates that repeat with fract() across a greedy-merged quad, its tile index, shade (face brightness × AO) and
-// light. The look is MeshBasicMaterial's — texel × shade × the voxel light curve, fog, sRGB output — so nothing changes
-// on screen. Small block models (items, the held block) keep the plain atlas materials.
+// light. The look is MeshBasicMaterial's — texel × shade × the voxel light curve, fog, the colour grade, sRGB output. Fog is
+// mixed in LINEAR space with the raw fog colour before the grade (CHUNK_FOG_GLSL, FOG_RAW_UNIFORM), exactly as the post
+// chain did when it graded the whole frame after its RenderPass, so fogged terrain keeps the same haze on the direct path
+// (Three's own fog_fragment would mix after tone mapping and the sRGB encode). Small block models (items, the held block)
+// keep the plain atlas materials.
 
 import * as THREE from 'three';
 import { LIGHT_UNIFORMS } from './LightUniforms.js';
 import { LIGHT_CURVE_GLSL } from '../world/lighting/LightCurve.js';
 import { PACKED_VERTEX_GLSL } from './PackedVertex.js';
+
+/**
+ * The raw (ungraded) fog colour for the chunk shaders, one shared uniform: the Renderer copies scene.fog.color into it every
+ * frame before it swaps the scene's fog colour for the graded one that Three's built-in materials (mobs, items, the hand) mix
+ * in after their tone mapping. The chunk shaders mix this one in linear space before the grade, like the post chain did.
+ */
+export const FOG_RAW_UNIFORM = { value: new THREE.Color(1, 1, 1) };
+/** Linear fog with the raw colour, placed before `tonemapping_fragment` (in place of Three's fog_fragment, which runs after the sRGB encode). */
+export const CHUNK_FOG_GLSL = `#ifdef USE_FOG
+  { float craftonFogFactor = smoothstep(fogNear, fogFar, vFogDepth); gl_FragColor.rgb = mix(gl_FragColor.rgb, craftonFogRaw, craftonFogFactor); }
+#endif`;
 
 const CHUNK_VERTEX = `
 ${PACKED_VERTEX_GLSL}
@@ -36,6 +50,7 @@ uniform sampler2DArray tiles;
 uniform float opacity;
 uniform float alphaTest;
 uniform float boost;
+uniform vec3 craftonFogRaw;
 varying vec2 vUv;
 varying float vTile;
 varying vec3 vColor;
@@ -53,9 +68,9 @@ void main() {
   rgb *= craftonLightRGB(vLight); // max(sky curve, warm block curve)
   #endif
   gl_FragColor = vec4(rgb, texel.a * opacity);
+  ${CHUNK_FOG_GLSL}
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
-  #include <fog_fragment>
 }`;
 
 /**
@@ -81,6 +96,7 @@ export function createChunkMaterial(tileArray, key, { lit = true, cutout = false
     opacity: { value: opacity },
     alphaTest: { value: cutout ? 0.5 : 0 },
     boost: { value: boost },
+    craftonFogRaw: FOG_RAW_UNIFORM, // the raw fog colour, shared (see above)
     ...LIGHT_UNIFORMS, // the very same uniform objects: the Brightness slider applies live
   };
   const m = new THREE.ShaderMaterial({

@@ -7,7 +7,7 @@ import { Random } from '../../utils/Random.js';
 import { MobAI, MobState } from './MobAI.js';
 import { ZombieAI } from './ZombieAI.js';
 import { createMobModel } from './MobModel.js';
-import { moveBox, hasSupport, isSolidAt } from '../EntityPhysics.js';
+import { moveBox, hasSupport, isSolidAt, liquidUnderBox } from '../EntityPhysics.js';
 import { isWater, isLava } from '../../world/WaterLevels.js';
 import { multiplyLight, sameLight, copyLight } from '../../rendering/LightUniforms.js';
 import * as C from '../../config/Constants.js';
@@ -149,7 +149,8 @@ export class Mob {
     const m = moveBox(world, box, v.x, v.y, v.z, dt, this._move);
     if (m.landed) {
       v.y = 0;
-      if (this.fallStartY !== null) { this.lastFall = this.fallStartY - box.minY; this.justLanded = this.lastFall > 3; this.fallStartY = null; }
+      // The liquid samples above ran before the move: a landing in water or lava of any level (a thin sheet crossed within this step) is a splash, not a fall.
+      if (this.fallStartY !== null) { this.lastFall = liquidUnderBox(world, box) ? 0 : this.fallStartY - box.minY; this.justLanded = this.lastFall > 3; this.fallStartY = null; }
     }
     if (m.hitCeiling) v.y = 0;
     this.onGround = m.landed || (this.onGround && m.movedY === 0 && hasSupport(world, box));

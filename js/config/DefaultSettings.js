@@ -1,5 +1,6 @@
 // DefaultSettings.js — default user options. Settings.js merges these with localStorage and ignores keys that
-// no longer exist (the `clouds` toggle was removed; old saved settings still load). Later came
+// no longer exist (the `clouds` toggle was removed, and `shToneMap` on Nov 5 2026: the colour grade is always on; old
+// saved settings still load). Later came
 // the Performance section (render scale, FPS cap, simulation / entity distance, particles, leaves, chunk
 // updates) and the client-only shader options (the Shaders screen).
 
@@ -42,8 +43,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   shWaving: true,
   shBloom: false,
   shGodRays: false,
-  shToneMap: true,
-  shVignette: true,
+  shVignette: true,         // a CSS overlay (no post pass), shown while shaders are on
   shUnderwater: true,
 });
 
@@ -89,17 +89,16 @@ export const SHADER_SCHEMA = [
   { key: 'shWaving', label: 'Waving plants', type: 'toggle' },
   { key: 'shBloom', label: 'Bloom', type: 'toggle' },
   { key: 'shGodRays', label: 'God rays', type: 'toggle' },
-  { key: 'shToneMap', label: 'Tone mapping & color', type: 'toggle' },
   { key: 'shVignette', label: 'Vignette', type: 'toggle' },
   { key: 'shUnderwater', label: 'Underwater effects', type: 'toggle' },
 ];
 
-/** Presets: Low runs on integrated graphics (no shadows, no post), Ultra turns everything up. */
+/** Presets: Low runs on integrated graphics (no shadows, no post chain), Ultra turns everything up. The colour grade is always on. */
 export const SHADER_PRESETS = Object.freeze({
-  low: { shShadows: false, shShadowQuality: 1024, shShadowDistance: 32, shNearShadow: false, shLighting: true, shWater: false, shWaving: true, shBloom: false, shGodRays: false, shToneMap: true, shVignette: false, shUnderwater: false },
-  medium: { shShadows: true, shShadowQuality: 1024, shShadowDistance: 48, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: false, shGodRays: false, shToneMap: true, shVignette: true, shUnderwater: true },
-  high: { shShadows: true, shShadowQuality: 2048, shShadowDistance: 64, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: true, shGodRays: true, shToneMap: true, shVignette: true, shUnderwater: true },
-  ultra: { shShadows: true, shShadowQuality: 4096, shShadowDistance: 96, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: true, shGodRays: true, shToneMap: true, shVignette: true, shUnderwater: true },
+  low: { shShadows: false, shShadowQuality: 1024, shShadowDistance: 32, shNearShadow: false, shLighting: true, shWater: false, shWaving: true, shBloom: false, shGodRays: false, shVignette: false, shUnderwater: false },
+  medium: { shShadows: true, shShadowQuality: 1024, shShadowDistance: 48, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: false, shGodRays: false, shVignette: true, shUnderwater: true },
+  high: { shShadows: true, shShadowQuality: 2048, shShadowDistance: 64, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: true, shGodRays: true, shVignette: true, shUnderwater: true },
+  ultra: { shShadows: true, shShadowQuality: 4096, shShadowDistance: 96, shNearShadow: true, shLighting: true, shWater: true, shWaving: true, shBloom: true, shGodRays: true, shVignette: true, shUnderwater: true },
 });
 
 /** The "Performance mode" preset button. */

@@ -121,6 +121,12 @@
 }
 @keyframes fire-flicker { 0% { opacity: 0.75; transform: scaleY(1); } 100% { opacity: 1; transform: scaleY(1.06); } }
 #lava-overlay.hidden, #fire-overlay.hidden { display: none; }
+/* The shader "Vignette" option as a CSS overlay (no post pass, so it never forces the expensive chain): the first child of the HUD,
+   under everything else in it, shown only during gameplay while shaders and the option are on. The gradient matches the old grade
+   pass's 1 − 0.45 × smoothstep(0.42, 0.95, d) with d = length((uv − 0.5) × (1.3, 1)): an ellipse of radii 0.95 / 1.3 and 0.95
+   of the screen, clear up to d 0.42 (44.2 %), then the smoothstep sampled at 58 / 72.1 / 86 / 100 %. */
+#vignette-overlay { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 73.1% 95% at center, rgba(0, 0, 0, 0) 44.2%, rgba(0, 0, 0, 0.07) 58%, rgba(0, 0, 0, 0.225) 72.1%, rgba(0, 0, 0, 0.379) 86%, rgba(0, 0, 0, 0.45) 100%); }
+#vignette-overlay.hidden { display: none; }
 /* The rocket rush vignette (a glider boost): the screen edges darken with the camera's rush level; display none when idle. */
 #rocket-overlay { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 52%, rgba(255, 255, 255, 0.08) 70%, rgba(10, 10, 20, 0.5) 100%); }
 #rocket-overlay.hidden { display: none; }

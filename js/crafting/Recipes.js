@@ -23,6 +23,7 @@ export const RECIPES = Object.freeze([
   { id: 'furnace', result: { item: 'furnace', count: 1 }, inputs: [{ item: 'cobblestone', count: 8 }], stations: ['crafting_table'] },
   { id: 'chest', result: { item: 'chest', count: 1 }, inputs: [{ item: 'planks', count: 8 }], stations: ['crafting_table'] },
   { id: 'rocket', result: { item: 'rocket', count: 3 }, inputs: [{ item: 'coal', count: 1 }, { item: 'sand', count: 4 }, { item: 'planks', count: 1 }], stations: ['crafting_table'] },
+  { id: 'glider', result: { item: 'glider', count: 1 }, inputs: [{ item: 'iron_ingot', count: 10 }, { item: 'obsidian', count: 2 }], stations: ['crafting_table'] },
   { id: 'iron_pickaxe', result: { item: 'iron_pickaxe', count: 1 }, inputs: [{ item: 'iron_ingot', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'diamond_pickaxe', result: { item: 'diamond_pickaxe', count: 1 }, inputs: [{ item: 'diamond', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'stone_pickaxe', result: { item: 'stone_pickaxe', count: 1 }, inputs: [{ item: 'cobblestone', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
@@ -37,7 +38,7 @@ export const RECIPES = Object.freeze([
   { id: 'iron_spear', result: { item: 'iron_spear', count: 1 }, inputs: [{ item: 'iron_ingot', count: 1 }, { item: 'stick', count: 2 }], stations: ['crafting_table'] },
   { id: 'diamond_spear', result: { item: 'diamond_spear', count: 1 }, inputs: [{ item: 'diamond', count: 1 }, { item: 'stick', count: 2 }], stations: ['crafting_table'] },
   // The mace (velocity-based smash weapon): a late-game cost, crafting table only.
-  { id: 'mace', result: { item: 'mace', count: 1 }, inputs: [{ item: 'iron_ingot', count: 10 }, { item: 'diamond', count: 5 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
+  { id: 'mace', result: { item: 'mace', count: 1 }, inputs: [{ item: 'cobblestone', count: 5 }, { item: 'planks', count: 2 }, { item: 'iron_block', count: 3 }, { item: 'iron_ingot', count: 2 }], stations: ['crafting_table'] },
   { id: 'bucket', result: { item: 'bucket', count: 1 }, inputs: [{ item: 'iron_ingot', count: 3 }], stations: ['crafting_table'] },
   // Axes: same pattern as the pickaxes.
   { id: 'wooden_axe', result: { item: 'wooden_axe', count: 1 }, inputs: [{ item: 'planks', count: 4 }], stations: ['crafting_table'] },

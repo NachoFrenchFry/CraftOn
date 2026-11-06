@@ -1,5 +1,6 @@
 // Sky.js — sky color / gradient dome, sun, and linear fog sized to the render distance.
-// Switches to dense blue fog while the camera is underwater.
+// Switches to dense blue fog while the camera is underwater. The dome grades and encodes its colour like every other
+// material (tonemapping + colorspace includes), so it looks the same drawn straight to the canvas as through the chain.
 
 import * as THREE from 'three';
 import { SKY_COLOR, WATER_FOG_COLOR, CHUNK_SIZE, UNDERWATER_FOG_NEAR, UNDERWATER_FOG_FAR, UNDERWATER_SKY_TINT, LAVA_FOG_COLOR, LAVA_FOG_NEAR, LAVA_FOG_FAR } from '../config/Constants.js';
@@ -21,6 +22,8 @@ void main() {
   float h = vWorldDir.y;
   vec3 c = h >= 0.0 ? mix(horizonColor, topColor, pow(h, 0.6)) : mix(horizonColor, bottomColor, pow(-h, 0.5));
   gl_FragColor = vec4(c, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`;
 
 export class Sky {

@@ -209,8 +209,8 @@ export class Benchmark {
       devicePixelRatio: window.devicePixelRatio,
       cores: navigator.hardwareConcurrency || null,
       settings: { renderDistance: s.get('renderDistance'), simulationDistance: s.get('simulationDistance'), renderScale: g.renderer.renderScale, fancyLeaves: s.get('fancyLeaves'), smoothLighting: s.get('smoothLighting'), shadersOn: s.get('shadersOn'), chunkUpdates: s.get('chunkUpdates'), antialias: s.get('antialias') },
-      /** Anti-aliasing in effect: the setting, the effective mode, whether the context is multisampled, the post target's samples, and whether the post chain draws. */
-      antialias: { setting: s.get('antialias'), effective: g.renderer.aaMode, contextMsaa: g.renderer.contextMsaa, samples: g.renderer.msaaSamples, post: !!g.renderer.post },
+      /** Anti-aliasing in effect: the setting, the effective mode, whether the context is multisampled, whether a post chain exists and whether the last frame went through it (its target is never multisampled; FXAA stands in there). */
+      antialias: { setting: s.get('antialias'), effective: g.renderer.aaMode, contextMsaa: g.renderer.contextMsaa, post: !!g.renderer.post, chainActive: g.renderer.chainActive, chainFxaa: !!(g.renderer.post && g.renderer.post.fxaaOn) },
       loading: this.loaded,
       standing: this.standing,
       flying: this.flying,

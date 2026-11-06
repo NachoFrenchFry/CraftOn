@@ -31,6 +31,22 @@ export function rocketTick(v, look, accel = ROCKET_BOOST_ACCEL, target = ROCKET_
 }
 
 /**
+ * One gliding tick while a rocket burns: the elytra tick, then the boost tick — and the speed never drops below what it was.
+ * The boost pulls the velocity halfway toward its target every tick in BOTH directions, so on its own a 40 blocks/s dive fell
+ * to the boost's own 17 within half a second. `hold` is the larger of the speed before and after the glide tick; the boost
+ * tick still steers toward the look, and when it came out slower the velocity is scaled back up to `hold`. Air drag stays.
+ */
+export function glideBoostTick(v, look, pitch, accel = ROCKET_BOOST_ACCEL, target = ROCKET_BOOST_TARGET) {
+  const before = Math.hypot(v.x, v.y, v.z);
+  glideTick(v, look, pitch);
+  const hold = Math.max(before, Math.hypot(v.x, v.y, v.z));
+  rocketTick(v, look, accel, target);
+  const now = Math.hypot(v.x, v.y, v.z);
+  if (now < hold && now > 1e-9) { const k = hold / now; v.x *= k; v.y *= k; v.z *= k; }
+  return v;
+}
+
+/**
  * A boost from a settled level glide: `glideSeconds` of level gliding from `speed` blocks/s, then `boostSeconds` of boosting (the glide
  * tick and the boost tick each 20 Hz tick, look level) with the given boost numbers; returns the speed in blocks/s at `scale`.
  */
@@ -38,8 +54,25 @@ export function simulateBoost(speed, glideSeconds, boostSeconds, scale = 1, acce
   const L = { x: 1, y: 0, z: 0 }, k = 20 * scale;
   const v = { x: speed / k, y: 0, z: 0 };
   for (let i = 0; i < Math.round(glideSeconds * 20); i++) glideTick(v, L, 0);
-  for (let i = 0; i < Math.round(boostSeconds * 20); i++) { glideTick(v, L, 0); rocketTick(v, L, accel, target); }
+  for (let i = 0; i < Math.round(boostSeconds * 20); i++) glideBoostTick(v, L, 0, accel, target);
   return Math.hypot(v.x, v.y, v.z) * k;
+}
+
+/**
+ * A rocket fired at `speed` blocks/s along the look at `pitch` (CraftOn's sign: negative = diving): `burnSeconds` of boosting, then
+ * plain gliding, sampled every `every` seconds up to `seconds`. `hold` false runs the plain glide + boost ticks of before (a boost
+ * could slow a fast glide); true runs glideBoostTick. Returns the speeds in blocks/s at `scale`.
+ */
+export function simulateRocketGlide(speed, pitch, seconds, { burnSeconds = 1.4, every = 0.5, scale = 1, hold = true } = {}) {
+  const L = { x: Math.cos(pitch), y: Math.sin(pitch), z: 0 }, k = 20 * scale;
+  const v = { x: L.x * speed / k, y: L.y * speed / k, z: 0 };
+  const out = [], ticks = Math.round(seconds * 20), burn = Math.round(burnSeconds * 20), step = Math.round(every * 20);
+  for (let i = 1; i <= ticks; i++) {
+    if (i <= burn) { if (hold) glideBoostTick(v, L, pitch); else { glideTick(v, L, pitch); rocketTick(v, L); } }
+    else glideTick(v, L, pitch);
+    if (i % step === 0) out.push(Math.hypot(v.x, v.y, v.z) * k);
+  }
+  return out;
 }
 
 /** Crash damage before armor from the horizontal speed lost in one tick (blocks per tick): (lost × 10 − 3) × 5 when positive. */

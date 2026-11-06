@@ -3,6 +3,7 @@
 
 import { SOLID } from '../blocks/BlockRegistry.js';
 import { COLLISION_EPSILON as EPS } from '../config/Constants.js';
+import { isLiquid } from '../world/WaterLevels.js';
 
 export function isSolidAt(world, x, y, z) {
   return SOLID[world.getBlock(x, y, z)] === 1;
@@ -61,6 +62,23 @@ export function hasSupport(world, box) {
   const x0 = Math.floor(box.minX + EPS), x1 = Math.floor(box.maxX - EPS);
   const z0 = Math.floor(box.minZ + EPS), z1 = Math.floor(box.maxZ - EPS);
   for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) if (isSolidAt(world, x, y, z)) return true;
+  return false;
+}
+
+/**
+ * Water or lava of ANY level in a cell the box's footprint covers at the box's bottom (shifted by `dy`, e.g. the sweep's
+ * movedY before the box is translated) or in the cell above it. A landing there is a splash, never an impact: the liquid
+ * samples the player and mobs take before moving sit at the box centre and 0.2 above the feet, so a fast fall crosses a thin
+ * flowing sheet (level-7 water is 0.11 high), or even a 1-deep pool at terminal velocity, and hits the floor within one step
+ * without any step having seen the body "in" the liquid — the whole fall would count.
+ */
+export function liquidUnderBox(world, box, dy = 0) {
+  const x0 = Math.floor(box.minX + EPS), x1 = Math.floor(box.maxX - EPS);
+  const z0 = Math.floor(box.minZ + EPS), z1 = Math.floor(box.maxZ - EPS);
+  const y = Math.floor(box.minY + dy + EPS);
+  for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+    if (isLiquid(world.getBlock(x, y, z)) || isLiquid(world.getBlock(x, y + 1, z))) return true;
+  }
   return false;
 }
 
