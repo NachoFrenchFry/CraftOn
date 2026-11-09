@@ -21,6 +21,8 @@ export const NEEDS_SUPPORT = new Uint8Array(BLOCK_COUNT);
 export const STONE_TYPE = new Uint8Array(BLOCK_COUNT);
 /** 1 = wood-type block (axes mine it faster). */
 export const WOOD_TYPE = new Uint8Array(BLOCK_COUNT);
+/** 1 = shovel-type block (grass, dirt, sand, gravel, clay, snow: shovels dig it faster). */
+export const SHOVEL_TYPE = new Uint8Array(BLOCK_COUNT);
 /** 1 = faces between two blocks of this type are culled (glass, water); 0 = kept (fancy leaves). */
 export const CULL_SAME = new Uint8Array(BLOCK_COUNT);
 /** Light opacity 0–15: air / glass / plants 0, leaves / water / ice 1, full solid blocks 15 (block light completely). */
@@ -78,6 +80,7 @@ for (const def of BLOCK_DEFINITIONS) {
   if (def.attach) { const d = { north: [0, 0, -1], south: [0, 0, 1], east: [1, 0, 0], west: [-1, 0, 0] }[def.attach]; SUPPORT_DIR[id * 3] = d[0]; SUPPORT_DIR[id * 3 + 1] = d[1]; SUPPORT_DIR[id * 3 + 2] = d[2]; }
   STONE_TYPE[id] = def.stoneType ? 1 : 0;
   WOOD_TYPE[id] = def.woodType ? 1 : 0;
+  SHOVEL_TYPE[id] = def.shovelType ? 1 : 0;
   CULL_SAME[id] = def.cullSameType === false ? 0 : 1;
   BLAST_RESISTANCE[id] = def.blast !== undefined ? def.blast : RENDER_TYPE[id] === RenderType.LIQUID ? 100 : (RENDER_TYPE[id] === RenderType.CROSS || RENDER_TYPE[id] === RenderType.TORCH || RENDER_TYPE[id] === RenderType.NONE) ? 0 : def.stoneType ? 6 : def.woodType ? 3 : 0.5;
   const names = faceTextureNames(def.textures);
@@ -137,6 +140,7 @@ export const BlockRegistry = {
   dropName(id) { const d = defsById[id]; return d && d.drops ? d.drops : null; },
   isStoneType(id) { return STONE_TYPE[id] === 1; },
   isWoodType(id) { return WOOD_TYPE[id] === 1; },
+  isShovelType(id) { return SHOVEL_TYPE[id] === 1; },
   /** 'crafting_table' | 'furnace' | 'chest' | null. */
   stationOf(id) { const d = defsById[id]; return d && d.station ? d.station : null; },
   /** True for blocks that hold items (chests of any facing). */

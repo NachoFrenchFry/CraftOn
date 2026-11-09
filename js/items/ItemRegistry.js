@@ -54,9 +54,9 @@ for (const def of ITEM_DEFINITIONS) {
 }
 for (const it of items.values()) idByName.set(it.name, it.id);
 
-// ---- Catalog order: by category, then tier (wood → stone → gold → iron → diamond), then data order ----
-const TIER_ORDER = { wooden: 0, wood: 0, stone: 1, golden: 2, gold: 2, iron: 3, diamond: 4 };
-const TOOL_ORDER = { pickaxe: 0, axe: 1, sword: 2, mace: 3, spear: 4 }; // the mace sits after the swords, the spears after the mace, then the bow
+// ---- Catalog order: by category, then tier (wood → stone → gold → iron → diamond → obsidian), then data order ----
+const TIER_ORDER = { wooden: 0, wood: 0, stone: 1, golden: 2, gold: 2, iron: 3, diamond: 4, obsidian: 5 }; // obsidian: armor only (no tools yet), after diamond
+const TOOL_ORDER = { pickaxe: 0, axe: 1, shovel: 2, sword: 3, mace: 4, spear: 5 }; // shovels between the axes and the swords; the mace right after the swords, the spears after the mace, then the bow
 const PIECE_ORDER = { helmet: 0, chestplate: 1, gauntlets: 2, leggings: 3, boots: 4 };
 const tierOf = (name) => { const t = name.split('_')[0]; return TIER_ORDER[t] !== undefined ? TIER_ORDER[t] : 9; };
 /** Blocks by kind: building, natural, ores + storage, plants, functional. */
@@ -121,7 +121,7 @@ export const ItemRegistry = {
   isRocket(id) { const it = items.get(id); return !!(it && it.rocket); },
   /** Every item, including creative-only ones, in definition order. */
   all() { return [...items.values()]; },
-  /** Every item in catalog order: building, natural, ores / storage, plants, functional blocks, tools (wood → stone → gold → iron → diamond, the mace, the spears, then bow, arrows, stick), armor, food, materials, buckets, spawn eggs. */
+  /** Every item in catalog order: building, natural, ores / storage, plants, functional blocks, tools (pickaxes, axes, shovels, swords, each wood → stone → gold → iron → diamond, the mace, the spears, then bow, arrows, stick), armor, food, materials, buckets, spawn eggs. */
   catalog() { return CATALOG.slice(); },
   /** Sort key of an item in that order (compare with compareCatalog). */
   catalogRank(id) { return ranks.get(id) || [99, 0, 0, 0]; },

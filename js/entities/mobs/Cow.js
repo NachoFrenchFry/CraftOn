@@ -7,7 +7,7 @@ export const COW = Object.freeze({
   type: 'cow',
   displayName: 'Cow',
   texture: 'cow',
-  health: 10,
+  health: 50, // ×5 since Nov 6 2026
   hitbox: [0.9, 1.4],
   walkSpeed: 1.1,
   panicSpeed: 2.3,

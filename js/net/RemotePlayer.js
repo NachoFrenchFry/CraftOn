@@ -243,11 +243,15 @@ export class RemotePlayerManager {
 
   clear() { for (const id of [...this.players.keys()]) this.remove(id); }
 
-  /** Nearest visible player hit by a ray (for attacks): { player, distance } or null. */
-  raycast(ox, oy, oz, dx, dy, dz, maxDistance) {
+  /**
+   * Nearest visible player hit by a ray (for attacks and arrows): { player, distance } or null. `skipId` leaves one player
+   * out of the search — an arrow's shooter, whose own box the arrow starts in — so the next-nearest player can be found
+   * (Nov 8 2026; melee attacks pass nothing and behave as before).
+   */
+  raycast(ox, oy, oz, dx, dy, dz, maxDistance, skipId = null) {
     let best = null, bestT = maxDistance;
     for (const rp of this.players.values()) {
-      if (!rp.visible || rp.dead || rp.state.spectator || !rp.interp.hasData) continue;
+      if (rp.id === skipId || !rp.visible || rp.dead || rp.state.spectator || !rp.interp.hasData) continue;
       const p = rp.position, hw = PLAYER_WIDTH / 2;
       const h = rp.state.crawling || rp.state.swimming ? 0.6 : rp.state.sneaking ? 1.5 : PLAYER_HEIGHT;
       const t = rayBox(ox, oy, oz, dx, dy, dz, p.x - hw, p.y, p.z - hw, p.x + hw, p.y + h, p.z + hw, bestT);

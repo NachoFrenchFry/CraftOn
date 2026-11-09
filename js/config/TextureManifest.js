@@ -34,6 +34,7 @@ export const GENERATED_TEXTURES = Object.freeze([
   'wooden_helmet', 'wooden_chestplate', 'wooden_gauntlets', 'wooden_leggings', 'wooden_boots',
   'iron_helmet', 'iron_chestplate', 'iron_gauntlets', 'iron_leggings', 'iron_boots',
   'diamond_helmet', 'diamond_chestplate', 'diamond_gauntlets', 'diamond_leggings', 'diamond_boots',
+  'obsidian_helmet', 'obsidian_chestplate', 'obsidian_gauntlets', 'obsidian_leggings', 'obsidian_boots',
   'cow_spawn_egg', 'pig_spawn_egg', 'sheep_spawn_egg', 'chicken_spawn_egg',
   // particle sprite
   'crit_star',
@@ -47,6 +48,8 @@ export const GENERATED_TEXTURES = Object.freeze([
   'zombie_spawn_egg', 'glider', 'rocket', 'chest_front', 'chest_side', 'chest_top',
   // the mace and the spears
   'mace', 'wooden_spear', 'stone_spear', 'golden_spear', 'iron_spear', 'diamond_spear',
+  // the shovels (Nov 6 2026)
+  'wooden_shovel', 'stone_shovel', 'golden_shovel', 'iron_shovel', 'diamond_shovel',
 ]);
 
 /**
@@ -85,7 +88,7 @@ export const SKIN_SIZE = Object.freeze([64, 64]);
  * chestplate (+ sleeves), gauntlets and boots nets, `<m>_layer_2.png` the leggings (waist + upper legs).
  * 64×32 box-UV nets like the mobs; see js/player/models/ArmorModel.js for the rectangles.
  */
-export const ARMOR_SHEET_MATERIALS = Object.freeze(['wooden', 'golden', 'iron', 'diamond']);
+export const ARMOR_SHEET_MATERIALS = Object.freeze(['wooden', 'golden', 'iron', 'diamond', 'obsidian']);
 export const ARMOR_TEXTURES = Object.freeze(ARMOR_SHEET_MATERIALS.flatMap((m) => [`${m}_layer_1`, `${m}_layer_2`]));
 export const ARMOR_TEXTURE_SIZE = Object.freeze([64, 32]);
 

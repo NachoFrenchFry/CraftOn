@@ -12,7 +12,7 @@ export const ZOMBIE = Object.freeze({
   texture: 'zombie',
   sheet: SKIN_SIZE,
   hostile: true,
-  health: 20,
+  health: 100, // ×5 since Nov 6 2026
   hitbox: [0.6, 1.95],
   walkSpeed: 2.3,
   panicSpeed: 2.3,

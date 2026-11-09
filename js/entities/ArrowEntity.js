@@ -15,6 +15,8 @@ import { isWater } from '../world/WaterLevels.js';
 
 /** Drag per 20 Hz tick while the arrow moves through water. */
 const ARROW_WATER_DRAG_PER_TICK = 0.6;
+/** A guest's frozen mirror (it touched a player or a mob) waits this long for the host's ARROW_REMOVE / ARROW_STUCK, then goes away. */
+export const MIRROR_FREEZE_SECONDS = 1;
 
 export const ARROW_LENGTH = 0.8, ARROW_HEIGHT = 0.25;
 let sharedGeometry = null;
@@ -64,6 +66,9 @@ export class ArrowEntity {
     this.id = o.id ?? null;
     /** Guests mirror the host's arrow: the same physics locally, no damage, corrections from the host. */
     this.remote = !!o.remote;
+    /** A mirror that touched a player or a mob: hidden and stopped where it was until the host's verdict (freeze() / unfreeze()). */
+    this.frozen = false;
+    this.frozenTime = 0;
     this.stuck = false;
     /** The block a stuck arrow sits in; when it disappears the arrow comes loose and falls (set by land()). */
     this.stuckBlock = null;
@@ -100,6 +105,7 @@ export class ArrowEntity {
   fixedUpdate(dt, sweep) {
     this.age += dt;
     this.prevPosition.copy(this.position);
+    if (this.frozen) { this.frozenTime += dt; if (this.frozenTime >= MIRROR_FREEZE_SECONDS) this.dead = true; return null; }
     if (this.stuck) {
       this.stuckTime += dt;
       if (this.stuckTime >= ARROW_STUCK_SECONDS) { this.dead = true; return null; }
@@ -135,6 +141,11 @@ export class ArrowEntity {
     this.stuckBlock = block;
     this.velocity.multiplyScalar(0.001);
   }
+
+  /** A mirror's own hit on a player or a mob (Nov 8 2026): disappear and stop where it is; the host still decides what happened. */
+  freeze() { this.frozen = true; this.frozenTime = 0; this.mesh.visible = false; }
+  /** The host's arrow stuck somewhere after all (ARROW_STUCK): show the mirror again (stickArrowAt moves and lands it). */
+  unfreeze() { this.frozen = false; this.frozenTime = 0; this.mesh.visible = true; }
 
   /** Come loose (the block vanished, or a blast shook it out): it falls from rest and sticks again where it lands. */
   unstick() {

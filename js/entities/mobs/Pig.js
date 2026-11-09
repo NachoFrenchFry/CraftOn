@@ -4,7 +4,7 @@ export const PIG = Object.freeze({
   type: 'pig',
   displayName: 'Pig',
   texture: 'pig',
-  health: 10,
+  health: 50, // ×5 since Nov 6 2026
   hitbox: [0.9, 0.9],
   walkSpeed: 1.0,
   panicSpeed: 2.2,

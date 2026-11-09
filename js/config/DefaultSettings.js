@@ -1,15 +1,16 @@
 // DefaultSettings.js — default user options. Settings.js merges these with localStorage and ignores keys that
 // no longer exist (the `clouds` toggle was removed, and `shToneMap` on Nov 5 2026: the colour grade is always on; old
 // saved settings still load). Later came
-// the Performance section (render scale, FPS cap, simulation / entity distance, particles, leaves, chunk
-// updates) and the client-only shader options (the Shaders screen).
+// the Performance options (render scale, FPS cap, simulation / entity distance, particles, leaves, chunk
+// updates) and the client-only shader options. Since Nov 7 2026 one Settings screen shows everything in tabs
+// (SETTING_TABS); each schema row's `section` names its tab.
 
 export const DEFAULT_SETTINGS = Object.freeze({
   renderDistance: 8,      // chunks, 2..32 (above 16 the options screen warns about the computer and memory this needs)
   antialias: 'msaa4',     // 'off' | 'fxaa' | 'msaa2' | 'msaa4' (MSAA is set when the WebGL context is created: a reload applies it)
   fov: 70,                // degrees, 50..110
   mouseSensitivity: 0.5,  // 0.05..1.5
-  crouchMode: 'hold',     // 'hold' | 'toggle' (Controls screen)
+  crouchMode: 'hold',     // 'hold' | 'toggle' (Controls tab)
   invertY: false,
   masterVolume: 0.8,
   blocksVolume: 1.0,
@@ -47,25 +48,39 @@ export const DEFAULT_SETTINGS = Object.freeze({
   shUnderwater: true,
 });
 
-/** Sections of the Options screen, in order. */
-export const SETTING_SECTIONS = Object.freeze([['general', 'Game'], ['audio', 'Audio'], ['performance', 'Performance']]);
+/**
+ * The Settings screen's tabs, in order: id (the `section` of the schema rows it holds), name, the gray description line
+ * under the heading and the 16×16 icon shown in the tab column. The icons are placeholders: swap the PNGs under
+ * assets/ui/settings/ and nothing else needs to change.
+ */
+export const SETTING_TABS = Object.freeze([
+  { id: 'video', name: 'Video', description: 'How the world looks', icon: 'assets/ui/settings/video.png' },
+  { id: 'performance', name: 'Performance', description: 'Speed vs. quality', icon: 'assets/ui/settings/performance.png' },
+  { id: 'shaders', name: 'Shaders', description: 'Lighting, shadows and water effects', icon: 'assets/ui/settings/shaders.png' },
+  { id: 'audio', name: 'Audio', description: 'Volume levels', icon: 'assets/ui/settings/audio.png' },
+  { id: 'controls', name: 'Controls', description: 'Mouse and keys', icon: 'assets/ui/settings/controls.png' },
+]);
 
-/** Descriptions used by the options screen to build controls. */
+/**
+ * The rows the Settings screen builds (SettingRow.js), in order within each tab; `section` is the tab id. The Shaders
+ * tab has its own SHADER_SCHEMA below; the Controls tab shows its three rows here above the key-binding list.
+ */
 export const SETTING_SCHEMA = [
-  { key: 'renderDistance', label: 'Render Distance', type: 'range', min: 2, max: 32, step: 1, unit: ' chunks', section: 'general', warn: (v) => (v > 16 ? 'High render distances need a strong computer and lots of memory.' : null) },
-  { key: 'fov', label: 'FOV', type: 'range', min: 50, max: 110, step: 1, unit: '°', section: 'general' },
-  { key: 'fovEffects', label: 'FOV Effects (sprint / speed zoom)', type: 'range', min: 0, max: 100, step: 5, unit: '%', section: 'general' },
-  { key: 'mouseSensitivity', label: 'Mouse Sensitivity', type: 'range', min: 0.05, max: 1.5, step: 0.05, unit: '', section: 'general' },
-  { key: 'invertY', label: 'Invert Mouse Y', type: 'toggle', section: 'general' },
-  { key: 'guiScale', label: 'GUI Scale', type: 'select', options: [[0, 'Auto'], [1, '1'], [2, '2'], [3, '3'], [4, '4']], section: 'general' },
-  { key: 'viewBobbing', label: 'View Bobbing', type: 'range', min: 0, max: 100, step: 5, unit: '%', section: 'general' },
-  { key: 'brightness', label: 'Brightness (Moody → Bright)', type: 'range', min: 0, max: 100, step: 5, unit: '%', section: 'general' },
-  { key: 'showFps', label: 'Show FPS', type: 'toggle', section: 'general' },
+  // ---- Video ----
+  { key: 'renderDistance', label: 'Render Distance', type: 'range', min: 2, max: 32, step: 1, unit: ' chunks', section: 'video', warn: (v) => (v > 16 ? 'High render distances need a strong computer and lots of memory.' : null) },
+  { key: 'fov', label: 'FOV', type: 'range', min: 50, max: 110, step: 1, unit: '°', section: 'video' },
+  { key: 'fovEffects', label: 'FOV Effects (sprint / speed zoom)', type: 'range', min: 0, max: 100, step: 5, unit: '%', section: 'video' },
+  { key: 'viewBobbing', label: 'View Bobbing', type: 'range', min: 0, max: 100, step: 5, unit: '%', section: 'video' },
+  { key: 'brightness', label: 'Brightness (Moody → Bright)', type: 'range', min: 0, max: 100, step: 5, unit: '%', section: 'video' },
+  { key: 'guiScale', label: 'GUI Scale', type: 'select', options: [[0, 'Auto'], [1, '1'], [2, '2'], [3, '3'], [4, '4']], section: 'video' },
+  { key: 'showFps', label: 'Show FPS', type: 'toggle', section: 'video' },
+  // ---- Audio ----
   { key: 'masterVolume', label: 'Master Volume', type: 'range', min: 0, max: 1, step: 0.05, percent: true, section: 'audio' },
   { key: 'blocksVolume', label: 'Blocks Volume', type: 'range', min: 0, max: 1, step: 0.05, percent: true, section: 'audio' },
   { key: 'playerVolume', label: 'Player Volume', type: 'range', min: 0, max: 1, step: 0.05, percent: true, section: 'audio' },
   { key: 'ambientVolume', label: 'Ambient Volume', type: 'range', min: 0, max: 1, step: 0.05, percent: true, section: 'audio' },
   { key: 'uiVolume', label: 'UI Volume', type: 'range', min: 0, max: 1, step: 0.05, percent: true, section: 'audio' },
+  // ---- Performance (the Performance mode button follows these rows) ----
   { key: 'renderScale', label: 'Render Scale', type: 'select', options: [[0.25, '25%'], [0.5, '50%'], [0.75, '75%'], [1, '100%'], [0, 'Auto']], section: 'performance' },
   { key: 'hiDpi', label: 'HiDPI Rendering', type: 'toggle', section: 'performance' },
   { key: 'maxFps', label: 'Max FPS', type: 'select', options: [[30, '30'], [60, '60'], [120, '120'], [0, 'Unlimited']], section: 'performance' },
@@ -76,9 +91,13 @@ export const SETTING_SCHEMA = [
   { key: 'smoothLighting', label: 'Smooth Lighting (AO)', type: 'toggle', section: 'performance' },
   { key: 'chunkUpdates', label: 'Chunk Updates per Frame', type: 'select', options: [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], section: 'performance' },
   { key: 'antialias', label: 'Anti-aliasing', type: 'select', options: [['off', 'Off'], ['fxaa', 'FXAA'], ['msaa2', 'MSAA 2×'], ['msaa4', 'MSAA 4×']], section: 'performance', hint: 'MSAA smooths block edges only (pixel art stays crisp); FXAA works live but may soften textures slightly. MSAA changes apply after a reload; without MSAA support FXAA is used.', warn: (v) => (typeof globalThis !== 'undefined' && globalThis.__craftonMsaa !== undefined && (String(v).startsWith('msaa') ? 'on' : 'off') !== globalThis.__craftonMsaa ? 'Reload the page to apply this MSAA setting' : null) },
+  // ---- Controls (the key-binding list follows these rows) ----
+  { key: 'mouseSensitivity', label: 'Mouse Sensitivity', type: 'range', min: 0.05, max: 1.5, step: 0.05, unit: '', section: 'controls' },
+  { key: 'invertY', label: 'Invert Mouse Y', type: 'toggle', section: 'controls' },
+  { key: 'crouchMode', label: 'Crouch mode', type: 'select', options: [['hold', 'Hold'], ['toggle', 'Toggle']], section: 'controls', hint: 'Hold: crouch while the key is down. Toggle: press once to crouch, again to stand (flying, swimming, a menu or death ends it).' },
 ];
 
-/** The Shaders screen rows; `shadersOn` and `shaderPreset` are the two controls above the list. */
+/** The Shaders tab rows; `shadersOn` (the master switch) and `shaderPreset` are its first two rows (ShadersTab.js). */
 export const SHADER_SCHEMA = [
   { key: 'shShadows', label: 'Shadows', type: 'toggle' },
   { key: 'shShadowQuality', label: 'Shadow quality', type: 'select', options: [[1024, '1024'], [2048, '2048'], [4096, '4096']], needs: 'shShadows' },

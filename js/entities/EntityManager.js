@@ -16,7 +16,7 @@ import { PASS, RenderPass, SOLID, RENDER_TYPE, RenderType, BlockRegistry } from 
 import { BlockIds } from '../blocks/BlockIds.js';
 import { ITEM_PICKUP_DELAY, ITEM_THROW_PICKUP_DELAY, ITEM_PICKUP_EXPAND_XZ, ITEM_PICKUP_EXPAND_Y, ARROW_SPEED, ARROW_BASE_DAMAGE, EXPLOSION_POWER, EXPLOSION_DROP_CHANCE, EXPLOSIONS_PER_STEP, EXPLOSIVE_CHAIN_FUSE_MIN, EXPLOSIVE_CHAIN_FUSE_MAX, EXPLOSION_KNOCKBACK, PLAYER_WIDTH, PLAYER_HEIGHT } from '../config/Constants.js';
 import { ITEM_HALF } from './ItemEntity.js';
-import { arrowMobDamage, explosionMobDamage } from '../player/Damage.js';
+import { arrowDamage, explosionMobDamage } from '../player/Damage.js';
 import { ItemIds } from '../items/ItemDefinitions.js';
 
 import { rayBox as rayBoxT } from '../utils/RayBox.js';
@@ -220,37 +220,46 @@ export class EntityManager {
 
   arrowById(id) { return this.arrows.find((a) => a.id === id) || null; }
 
+  /** Remove an arrow (a hit, a pickup, the host's ARROW_REMOVE, or one that died on its own: stuck too long, flown too long, the void, a frozen mirror's wait). */
   removeArrow(a) {
-    if (!a || a.dead) return;
-    a.dead = true;
+    if (!a) return;
     const i = this.arrows.indexOf(a);
-    if (i >= 0) this.arrows.splice(i, 1);
+    if (i < 0) return; // already gone (membership, not `dead`: an arrow that set its own `dead` flag must still be taken out — Nov 8 2026)
+    a.dead = true;
+    this.arrows.splice(i, 1);
     this.scene.remove(a.mesh);
     a.dispose();
     if (this.onArrowRemove && !this.remote && a.id !== null) this.onArrowRemove(a);
   }
 
-  /** Host correction for a mirrored arrow: it stuck at (x, y, z). */
+  /** Host correction for a mirrored arrow: it stuck at (x, y, z) (a frozen mirror shows again there). */
   stickArrowAt(id, x, y, z) {
     const a = this.arrowById(id);
     if (!a) return;
+    if (a.frozen) a.unfreeze();
     a.position.set(x, y, z); a.prevPosition.set(x, y, z); a.land();
   }
 
-  /** The nearest thing along the segment: a block face (voxel DDA), a mob, another player or the local player (never the shooter). */
+  /**
+   * The nearest thing along the segment: a block face (voxel DDA), a mob, a primed explosive (host only), another player or
+   * the local player — never the shooter: the player raycast skips it by id (so the next-nearest player can be hit even though a
+   * guest's arrow starts inside the guest's own box on the host) and the local player is skipped for its own arrows. There is no
+   * minimum age (Nov 8 2026: the old `age > 0.05` wait ignored every player for the first three steps, about 3 blocks at a full
+   * draw, so a close player was never hit). A guest's mirror sweeps the same players and mobs; its hits only hide and freeze it
+   * (_updateArrows), because the host decides.
+   */
   _sweep(a, ox, oy, oz, dx, dy, dz, len) {
     let best = null, bestT = len;
     if (this.raycaster) { const t = this.raycaster.solidDistance(ox, oy, oz, dx, dy, dz, len); if (t < len) { bestT = t; best = { t, kind: 'block', target: null }; } }
-    if (this.remote) return best; // guests only stop at blocks; the host decides hits
     if (this.mobs) { const h = this.mobs.raycast(ox, oy, oz, dx, dy, dz, bestT); if (h && h.distance < bestT) { bestT = h.distance; best = { t: h.distance, kind: 'mob', target: h.mob }; } }
-    if (this._explosivesOn()) for (const e of this.explosives) { // a primed explosive in the way goes off at once
+    if (!this.remote && this._explosivesOn()) for (const e of this.explosives) { // a primed explosive in the way goes off at once (the host's ARROW_REMOVE + EXPLOSION reach the guests)
       if (e.dead) continue;
       const b = e.updateAABB();
       const t = rayBoxT(ox, oy, oz, dx, dy, dz, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ, bestT);
       if (t >= 0 && t < bestT) { bestT = t; best = { t, kind: 'explosive', target: e }; }
     }
-    if (this.remotePlayers && a.age > 0.05) { const h = this.remotePlayers.raycast(ox, oy, oz, dx, dy, dz, bestT); if (h && h.player.id !== a.shooter && h.distance < bestT) { bestT = h.distance; best = { t: h.distance, kind: 'player', target: h.player }; } }
-    if (a.shooter !== 'self' && a.age > 0.05 && !this.player.isSpectator && !this.player.dead) {
+    if (this.remotePlayers) { const h = this.remotePlayers.raycast(ox, oy, oz, dx, dy, dz, bestT, a.shooter); if (h && h.distance < bestT) { bestT = h.distance; best = { t: h.distance, kind: 'player', target: h.player }; } }
+    if (a.shooter !== 'self' && this.player && !this.player.isSpectator && !this.player.dead) {
       const b = this.player.aabb;
       const t = rayBoxT(ox, oy, oz, dx, dy, dz, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ, bestT);
       if (t >= 0 && t < bestT) { bestT = t; best = { t, kind: 'player', target: 'self' }; }
@@ -265,6 +274,9 @@ export class EntityManager {
       const hit = a.fixedUpdate(dt, (ox, oy, oz, dx, dy, dz, len) => this._sweep(a, ox, oy, oz, dx, dy, dz, len));
       if (a.dead) { this.removeArrow(a); continue; }
       if (!hit) { this._arrowPickup(a); continue; }
+      // A guest's mirror touched a player or a mob: hide and freeze it there, no damage (the host decides); ARROW_REMOVE removes it,
+      // ARROW_STUCK shows it again where the host's arrow stuck, and after a second without either it goes away (ArrowEntity).
+      if (a.remote && hit.kind !== 'block') { a.freeze(); continue; }
       if (hit.kind === 'block') {
         // The cell the tip is in (the arrow stopped 0.02 before the face; the tip sits a hair inside it).
         const v = a.velocity, vl = v.length() || 1;
@@ -290,7 +302,7 @@ export class EntityManager {
         if (!e.dead) { this.removeExplosive(e); this.explode(e); }
       } else if (hit.kind === 'mob') {
         const bonus = a.power >= 1 ? Math.floor(Math.random() * 5) : 0;
-        const dmg = arrowMobDamage(a.power, bonus);
+        const dmg = arrowDamage(a.power, bonus);
         const v = a.velocity, len = Math.hypot(v.x, v.z) || 1;
         this.mobs.hit(hit.target, dmg, hit.target.position.x - v.x / len, hit.target.position.z - v.z / len, a.crit); // knockback along the flight
         if (this.effects) this.effects.arrowHitEntity(a.position.x, a.position.y, a.position.z);

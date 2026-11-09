@@ -1,49 +1,45 @@
-// ControlsMenu.js — the key-binding screen: grouped list of actions, each with up to three keys shown as chips (click a
-// chip to replace that key, × to remove it, + to add one; keyboard and mouse buttons), per-key conflict highlighting,
-// per-action reset, "Reset All to Defaults", the Crouch mode (Hold / Toggle) option and Done.
+// ControlsTab.js — the key-binding part of the Settings screen's Controls tab (its Mouse Sensitivity, Invert Mouse Y and
+// Crouch mode rows come from OptionsTab / SettingRow): the hint line, the grouped list of actions, each with up to three
+// keys shown as chips (click a chip to replace that key, × to remove it, + to add one; keyboard and mouse buttons),
+// per-key conflict highlighting, per-action reset and "Reset All to Defaults" at the end. Esc while waiting for a key
+// cancels only the listening (InputManager swallows that key), so the Settings screen stays open.
 
 import { ACTIONS, ACTION_GROUPS, MAX_KEYS_PER_ACTION, describeKey } from '../config/KeyBindings.js';
 
-export class ControlsMenu {
-  /** @param {import('../core/Game.js').Game} game */
-  constructor(game) {
+export class ControlsTab {
+  /**
+   * @param {import('../core/Game.js').Game} game
+   * @param {HTMLElement} list  the tab's scrolling list (the option rows are already in it)
+   * @param {() => boolean} visible  whether the Settings screen is open (chips are redrawn on changes only then)
+   */
+  constructor(game, list, visible) {
     this.game = game;
     this.store = game.keybinds;
-    this.root = document.getElementById('controls-menu');
-    this.list = document.getElementById('bind-list');
-    this.onDone = null;
+    this.visible = visible;
     /** { action, index } while waiting for a key (index = the chip being replaced, or the list length for "+"). */
     this.listening = null;
     /** action id → { row, keys, resetButton } */
     this.rows = new Map();
-    this._build();
-    document.getElementById('btn-binds-done').addEventListener('click', () => { game.audio.playUI('click'); this.close(); });
-    document.getElementById('btn-binds-reset-all').addEventListener('click', () => {
+    const hint = document.createElement('div');
+    hint.className = 'controls-hint';
+    hint.textContent = 'Every action can have up to three keys or mouse buttons: click a key to change it, + to add one, × to remove it, then press any key or mouse button. Esc cancels. Esc and the mouse wheel cannot be rebound.';
+    this.list = document.createElement('div');
+    this.list.id = 'bind-list'; this.list.className = 'bind-list';
+    const resetAll = document.createElement('button');
+    resetAll.id = 'btn-binds-reset-all'; resetAll.type = 'button'; resetAll.className = 'mc-button'; resetAll.textContent = 'Reset All to Defaults';
+    resetAll.addEventListener('click', () => {
       game.audio.playUI('click');
       if (!confirm('Reset every key binding to its default?')) return;
-      this._stopListening();
+      this.stopListening();
       this.store.resetAll();
       this.refresh();
     });
-    game.events.on('keybinds:changed', () => { if (!this.root.classList.contains('hidden')) this.refresh(); });
-    game.events.on('settings:changed', (key) => { if (key === 'crouchMode' && this.crouchSelect) this.crouchSelect.value = game.settings.get('crouchMode'); });
+    list.append(hint, this.list, resetAll);
+    this._build();
+    game.events.on('keybinds:changed', () => { if (this.visible()) this.refresh(); });
   }
 
   _build() {
-    // Crouch mode (Hold / Toggle), a setting that lives on this screen.
-    const option = document.createElement('div');
-    option.className = 'option-row bind-option';
-    const label = document.createElement('label');
-    const text = document.createElement('span'); text.textContent = 'Crouch mode';
-    const select = document.createElement('select');
-    select.id = 'crouch-mode';
-    for (const [value, name] of [['hold', 'Hold'], ['toggle', 'Toggle']]) { const o = document.createElement('option'); o.value = value; o.textContent = name; select.appendChild(o); }
-    select.value = this.game.settings.get('crouchMode');
-    select.addEventListener('change', () => { this.game.audio.playUI('click'); this.game.settings.set('crouchMode', select.value === 'toggle' ? 'toggle' : 'hold'); });
-    label.append(text, select);
-    option.appendChild(label);
-    this.list.appendChild(option);
-    this.crouchSelect = select;
     for (const group of ACTION_GROUPS) {
       const actions = ACTIONS.filter((a) => a.group === group);
       if (!actions.length) continue;
@@ -61,9 +57,10 @@ export class ControlsMenu {
         const keys = document.createElement('div');
         keys.className = 'bind-keys';
         const resetButton = document.createElement('button');
+        resetButton.type = 'button';
         resetButton.className = 'mc-button bind-reset';
         resetButton.textContent = 'Reset';
-        resetButton.addEventListener('click', () => { this.game.audio.playUI('click'); this._stopListening(); this.store.reset(action.id); this.refresh(); });
+        resetButton.addEventListener('click', () => { this.game.audio.playUI('click'); this.stopListening(); this.store.reset(action.id); this.refresh(); });
         row.append(name, keys, resetButton);
         this.list.appendChild(row);
         this.rows.set(action.id, { row, keys, resetButton });
@@ -81,6 +78,7 @@ export class ControlsMenu {
       chip.className = 'bind-chip' + (this.store.codeHasConflict(code) ? ' conflict' : '');
       chip.dataset.code = code;
       const keyButton = document.createElement('button');
+      keyButton.type = 'button';
       keyButton.className = 'mc-button bind-key' + (this.store.codeHasConflict(code) ? ' conflict' : '') + (listening === index ? ' listening' : '');
       keyButton.textContent = listening === index ? '> Press a key <' : describeKey(code);
       if (this.store.codeHasConflict(code)) {
@@ -89,15 +87,17 @@ export class ControlsMenu {
       }
       keyButton.addEventListener('click', (e) => { e.stopPropagation(); this._startListening(id, index); });
       const remove = document.createElement('button');
+      remove.type = 'button';
       remove.className = 'mc-button bind-chip-remove';
       remove.textContent = '×';
       remove.title = 'Remove this key';
-      remove.addEventListener('click', (e) => { e.stopPropagation(); this.game.audio.playUI('click'); this._stopListening(); this.store.remove(id, code); this.refresh(); });
+      remove.addEventListener('click', (e) => { e.stopPropagation(); this.game.audio.playUI('click'); this.stopListening(); this.store.remove(id, code); this.refresh(); });
       chip.append(keyButton, remove);
       row.keys.appendChild(chip);
     });
     if (codes.length < MAX_KEYS_PER_ACTION) {
       const add = document.createElement('button');
+      add.type = 'button';
       add.className = 'mc-button bind-add' + (listening === codes.length ? ' listening' : '');
       add.textContent = listening === codes.length ? '> Press a key <' : '+';
       add.title = 'Add a key or mouse button';
@@ -109,7 +109,7 @@ export class ControlsMenu {
   /** Wait for the next key / mouse button for one chip (index) or a new key (index = list length). */
   _startListening(actionId, index) {
     this.game.audio.playUI('click');
-    this._stopListening();
+    this.stopListening();
     this.listening = { action: actionId, index };
     this.refresh();
     this.game.input.beginCapture((code) => {
@@ -122,7 +122,8 @@ export class ControlsMenu {
     });
   }
 
-  _stopListening() {
+  /** Cancel a pending key capture (Done, Esc handled by the input, another tab, a reset). */
+  stopListening() {
     if (!this.listening) return;
     this.game.input.cancelCapture();
     this.listening = null;
@@ -135,22 +136,5 @@ export class ControlsMenu {
       this._renderKeys(id, row);
       row.resetButton.disabled = this.store.isDefault(id);
     }
-    if (this.crouchSelect) this.crouchSelect.value = this.game.settings.get('crouchMode');
-  }
-
-  get isOpen() { return !this.root.classList.contains('hidden'); }
-
-  open(onDone) {
-    this.onDone = onDone;
-    this.refresh();
-    this.root.classList.remove('hidden');
-  }
-
-  close() {
-    this._stopListening();
-    this.root.classList.add('hidden');
-    const cb = this.onDone;
-    this.onDone = null;
-    if (cb) cb();
   }
 }

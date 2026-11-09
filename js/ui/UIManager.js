@@ -3,8 +3,7 @@
 import { HUD } from './HUD.js';
 import { InventoryScreen } from './InventoryScreen.js';
 import { MainMenu } from './MainMenu.js';
-import { OptionsMenu } from './OptionsMenu.js';
-import { ControlsMenu } from './ControlsMenu.js';
+import { SettingsMenu } from './SettingsMenu.js';
 import { LoadingScreen } from './LoadingScreen.js';
 import { PauseMenu } from './PauseMenu.js';
 import { DebugOverlay } from './DebugOverlay.js';
@@ -13,7 +12,6 @@ import { MultiplayerMenu } from './MultiplayerMenu.js';
 import { ServerSettingsMenu } from './ServerSettingsMenu.js';
 import { DeathScreen } from './DeathScreen.js';
 import { Chat } from './Chat.js';
-import { ShadersMenu } from './ShadersMenu.js';
 import { State } from '../core/GameState.js';
 
 export class UIManager {
@@ -27,9 +25,7 @@ export class UIManager {
   /** Build screens (after the atlas and icons exist). */
   init() {
     const game = this.game;
-    this.controls = new ControlsMenu(game);
-    this.shaders = new ShadersMenu(game);
-    this.options = new OptionsMenu(game);
+    this.settings = new SettingsMenu(game); // one screen with tabs: Video, Performance, Shaders, Audio, Controls
     this.account = new AccountScreen(game);
     this.mainMenu = new MainMenu(game);
     this.multiplayer = new MultiplayerMenu(game);
@@ -58,9 +54,7 @@ export class UIManager {
     if (state !== State.BOOT) this.game.bootScreen.hide(); // the static boot screen gives way to the first real screen
     const inWorld = state === State.PLAYING || state === State.PAUSED || state === State.INVENTORY || state === State.DEAD;
     if (inWorld) this.hud.show(); else this.hud.hide();
-    this.options.root.classList.toggle('in-world', inWorld);
-    this.shaders.root.classList.toggle('in-world', inWorld);
-    this.controls.root.classList.toggle('in-world', inWorld);
+    this.settings.root.classList.toggle('in-world', inWorld);
     this.mainMenu.hide();
     this.mainMenu.hideWorlds();
     this.multiplayer.hideAll(state === State.KICKED);
@@ -99,7 +93,7 @@ export class UIManager {
   }
 
   update(dt) {
-    this.shaders.update(dt);
+    this.settings.update(dt);
     this.hud.update(dt);
     this.chat.update(dt);
     this.inventory.update(dt);

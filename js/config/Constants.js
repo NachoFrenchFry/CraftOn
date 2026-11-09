@@ -122,10 +122,10 @@ export const LAVA_UP_SPEED = 1.6;             // slow climb while holding jump
 export const LAVA_POOL_CAVERN_BLOCKS = 250;   // cheese-carved blocks in a chunk before its floor basins may hold lava
 export const LAVA_POOL_MAX_Y = 30;            // ordinary-cave basins (6–15 blocks) up to here
 export const LAVA_POOL_MAX_CELLS = 180;
-export const LAVA_POOL_CHANCE = 0.9;          // per qualifying chunk
+export const LAVA_POOL_CHANCE = 0.72;         // per qualifying chunk: the first draw of the chunk's lava rng, so lowering it (0.9 → 0.72, Nov 7 2026) only removes pools and keeps every other pool's exact place and size
 /** Lava sea: every cave cell at or below this height is lava, so the floors of deep caverns become lakes 20–60 blocks across. */
 export const LAVA_SEA_LEVEL = 10;
-export const DESERT_LAKE_CHANCE = 2 / 5;      // per desert chunk cell; with the flatness check about one lake every 4–6 desert chunks (smaller lakes, slightly commoner)
+export const DESERT_LAKE_CHANCE = 0.32;       // per desert chunk cell (the first draw of the cell's rng; 2/5 → 0.32 on Nov 7 2026, 20 % fewer lakes); with the flatness check about one lake every 5–7 desert chunks
 // Mega caves: one enormous cave system per MEGA_CAVE_CELL × MEGA_CAVE_CELL block cell, radius 200–320.
 export const MEGA_CAVE_CELL = 2048;
 export const MEGA_CAVE_RADIUS_MIN = 200;
@@ -142,7 +142,7 @@ export const SPECTATOR_SPEED_MAX = 5;
 export const SPECTATOR_SPEED_STEP = 1.25;   // wheel multiplier per notch
 
 // ---- Combat / mobs ----
-export const HAND_ATTACK_DAMAGE = 1;
+export const HAND_ATTACK_DAMAGE = 5;         // the real number a punch does (Nov 6 2026: weapons show and deal one number)
 export const ATTACK_REACH = 3.5;
 export const MOB_KNOCKBACK = 4.5;
 export const MOB_KNOCKBACK_UP = 3;
@@ -160,7 +160,7 @@ export const MOB_GROUP_MAX = 5;
 export const MOB_RESPAWN_SECONDS = 30;          // natural respawn attempts while under the cap
 export const MOB_RESPAWN_MIN_DISTANCE = 24;     // from every player
 export const MOB_RESPAWN_MIN_SKY_LIGHT = 9;     // not in caves
-export const MOB_FALL_DAMAGE_PER_BLOCK = 0.215; // max(0, fall − 3) × this, on the mob's own health scale
+export const MOB_FALL_DAMAGE_PER_BLOCK = 1.075; // max(0, fall − 3) × this (Damage.js mobFallDamage): a cow still dies from about 50 blocks
 export const MOB_WANDER_RADIUS = 10;
 export const MOB_MAX_DROP = 3;
 export const MOB_JUMP_VELOCITY = 8.6;

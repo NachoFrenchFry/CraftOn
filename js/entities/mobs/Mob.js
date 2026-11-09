@@ -239,8 +239,9 @@ export class Mob {
     } else root.rotation.z = 0;
   }
 
+  /** `healthScale: 5` marks rows saved since mob health went ×5 (Nov 6 2026): MobManager.deserialize converts older rows once. */
   serialize() {
-    return { type: this.type, x: this.position.x, y: this.position.y, z: this.position.z, yaw: this.yaw, health: this.health };
+    return { type: this.type, x: this.position.x, y: this.position.y, z: this.position.z, yaw: this.yaw, health: this.health, healthScale: 5 };
   }
 }
 

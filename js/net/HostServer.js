@@ -20,7 +20,7 @@ import { cleanChatText } from '../ui/Chat.js';
 const CHAT_LIMIT = 5;
 const CHAT_WINDOW_MS = 5000;
 import { attackDamage, isMace, isSpear } from '../items/Tools.js';
-import { ARMOR_POINTS, ItemIds } from '../items/ItemDefinitions.js';
+import { armorPointsFor, ItemIds } from '../items/ItemDefinitions.js';
 import { ItemStack } from '../items/ItemStack.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
 import { clickSlot, putIntoSlot } from '../items/SlotClick.js';
@@ -32,7 +32,7 @@ import { BlockRegistry, BREAK_TIME, SOLID } from '../blocks/BlockRegistry.js';
 import { isSupported, breakDependents } from '../blocks/Support.js';
 import { ItemRegistry } from '../items/ItemRegistry.js';
 import { isWater, isLiquid } from '../world/WaterLevels.js';
-import { REACH_CREATIVE, ITEM_PICKUP_EXPAND_XZ, ITEM_PICKUP_EXPAND_Y, PLAYER_WIDTH, PLAYER_HEIGHT, EXPLOSION_KNOCKBACK, TERMINAL_VELOCITY, ROCKET_DASH_COOLDOWN } from '../config/Constants.js';
+import { REACH_CREATIVE, ITEM_PICKUP_EXPAND_XZ, ITEM_PICKUP_EXPAND_Y, PLAYER_WIDTH, PLAYER_HEIGHT, EXPLOSION_KNOCKBACK, TERMINAL_VELOCITY, ROCKET_DASH_COOLDOWN, HAND_ATTACK_DAMAGE } from '../config/Constants.js';
 import { ITEM_HALF } from '../entities/ItemEntity.js';
 
 const LOBBY_HEARTBEAT_MS = 10000;
@@ -412,13 +412,8 @@ export class HostServer {
 
   get pvp() { const m = this.game.worldMeta; return !m || m.pvp !== false; }
 
-  /** Armor points of a connected peer from its replicated armor materials. */
-  _peerArmorPoints(peer) {
-    if (!peer.armor) return 0;
-    let n = 0;
-    for (const [slot, material] of Object.entries(peer.armor)) { const pts = material && ARMOR_POINTS[material]; if (pts && pts[slot]) n += pts[slot]; }
-    return n;
-  }
+  /** Armor points of a connected peer from its replicated armor materials (the shared helper); `{ explosion: true }` counts obsidian 1.5×. */
+  _peerArmorPoints(peer, opts = undefined) { return peer.armor ? armorPointsFor(peer.armor, opts) : 0; }
 
   /** A guest hit someone (HIT { target, crit, mace, vy }). */
   _hit(peer, msg) {
@@ -575,7 +570,8 @@ export class HostServer {
 
   /**
    * A guest hit a mob (ATTACK { id, damage, crit, kb, mace, vy } or { …, spear, vx, vz }): the damage is applied as sent (no limit
-   * for any item; only a non-number is guarded; a spear's fast-hit flag travels as `crit`), and a mace hit's smash is confirmed from
+   * for any item; only a non-number is guarded and falls back to the empty hand's HAND_ATTACK_DAMAGE; a spear's fast-hit flag
+   * travels as `crit`), and a mace hit's smash is confirmed from
    * the checked velocities (the mob's real velocity.y is here).
    */
   _attack(peer, msg) {
@@ -584,7 +580,7 @@ export class HostServer {
     if (!mob || !peer.state || peer.dead) return;
     const d = Math.hypot(mob.position.x - peer.state[0], mob.position.z - peer.state[2]);
     if (d > 6) return;
-    const damage = Math.max(0, Number(msg.damage) || 1);
+    const damage = Math.max(0, Number(msg.damage) || HAND_ATTACK_DAMAGE);
     const kb = Math.max(0.5, Math.min(3, Number(msg.kb) || 1)); // a stick: ×2
     let smash = false;
     if (msg.mace && isMace(peer.held)) { const vy = this._checkedVy(peer, msg.vy); smash = vy !== null && isMaceSmash(maceClosingSpeed(vy, mob.velocity.y)); }
@@ -750,13 +746,12 @@ export class HostServer {
   projectileHit(shooter, hit) {
     const peer = this.peers.get(hit.id);
     if (!peer || !peer.state || peer.dead || peer.mode !== 'survival') return;
-    const armor = this._peerArmorPoints(peer);
     let n, cause;
     if (hit.kind === 'arrow') {
       if (!this.pvp) return;
       const by = shooter === 'self' ? this.name : (this.peers.get(shooter) || {}).name || 'another player';
-      n = arrowPlayerDamage(hit.power, hit.bonus, armor); cause = { kind: 'arrow', by };
-    } else { n = explosionPlayerDamage(hit.impact, hit.power, armor); cause = { kind: 'explosion' }; }
+      n = arrowPlayerDamage(hit.power, hit.bonus, this._peerArmorPoints(peer)); cause = { kind: 'arrow', by };
+    } else { n = explosionPlayerDamage(hit.impact, hit.power, this._peerArmorPoints(peer, { explosion: true })); cause = { kind: 'explosion' }; } // the guest's explosion points: obsidian ×1.5
     if (n <= 0) return;
     peer.lastHurt = performance.now() / 1000;
     const k = hit.kind === 'explosion' ? EXPLOSION_KNOCKBACK * hit.impact / 6 : 1; // DAMAGE knockback is kx × 6

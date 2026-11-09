@@ -655,7 +655,7 @@ export class Game {
 
   /**
    * An arrow or an explosion reached a player (EntityManager.hurtPlayer): the local player takes it through the health
-   * system (armor applies, ×5 like every player hit); a guest gets it from the host (which knows their armor).
+   * system (armor applies, like every player hit); a guest gets it from the host (which knows their armor).
    */
   _projectileHurt(shooter, hit) {
     if (hit.id === 'self') {
@@ -667,7 +667,7 @@ export class Game {
         const by = rp ? rp.name : 'another player';
         this.health.damage(arrowPlayerDamage(hit.power, hit.bonus, armor), { kind: 'arrow', by }, { kx: hit.kx, kz: hit.kz, crit: hit.crit, ignoreInvuln: true });
       } else {
-        const n = explosionPlayerDamage(hit.impact, hit.power, armor);
+        const n = explosionPlayerDamage(hit.impact, hit.power, this.inventory.explosionArmorPoints()); // obsidian counts 1.5× here
         this.health.damage(n, { kind: 'explosion' }, { ignoreInvuln: true });
         const k = EXPLOSION_KNOCKBACK * hit.impact, v = this.player.velocity;
         v.x += hit.kx * k; v.z += hit.kz * k; v.y += hit.ky * k;
@@ -911,14 +911,12 @@ export class Game {
   _handleKeys() {
     const a = this.actions;
     const st = this.state;
-    if (this.input.capturing) return; // the Controls screen is recording a key
+    if (this.input.capturing) return; // the Settings screen's Controls tab is recording a key (Esc there only cancels that)
     if (a.wasPressed('debug')) this.ui.debug.toggle();
     if (a.wasPressed('atlasDebug')) this.ui.toggleAtlasView();
     const escape = this.input.wasPressed(PAUSE_CODE);
-    // Esc closes the topmost menu screen first (Controls, then Options), wherever it was opened from.
-    if (escape && this.ui.controls.isOpen) { this.ui.controls.close(); return; }
-    if (escape && this.ui.options.isOpen) { this.ui.options.close(); return; }
-    if (escape && this.ui.shaders.isOpen) { this.ui.shaders.close(); return; }
+    // Esc closes the Settings screen first, wherever it was opened from.
+    if (escape && this.ui.settings.isOpen) { this.ui.settings.close(); return; }
     if (!st.inWorld) return;
     // Esc while the mouse is locked makes the browser release the lock, and that release opens the pause menu
     // (UIManager._onPointerLock). Esc on an open screen closes it without a lock request: the game

@@ -5,7 +5,7 @@
 
 import { ItemStack } from './ItemStack.js';
 import { ItemRegistry } from './ItemRegistry.js';
-import { ARMOR_SLOTS } from './ItemDefinitions.js';
+import { ARMOR_SLOTS, armorPointsFor } from './ItemDefinitions.js';
 
 export const HOTBAR_SIZE = 9;
 export const MAIN_SIZE = 36;
@@ -175,12 +175,11 @@ export class Inventory {
     return a ? a.points : 0;
   }
 
-  /** Total armor points of every worn piece. */
-  armorPoints() {
-    let n = 0;
-    for (let k = 0; k < ARMOR_SLOTS.length; k++) { const s = this.slots[ARMOR_START + k]; const a = s ? ItemRegistry.armor(s.itemId) : null; if (a) n += a.points; }
-    return n;
-  }
+  /** Total armor points of every worn piece (the shared ItemDefinitions.armorPointsFor over the worn materials). */
+  armorPoints() { return armorPointsFor(this.armorMaterials()); }
+
+  /** Armor points against an explosion: obsidian pieces count 1.5× (BLAST_ARMOR_MULTIPLIER); used by Game for the local player's blast damage. */
+  explosionArmorPoints() { return armorPointsFor(this.armorMaterials(), { explosion: true }); }
 
   serialize() {
     return {

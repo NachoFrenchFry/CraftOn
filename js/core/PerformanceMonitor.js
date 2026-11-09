@@ -17,7 +17,7 @@ export class PerformanceMonitor {
     this.shaderLowTime = 0; this.shaderTipShown = false; this.shaderTipArmed = false;
     this.root = document.getElementById('perf-suggest');
     this.text = document.getElementById('perf-suggest-text');
-    document.getElementById('btn-perf-apply').addEventListener('click', () => { game.audio.playUI('click'); game.ui.options.applyPerformanceMode(); this.hideSuggestion(); });
+    document.getElementById('btn-perf-apply').addEventListener('click', () => { game.audio.playUI('click'); game.ui.settings.applyPerformanceMode(); this.hideSuggestion(); });
     document.getElementById('btn-perf-dismiss').addEventListener('click', () => { game.audio.playUI('click'); this.hideSuggestion(); });
     game.events.on('settings:changed', (key, value) => { if (key === 'shadersOn') { this.shaderTipArmed = !!value; this.shaderLowTime = 0; } });
   }

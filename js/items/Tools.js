@@ -1,9 +1,10 @@
 // Tools.js — mining speed and attack damage rules for held items, plus the tooltip lines (number stats + one description). Pure.
 
 import { ItemRegistry } from './ItemRegistry.js';
-import { BREAK_TIME, STONE_TYPE, WOOD_TYPE } from '../blocks/BlockRegistry.js';
+import { BREAK_TIME, STONE_TYPE, WOOD_TYPE, SHOVEL_TYPE } from '../blocks/BlockRegistry.js';
 import { HAND_ATTACK_DAMAGE } from '../config/Constants.js';
 import { HAND_KNOCKBACK } from './ItemDefinitions.js';
+import { arrowDamage } from '../player/Damage.js';
 
 export const HAND_SPEED = 1;
 
@@ -12,6 +13,7 @@ export function miningSpeed(blockId, itemId) {
   const tool = itemId != null ? ItemRegistry.tool(itemId) : null;
   if (tool && tool.type === 'pickaxe' && STONE_TYPE[blockId] === 1) return tool.speed;
   if (tool && tool.type === 'axe' && WOOD_TYPE[blockId] === 1) return tool.speed;
+  if (tool && tool.type === 'shovel' && SHOVEL_TYPE[blockId] === 1) return tool.speed;
   return HAND_SPEED;
 }
 
@@ -54,15 +56,18 @@ export function knockbackPoints(itemId) { return itemId != null ? ItemRegistry.k
 export function knockbackScale(itemId) { return knockbackPoints(itemId) / HAND_KNOCKBACK; }
 
 /**
- * Tooltip lines: the plain green number stats (`+N Attack Damage`, `+N Armor`, `+N Knockback`, `+N Health`) and then the item's
- * one short gray description from its definition (what it does, never how to use it). Empty for blocks and materials.
+ * Tooltip lines: the plain green number stats (`N Attack Damage` — the real number a hit does, no "+" over the hand —, `+N Armor`,
+ * `+N Knockback`, `+N Health`) and then the item's one short gray description from its definition (what it does, never how to
+ * use it). Weapons show their base: the mace's 25 and a spear's 5–25 grow with the closing speed (the description says so); the
+ * bow shows a full-draw arrow's 45 (a critical arrow adds up to 20). Empty for blocks and materials; the stick keeps only its
+ * knockback line.
  */
 export function itemStatLines(itemId) {
   const lines = [];
   if (itemId == null) return lines;
   const tool = ItemRegistry.tool(itemId);
-  const bonus = tool ? (tool.damage || HAND_ATTACK_DAMAGE) - HAND_ATTACK_DAMAGE : 0;
-  if (bonus > 0) lines.push({ text: `+${bonus} Attack Damage`, color: 'green' });
+  const damage = tool && tool.damage ? tool.damage : ItemRegistry.isBow(itemId) ? arrowDamage(1) : 0;
+  if (damage > 0) lines.push({ text: `${damage} Attack Damage`, color: 'green' });
   const armor = ItemRegistry.armor(itemId);
   if (armor) lines.push({ text: `+${armor.points} Armor`, color: 'green' });
   const kb = knockbackPoints(itemId) - HAND_KNOCKBACK;

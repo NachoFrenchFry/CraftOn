@@ -37,7 +37,7 @@ export class MainMenu {
     game.events.on('account:changed', () => this.refreshAccount());
     document.getElementById('btn-play').addEventListener('click', () => { game.audio.playUI('click'); this.showWorlds(); });
     document.getElementById('btn-multiplayer').addEventListener('click', () => { game.audio.playUI('click'); ui.multiplayer.showMain(); });
-    document.getElementById('btn-options').addEventListener('click', () => { game.audio.playUI('click'); ui.options.open(() => this.show()); this.hide(); });
+    document.getElementById('btn-options').addEventListener('click', () => { game.audio.playUI('click'); ui.settings.open(() => this.show()); this.hide(); }); // "Settings"
     document.getElementById('btn-world-back').addEventListener('click', () => { game.audio.playUI('click'); this.hideWorlds(); this.show(); });
     document.getElementById('btn-new-world').addEventListener('click', () => { game.audio.playUI('click'); this.showCreate(); });
     document.getElementById('btn-create-back').addEventListener('click', () => { game.audio.playUI('click'); this.hideCreate(); this.showWorlds(); });

@@ -11,7 +11,7 @@ import { rayBox } from '../../utils/RayBox.js';
 import { Mob } from './Mob.js';
 import { MobState } from './MobAI.js';
 import { MOB_BY_TYPE, spawnsForChunk } from './MobSpawner.js';
-import { LAVA_DAMAGE, LAVA_DAMAGE_INTERVAL, FIRE_SECONDS, FIRE_DAMAGE, FIRE_INTERVAL } from '../../player/Damage.js';
+import { MOB_LAVA_DAMAGE, LAVA_DAMAGE_INTERVAL, FIRE_SECONDS, MOB_FIRE_DAMAGE, FIRE_INTERVAL } from '../../player/Damage.js';
 import { ItemRegistry } from '../../items/ItemRegistry.js';
 import { BlockRegistry } from '../../blocks/BlockRegistry.js';
 import { chunkKeyString } from '../../world/ChunkCoords.js';
@@ -432,19 +432,23 @@ export class MobManager {
     return spawned;
   }
 
-  /** Lava: the same numbers as the player (20 every 0.5 s in lava, then 5 s on fire at 5 per second; water puts it out). */
+  /**
+   * Lava: the player's timing (a tick every 0.5 s in lava, then 5 s on fire at a tick per second; water puts it out) with the mob
+   * numbers (MOB_LAVA_DAMAGE 100, MOB_FIRE_DAMAGE 25): one lava tick kills any mob, burning kills a chicken in 1 tick, a cow in 2,
+   * a zombie in 4 — the same deaths as before mob health went ×5.
+   */
   _lavaAndFire(m, dt) {
     if (m.isDying) { m.fireTimer = 0; return; }
     const p = m.position;
     if (m.inLava) {
       m.fireTimer = FIRE_SECONDS;
       m.lavaTimer -= dt;
-      if (m.lavaTimer <= 0) { m.lavaTimer = LAVA_DAMAGE_INTERVAL; m.invulnTimer = 0; this.hit(m, LAVA_DAMAGE, p.x, p.z, false, false); }
+      if (m.lavaTimer <= 0) { m.lavaTimer = LAVA_DAMAGE_INTERVAL; m.invulnTimer = 0; this.hit(m, MOB_LAVA_DAMAGE, p.x, p.z, false, false); }
     } else m.lavaTimer = 0;
     if (m.inWater) m.fireTimer = 0;
     if (m.fireTimer > 0) {
       m.fireTimer -= dt;
-      if (!m.inLava) { m.burnTick -= dt; if (m.burnTick <= 0) { m.burnTick = FIRE_INTERVAL; m.invulnTimer = 0; this.hit(m, FIRE_DAMAGE, p.x, p.z, false, false); } }
+      if (!m.inLava) { m.burnTick -= dt; if (m.burnTick <= 0) { m.burnTick = FIRE_INTERVAL; m.invulnTimer = 0; this.hit(m, MOB_FIRE_DAMAGE, p.x, p.z, false, false); } }
     } else m.burnTick = 0;
   }
 
@@ -474,15 +478,21 @@ export class MobManager {
     return out;
   }
 
-  /** Load saved mobs; they appear when their chunk loads. */
+  /**
+   * Load saved mobs; they appear when their chunk loads. Rows saved before mob health went ×5 (Nov 6 2026) carry no
+   * `healthScale: 5` marker and are converted once (a full-health cow saved as 10 loads as 50), without touching the input
+   * object; marked rows load unchanged, so saving and loading again never scales twice. Guests (`spawnRemote` /
+   * `deserializeRemote`) get the host's live rows and never convert.
+   */
   deserialize(list) {
     this.clear();
     if (!Array.isArray(list)) return;
     for (const d of list) {
-      if (!MOB_BY_TYPE[d.type]) continue;
-      const key = chunkKeyString(Math.floor(d.x) >> 4, Math.floor(d.z) >> 4);
+      if (!d || !MOB_BY_TYPE[d.type]) continue;
+      const row = d.healthScale === 5 || typeof d.health !== 'number' ? d : { ...d, health: d.health * 5, healthScale: 5 };
+      const key = chunkKeyString(Math.floor(row.x) >> 4, Math.floor(row.z) >> 4);
       if (!this.stored.has(key)) this.stored.set(key, []);
-      this.stored.get(key).push(d);
+      this.stored.get(key).push(row);
     }
   }
 }

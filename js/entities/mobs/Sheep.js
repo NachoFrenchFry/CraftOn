@@ -6,7 +6,7 @@ export const SHEEP = Object.freeze({
   displayName: 'Sheep',
   texture: 'sheep',
   woolTexture: 'sheep_wool',
-  health: 8,
+  health: 40, // ×5 since Nov 6 2026
   hitbox: [0.9, 1.3],
   walkSpeed: 1.0,
   panicSpeed: 2.2,

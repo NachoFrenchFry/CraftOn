@@ -7,7 +7,7 @@
 export const Station = Object.freeze({ INVENTORY: 'inventory', CRAFTING_TABLE: 'crafting_table', FURNACE: 'furnace' });
 
 const ARMOR_COST = { helmet: 5, chestplate: 8, gauntlets: 4, leggings: 7, boots: 4 };
-const ARMOR_MATERIAL = { wooden: 'planks', golden: 'gold_ingot', iron: 'iron_ingot', diamond: 'diamond' };
+const ARMOR_MATERIAL = { wooden: 'planks', golden: 'gold_ingot', iron: 'iron_ingot', diamond: 'diamond', obsidian: 'obsidian' }; // obsidian armor (Nov 8 2026): 5 / 8 / 4 / 7 / 4 obsidian like every set
 function armorRecipes() {
   const out = [];
   for (const [prefix, material] of Object.entries(ARMOR_MATERIAL)) for (const [piece, cost] of Object.entries(ARMOR_COST)) {
@@ -45,6 +45,12 @@ export const RECIPES = Object.freeze([
   { id: 'stone_axe', result: { item: 'stone_axe', count: 1 }, inputs: [{ item: 'cobblestone', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'iron_axe', result: { item: 'iron_axe', count: 1 }, inputs: [{ item: 'iron_ingot', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'diamond_axe', result: { item: 'diamond_axe', count: 1 }, inputs: [{ item: 'diamond', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
+  // Shovels: 2 planks + 1 material (the wooden one is 3 planks), crafting table only (Nov 6 2026).
+  { id: 'wooden_shovel', result: { item: 'wooden_shovel', count: 1 }, inputs: [{ item: 'planks', count: 3 }], stations: ['crafting_table'] },
+  { id: 'stone_shovel', result: { item: 'stone_shovel', count: 1 }, inputs: [{ item: 'cobblestone', count: 1 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
+  { id: 'golden_shovel', result: { item: 'golden_shovel', count: 1 }, inputs: [{ item: 'gold_ingot', count: 1 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
+  { id: 'iron_shovel', result: { item: 'iron_shovel', count: 1 }, inputs: [{ item: 'iron_ingot', count: 1 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
+  { id: 'diamond_shovel', result: { item: 'diamond_shovel', count: 1 }, inputs: [{ item: 'diamond', count: 1 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   // Concrete: 4 sand + 4 gravel → 8.
   { id: 'concrete', result: { item: 'concrete', count: 8 }, inputs: [{ item: 'sand', count: 4 }, { item: 'gravel', count: 4 }], stations: ['crafting_table'] },
   // Armor: helmet 5, chestplate 8, gauntlets 4, leggings 7, boots 4 of planks / iron ingots / diamonds.

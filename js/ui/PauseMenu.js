@@ -1,4 +1,4 @@
-// PauseMenu.js — Esc menu: resume, options, game mode toggle, save & quit (or Leave Server for guests), and while
+// PauseMenu.js — Esc menu: resume, Settings, game mode toggle, save & quit (or Leave Server for guests), and while
 // hosting a LAN server the "Hosting: <world> · Code ABC123 · N/8 players" line with Server Settings
 // and Stop Hosting. A guest without permission sees its game mode button disabled.
 
@@ -20,7 +20,7 @@ export class PauseMenu {
     document.getElementById('btn-pause-options').addEventListener('click', () => {
       game.audio.playUI('click');
       this.hide();
-      game.ui.options.open(() => this.show());
+      game.ui.settings.open(() => this.show());
     });
     this.modeButton.addEventListener('click', () => { game.audio.playUI('click'); game.cycleGameMode(); this.refresh(); });
     document.getElementById('btn-save-quit').addEventListener('click', () => { game.audio.playUI('click'); game.saveAndQuit(); });

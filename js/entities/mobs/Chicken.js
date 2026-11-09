@@ -7,7 +7,7 @@ export const CHICKEN = Object.freeze({
   type: 'chicken',
   displayName: 'Chicken',
   texture: 'chicken',
-  health: 4,
+  health: 20, // ×5 since Nov 6 2026 (weapons deal one real number; hits to kill unchanged)
   hitbox: [0.4, 0.7],
   walkSpeed: 1.0,
   panicSpeed: 2.2,
