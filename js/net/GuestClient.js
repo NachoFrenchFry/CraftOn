@@ -13,14 +13,16 @@ import { Signaling } from './Signaling.js';
 import { Msg, RejectReason, PLAYER_SNAPSHOT_HZ, JOIN_TIMEOUT_MS, encodePlayerState, decodeChunkRow } from './Protocol.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
+import { applyWorldSettingsMessage } from '../core/WorldSettings.js';
 
 const INV_SYNC_SECONDS = 2;
 
 /** Time allowed for the ICE connection and the WELCOME once the host's answer arrived (a relay can take a few seconds). */
 const CONNECT_TIMEOUT_MS = JOIN_TIMEOUT_MS;
 
-/** Toast per host rejection reason; unlisted reasons (stale request, rule) stay silent. */
-const REJECT_TEXT = Object.freeze({ far: 'Too far away', entity: 'Something is in the way' });
+/** Toast per host rejection reason; unlisted reasons (stale request, rule) stay silent. 'loading' shows at most once every LOADING_TOAST_MS. */
+const REJECT_TEXT = Object.freeze({ far: 'Too far away', entity: 'Something is in the way', loading: 'The server is still loading this area' });
+const LOADING_TOAST_MS = 3000;
 
 export class GuestClient {
   /** @param {import('../core/Game.js').Game} game */
@@ -170,12 +172,20 @@ export class GuestClient {
 
   /** A placed explosive goes through the host (it primes the entity for everyone, or refuses when explosives are off). */
   prime(x, y, z) { if (this.link && this.link.open) this.link.send(Msg.PRIME, { x, y, z }); }
+  /** Boats (Nov 15 2026): place one from my inventory, get in / out, hit one. */
+  boatPlace(x, y, z, yaw) { if (this.link && this.link.open) this.link.send(Msg.BOAT_PLACE, { x, y, z, yaw }); }
+  boatEnter(id) { if (this.link && this.link.open) this.link.send(Msg.BOAT_ENTER, { id }); }
+  boatLeave() { if (this.link && this.link.open) this.link.send(Msg.BOAT_LEAVE, {}); }
+  boatBreak(id) { if (this.link && this.link.open) this.link.send(Msg.BOAT_BREAK, { id }); }
 
   /** Ask the host to place us (a respawn, or a void jump): the host resets its movement baseline and answers with SPAWN_AT. */
   requestRespawn(reason = 'respawn') { if (this.link && this.link.open) this.link.send(Msg.RESPAWN, { reason }); }
 
   /** A chat line typed here goes to the host, which validates it and sends it to everyone (this guest included). */
   sendChat(text) { if (this.link && this.link.open) this.link.send(Msg.CHAT, { text }); }
+
+  /** A cheat command the host runs for us (/tp, /give, /summon, /spawn): it checks the permission and answers in our chat. */
+  sendCommand(name, argv) { if (this.link && this.link.open) this.link.send(Msg.COMMAND, { name: String(name), argv: (argv || []).map(String) }); }
 
   /** Player data + inventory for the host's save (also used by the guest's "autosave"). */
   sendInventory() {
@@ -196,7 +206,7 @@ export class GuestClient {
       case Msg.BLOCKS: for (const b of msg.list) this._applyBlock(b[0], b[1], b[2], b[3], b[4], b[5]); return;
       case Msg.BLOCK: this._applyBlock(msg.x, msg.y, msg.z, msg.id, msg.by, msg.kind); return;
       case Msg.BLOCK_REJECT: { const p = this.pendingBlocks.get(msg.seq); this.pendingBlocks.delete(msg.seq); this._applyBlock(msg.x, msg.y, msg.z, msg.id, null, 'revert'); if (p) this._refund(p, msg.reason); return; }
-      case Msg.PS: { const now = performance.now() / 1000; for (const row of msg.list) { const id = row[0]; if (id === this.userId) continue; const rp = this.remote.get(id) || this.remote.add(id, id === this.hostId && this.welcome ? this.welcome.hostName : 'player'); rp.snapshot(now, row.slice(1)); } return; }
+      case Msg.PS: { const now = performance.now() / 1000; if (Array.isArray(msg.boats)) for (const row of msg.boats) { const b = g.entities.boats.byId.get(row[0]); if (b && b.remote) b.applyRemote(now, row); } for (const row of msg.list) { const id = row[0]; if (id === this.userId) continue; const rp = this.remote.get(id) || this.remote.add(id, id === this.hostId && this.welcome ? this.welcome.hostName : 'player'); rp.snapshot(now, row.slice(1)); } return; }
       case Msg.M: { if (g.entities.mobs) g.entities.mobs.applySnapshot(msg.mobs, performance.now() / 1000); g.entities.applySnapshot(msg.items); if (msg.ex) g.entities.applyExplosiveSnapshot(msg.ex); return; }
       case Msg.JOIN: { const rp = this.remote.add(msg.id, msg.name); if (msg.held !== undefined) rp.setMeta(msg); return; } // the host's chat line announces the join
       case Msg.LEAVE: { this.remote.remove(msg.id); return; }
@@ -208,11 +218,14 @@ export class GuestClient {
       case Msg.DEATH: if (msg.text) g.ui.chat.system(String(msg.text).slice(0, 256), 'yellow'); return;
       case Msg.CHAT: if (msg.system !== undefined) g.ui.chat.system(String(msg.system).slice(0, 256), msg.color === 'gray' || msg.color === 'red' ? msg.color : 'yellow'); else if (msg.name && msg.text) g.ui.chat.add({ name: String(msg.name).slice(0, 16), text: String(msg.text).slice(0, 256), host: !!msg.host }); return;
       case Msg.TICK: g.setTickRate(Number(msg.rate) || 20, true); g.setTickFrozen(!!msg.frozen, true); return;
-      case Msg.WORLD: if (g.worldMeta) { g.worldMeta.keepInventory = !!msg.keepInventory; g.worldMeta.pvp = msg.pvp !== false; g.worldMeta.hostileMobs = msg.hostileMobs !== false; g.worldMeta.explosives = msg.explosives !== false; g.worldMeta.explosionsBreakBlocks = msg.explosionsBreakBlocks !== false; } return;
+      case Msg.WORLD: applyWorldSettingsMessage(g.worldMeta, msg); return; // keep inventory, PvP, hostile mobs, explosives, fall damage, natural spawning
       case Msg.SWING: { const rp = this.remote.get(msg.id); if (rp) rp.swing(); return; }
       case Msg.MINING: { const rp = this.remote.get(msg.id); if (rp) { if (msg.stop) rp.miningStop(); else rp.mining(msg.x, msg.y, msg.z, msg.p); } return; }
       case Msg.SOUND: g.audio.playAt(msg.name, msg.x, msg.y, msg.z, 'blocks', msg.vol || 0.8); return;
       case Msg.MOB_SPAWN: g.entities.mobs.spawnRemote(msg); return;
+      case Msg.BOAT_SPAWN: g.entities.boats.spawnRemote(msg); return;
+      case Msg.BOAT_REMOVE: g.entities.boats.removeById(msg.id); return;
+      case Msg.BOAT_RIDERS: { const b = g.entities.boats.byId.get(msg.id); if (b) g.entities.boats.setRiders(b, msg.driver || null, msg.passenger || null); return; }
       case Msg.MOB_REMOVE: g.entities.mobs.removeById(msg.id); return;
       case Msg.MOB_HURT: g.entities.mobs.hurtRemote(msg); return;
       case Msg.ITEM_SPAWN: g.entities.spawnItem(msg.x, msg.y, msg.z, msg.item, msg.n, msg.vx, msg.vy, msg.vz, 0.25, msg.id); return;
@@ -226,7 +239,7 @@ export class GuestClient {
       case Msg.CHEST_CONTENTS: g.chests.applyRemoteContents(msg.x, msg.y, msg.z, msg.slots); return;
       case Msg.CHEST_SLOT: if (msg.slot === -1) g.chests.applyRemoteContents(msg.x, msg.y, msg.z, msg.slots); else g.chests.applyRemoteSlot(msg.x, msg.y, msg.z, msg.slot | 0, msg.stack || null); return;
       case Msg.CHEST_ACK: { const fn = this.chestPending.get(msg.seq); if (fn) { this.chestPending.delete(msg.seq); fn(msg); } return; }
-      case Msg.ITEM_GRANT: { const left = g.inventory.addItem(msg.item, msg.n); if (left < msg.n) g.events.emit('item:pickup', msg.item, msg.n - left); return; }
+      case Msg.ITEM_GRANT: { const left = g.inventory.addItem(msg.item, msg.n); if (left < msg.n) g.events.emit('item:pickup', msg.item, msg.n - left); if (left > 0) g.entities.throwFromPlayer(msg.item, left); return; } // a full inventory (/give): the rest is thrown, the host spawns it
       case Msg.SPAWN_AT: g.health.placeAt(Number(msg.x) || 0, Number(msg.y) || 0, Number(msg.z) || 0, msg.reason); return;
       case Msg.HOST_CLOSED: this._closed('host closed'); return;
       case Msg.KICK: this.kickReason = msg.reason === RejectReason.BANNED ? RejectReason.BANNED : RejectReason.KICKED; this._closed(this.kickReason === RejectReason.BANNED ? 'banned' : 'kicked'); return;
@@ -252,7 +265,9 @@ export class GuestClient {
       if (left) { const pos = g.player.position; this.link.send(Msg.THROW, { item: p.item, n: left, x: pos.x, y: pos.y + 0.5, z: pos.z, vx: 0, vy: 0, vz: 0 }); }
     }
     const text = REJECT_TEXT[reason];
-    if (text) g.ui.hud.showToast(text, false);
+    if (!text) return;
+    if (reason === 'loading') { const t = performance.now(); if (t - (this.lastLoadingToast || 0) < LOADING_TOAST_MS) return; this.lastLoadingToast = t; }
+    g.ui.hud.showToast(text, false);
   }
 
   _applyBlock(x, y, z, id, by, kind) {
@@ -273,7 +288,7 @@ export class GuestClient {
   update(dt) {
     if (!this.link || !this.link.open) return;
     this.snapTimer += dt;
-    if (this.snapTimer >= 1 / PLAYER_SNAPSHOT_HZ) { this.snapTimer = 0; this.link.send(Msg.P, { s: encodePlayerState(this.game.player) }, 'state'); }
+    if (this.snapTimer >= 1 / PLAYER_SNAPSHOT_HZ) { this.snapTimer = 0; const boat = this.game.entities.boats ? this.game.entities.boats.drivenByLocal() : null; this.link.send(Msg.P, boat ? { s: encodePlayerState(this.game.player), b: boat.stateRow() } : { s: encodePlayerState(this.game.player) }, 'state'); } // a driving guest's boat travels with its own snapshot
     if (this.invDirty) { this.invTimer += dt; if (this.invTimer >= INV_SYNC_SECONDS) { this.invTimer = 0; this.sendInventory(); } }
     if (this.healthDirty) { this.healthTimer = (this.healthTimer || 0) + dt; if (this.healthTimer >= 1) { this.healthTimer = 0; this.healthDirty = false; this.link.send(Msg.HEALTH, { hp: this.game.player.health, hurt: false }); } }
   }

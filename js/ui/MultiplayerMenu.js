@@ -1,11 +1,14 @@
 // MultiplayerMenu.js — the Multiplayer screens. The first screen is the server list: every public
 // server online plus the private ones on this network (list_lobbies, refreshed every 3 s and with Refresh), each with
 // the world name, host, players, a LAN badge for the same network and Join; "Join by code" at the top; "Host New
-// Server" opens the host flow (pick one of your cloud worlds or create one, choose Public / Private and the
-// player limit). Also the "Signed in somewhere else" kick screen (Reconnect / Log out) and the disconnect notice.
+// Server" opens the host flow (pick one of your cloud worlds or create one with the shared Create World form, choose
+// Public / Private and the player limit). Also the "Signed in somewhere else" kick screen (Reconnect / Log out) and the
+// disconnect notice.
 
 import { State } from '../core/GameState.js';
-import { hashSeed, randomSeed } from '../utils/Random.js';
+import { CreateWorldForm } from './CreateWorldForm.js';
+import { worldRowLines } from './MainMenu.js';
+import { modeName } from '../core/WorldSettings.js';
 import { detectNetworkHash } from '../net/NetworkId.js';
 import { JOIN_CODE_PATTERN, MAX_PLAYERS_MIN, MAX_PLAYERS_MAX } from '../net/Protocol.js';
 
@@ -27,9 +30,8 @@ export class MultiplayerMenu {
     this.hostError = $('host-error');
     this.hostMax = $('host-max');
     this.hostVisibility = $('host-visibility');
-    this.hostName = $('host-name');
-    this.hostSeed = $('host-seed');
-    this.hostMode = $('host-mode');
+    /** The shared Create World form, the hosting copy (controls host-name, host-seed, host-gameMode, …). */
+    this.hostForm = new CreateWorldForm(game, $('host-create-form'), { idPrefix: 'host', onSubmit: () => this._createAndHost() });
     this.hostCreate = $('btn-host-create');
     this.findList = $('find-list');
     this.findStatus = $('find-status');
@@ -44,22 +46,21 @@ export class MultiplayerMenu {
     this.lastRefresh = 0;
     for (let n = MAX_PLAYERS_MIN; n <= MAX_PLAYERS_MAX; n++) { const o = document.createElement('option'); o.value = String(n); o.textContent = String(n); if (n === MAX_PLAYERS_MAX) o.selected = true; this.hostMax.appendChild(o); }
     const click = (id, fn) => $(id).addEventListener('click', () => { game.audio.playUI('click'); fn(); });
-    click('btn-mp-host', () => this.showHost());
-    click('btn-mp-back', () => { this.hideAll(); game.ui.mainMenu.show(); });
-    click('btn-host-back', () => this.showMain());
-    click('btn-host-new', () => this.showHostCreate());
-    click('btn-host-create-back', () => this.showHost());
+    const fade = (change) => game.ui.fade(change); // every move between full menu screens goes through black (Nov 15 2026)
+    click('btn-mp-host', () => fade(() => this.showHost()));
+    click('btn-mp-back', () => fade(() => { this.hideAll(); game.ui.mainMenu.show(); }));
+    click('btn-host-back', () => fade(() => this.showMain()));
+    click('btn-host-new', () => fade(() => this.showHostCreate()));
+    click('btn-host-create-back', () => fade(() => this.showHost()));
     click('btn-host-create', () => this._createAndHost());
     click('btn-find-refresh', () => this._refreshLobbies(true));
     click('btn-join-code', () => this._joinByCode());
     click('btn-kicked-reconnect', () => this._reconnect());
     click('btn-kicked-logout', () => game.logout());
     click('btn-disconnected-ok', () => this.discRoot.classList.add('hidden'));
-    for (const input of [this.hostName, this.hostSeed, this.joinCode]) {
-      input.addEventListener('focus', () => { game.input.textInputActive = true; });
-      input.addEventListener('blur', () => { game.input.textInputActive = false; });
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { if (input === this.joinCode) this._joinByCode(); else this._createAndHost(); } e.stopPropagation(); });
-    }
+    this.joinCode.addEventListener('focus', () => { game.input.textInputActive = true; });
+    this.joinCode.addEventListener('blur', () => { game.input.textInputActive = false; });
+    this.joinCode.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._joinByCode(); e.stopPropagation(); });
   }
 
   // ---- screens ----
@@ -101,8 +102,7 @@ export class MultiplayerMenu {
       const row = document.createElement('div');
       row.className = 'world-entry';
       const info = document.createElement('div'); info.className = 'world-info';
-      const name = document.createElement('div'); name.className = 'world-name'; name.textContent = w.name;
-      const meta = document.createElement('div'); meta.className = 'world-meta'; meta.textContent = `seed ${w.seedText || w.seed} · ${w.gameMode}`;
+      const { name, meta } = worldRowLines(w); // the Pure Survival and Locked tags too
       info.append(name, meta);
       const host = document.createElement('button'); host.className = 'mc-button small'; host.textContent = 'Host';
       host.addEventListener('click', () => { this.game.audio.playUI('click'); this._host(w.id); });
@@ -119,7 +119,8 @@ export class MultiplayerMenu {
     this.game.ui.mainMenu.hide();
     this.hostCreateRoot.classList.remove('hidden');
     this.hostCreateError.textContent = ''; this.hostCreateError.classList.add('hidden');
-    this.hostName.focus();
+    this.hostForm.reset(); // a fresh form every time
+    this.hostForm.focus();
   }
 
   /** The hosting options chosen on the Host screen. */
@@ -131,23 +132,22 @@ export class MultiplayerMenu {
     if (this.busy) return;
     this.busy = true;
     const opts = this.hostOptions();
-    this.hideAll();
     try {
-      const ok = await this.game.hostWorld(worldId, opts);
-      if (!ok && !this.game.state.inWorld) { await this.showHost(); this._setHostError("Couldn't start the server."); }
+      const ok = await this.game.hostWorld(worldId, opts); // the LOADING state hides this screen, at black
+      if (!ok && !this.game.state.inWorld) this.game.ui.fade(() => { this.showHost().then(() => this._setHostError("Couldn't start the server.")); });
     } finally { this.busy = false; }
   }
 
   async _createAndHost() {
     if (this.busy) return;
-    const name = this.hostName.value.trim() || 'New World';
-    const seedText = this.hostSeed.value.trim();
-    const seed = seedText ? hashSeed(seedText) : randomSeed();
+    const settings = this.hostForm.values(); // the same rows as Play → Create New World
+    if (settings.modeLocked && !(await this.game.ui.confirm.ask(`Lock this world to ${modeName(settings.gameMode)} forever?`, { ok: 'Lock it', cancel: 'Cancel' }))) return;
     this.hostCreate.disabled = true; this.hostCreate.innerHTML = '<span class="spinner"></span>Creating…';
+    this.hostForm.setBusy(true);
     let record;
-    try { record = await this.game.saveManager.createWorld({ name, seed, seedText, gameMode: this.hostMode.value }); }
+    try { record = await this.game.saveManager.createWorld(settings); }
     catch (e) { this.hostCreateError.textContent = "Couldn't create the world. Check your connection."; this.hostCreateError.classList.remove('hidden'); return; }
-    finally { this.hostCreate.disabled = false; this.hostCreate.textContent = 'Create & Host'; }
+    finally { this.hostCreate.disabled = false; this.hostCreate.textContent = 'Create & Host'; this.hostForm.setBusy(false); }
     this._host(record.id);
   }
 
@@ -216,8 +216,7 @@ export class MultiplayerMenu {
     if (this.busy) return;
     this.busy = true;
     this._stopPolling();
-    this.hideAll();
-    try { await this.game.joinServer(lobby); } finally { this.busy = false; }
+    try { await this.game.joinServer(lobby); } finally { this.busy = false; } // the LOADING state hides the list, at black when the fades are on
   }
 
   async _joinByCode() {

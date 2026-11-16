@@ -71,6 +71,10 @@ export class MobManager {
     this.respawns = 0;
     /** Hostile mobs: the world setting (false despawns every zombie and stops the spawner), the spawn round timer, the despawn roll timer. */
     this.hostileEnabled = true;
+    /** Natural mob spawning (world setting, Nov 10 2026): off stops first-generation groups, respawn rounds and zombie rounds; existing mobs stay, spawn eggs still work. */
+    this.naturalEnabled = true;
+    /** Fall damage (world setting, set by Game.applyWorldSettings): off means landings never hurt mobs. */
+    this.fallDamageEnabled = true;
     this.hostileTimer = HOSTILE_SPAWN_INTERVAL;
     this.despawnTimer = 1;
     this.hostileSpawns = 0;
@@ -88,6 +92,9 @@ export class MobManager {
     this.hostileEnabled = !!on;
     if (!on) for (let i = this.mobs.length - 1; i >= 0; i--) if (this.mobs[i].isHostile) this._drop(i);
   }
+
+  /** The "Natural mob spawning" world setting: off keeps every existing mob and only stops new natural spawns. */
+  setNaturalEnabled(on) { this.naturalEnabled = !!on; }
 
   clear() {
     for (const m of this.mobs) this.scene.remove(m.root);
@@ -205,8 +212,9 @@ export class MobManager {
     }
   }
 
-  /** First-time spawns for a freshly generated chunk. */
+  /** First-time spawns for a freshly generated chunk (nothing while natural spawning is off; Game then leaves the chunk out of spawnedChunks). */
   spawnForChunk(seed, chunk) {
+    if (!this.naturalEnabled) return;
     for (const s of spawnsForChunk(seed, chunk)) this._add(MOB_BY_TYPE[s.type], s.x, s.y, s.z, s.seed);
   }
 
@@ -269,12 +277,13 @@ export class MobManager {
   fixedUpdate(dt, player) {
     if (this.remote) { this._mirror(dt, player); return; }
     const px = player.position.x, pz = player.position.z;
-    this.respawnTimer -= dt;
-    if (this.respawnTimer <= 0) { this.respawnTimer = MOB_RESPAWN_SECONDS; this.tryRespawn(px, pz); }
     const players = this.playerPositions ? this.playerPositions() : [{ id: 'self', x: player.position.x, y: player.position.y, z: player.position.z, mode: player.gameMode, dead: player.dead }];
+    this.respawnTimer -= dt;
+    // Natural respawns happen around a player — any of them, so animals also appear near a guest far from the host.
+    if (this.respawnTimer <= 0) { this.respawnTimer = MOB_RESPAWN_SECONDS; if (this.naturalEnabled) { const around = players[Math.floor(Math.random() * players.length)] || { x: px, z: pz }; this.tryRespawn(around.x, around.z); } }
     // Hostile spawn rounds (every second per player) and the far-away despawn roll (once a second).
     this.hostileTimer -= dt;
-    if (this.hostileTimer <= 0) { this.hostileTimer = HOSTILE_SPAWN_INTERVAL; if (this.hostileEnabled) for (const pl of players) this.trySpawnHostile(pl, players); }
+    if (this.hostileTimer <= 0) { this.hostileTimer = HOSTILE_SPAWN_INTERVAL; if (this.hostileEnabled && this.naturalEnabled) for (const pl of players) this.trySpawnHostile(pl, players); }
     this.despawnTimer -= dt;
     const despawnRoll = this.despawnTimer <= 0;
     if (despawnRoll) this.despawnTimer = 1;
@@ -288,21 +297,23 @@ export class MobManager {
     const far = Math.min(this.renderDistanceBlocks, this.simDistanceBlocks);
     for (let i = this.mobs.length - 1; i >= 0; i--) {
       const m = this.mobs[i];
-      const d = Math.hypot(m.position.x - px, m.position.z - pz);
+      // Distances: to the host (who is the one looking, so visibility is its own) and to the nearest player of all (the
+      // simulation runs around every player, a guest far from the host included).
+      const dHost = Math.hypot(m.position.x - px, m.position.z - pz);
+      let nearest = dHost;
+      for (const pl of players) { const dp = Math.hypot(m.position.x - pl.x, m.position.z - pl.z); if (dp < nearest) nearest = dp; }
       if (m.isHostile && !m.isDying) {
         // Despawn: farther than the hard distance from every player at once, a small chance each second in the soft band.
-        let nearest = Infinity;
-        for (const pl of players) nearest = Math.min(nearest, Math.hypot(m.position.x - pl.x, m.position.z - pl.z));
         if (nearest > HOSTILE_DESPAWN_DISTANCE || (despawnRoll && nearest > HOSTILE_DESPAWN_SOFT_DISTANCE && Math.random() < HOSTILE_DESPAWN_CHANCE)) { this._drop(i); continue; }
       }
-      m.frozen = d > far;
-      this._show(m, !m.frozen && d <= this.entityDistanceBlocks);
+      m.frozen = nearest > far;
+      this._show(m, !m.frozen && dHost <= this.entityDistanceBlocks);
       if (m.frozen) continue;
       const wasGround = m.walkDistance;
       m.fixedUpdate(dt, this.world, this.waterSim, m.isHostile ? ctx : null);
       if (m.dead) { this._drop(i); continue; }
       if (m.intent.attack) { m.intent.attack = false; this._zombieAttack(m, players); }
-      if (m.justLanded) { m.justLanded = false; const dmg = Math.round(mobFallDamage(m.lastFall) * 10) / 10; if (dmg > 0) { m.invulnTimer = 0; this.hit(m, dmg, m.position.x, m.position.z, false, false); } }
+      if (m.justLanded) { m.justLanded = false; const dmg = this.fallDamageEnabled ? Math.round(mobFallDamage(m.lastFall) * 10) / 10 : 0; if (dmg > 0) { m.invulnTimer = 0; this.hit(m, dmg, m.position.x, m.position.z, false, false); } } // the world's Fall damage setting covers mobs too
       if (m.dead) { this._drop(i); continue; }
       this._lavaAndFire(m, dt);
       if (m.dead) { this._drop(i); continue; }
@@ -343,7 +354,7 @@ export class MobManager {
    * costs a few dozen block lookups.
    */
   trySpawnHostile(center, players, rng = Math.random) {
-    if (this.remote || !this.hostileEnabled || center.mode === 'spectator') return 0;
+    if (this.remote || !this.hostileEnabled || !this.naturalEnabled || center.mode === 'spectator') return 0;
     if (this.hostileCount >= this._hostileCap()) return 0;
     const w = this.world;
     for (let attempt = 0; attempt < HOSTILE_SPAWN_ATTEMPTS; attempt++) {
@@ -393,7 +404,7 @@ export class MobManager {
    * every player, preferably behind them. Returns the number spawned (0 when nothing qualified).
    */
   tryRespawn(centerX, centerZ, rng = Math.random) {
-    if (this.remote || this.passiveCount >= MOB_CAP) return 0;
+    if (this.remote || !this.naturalEnabled || this.passiveCount >= MOB_CAP) return 0;
     const players = this.playerPositions ? this.playerPositions() : [{ x: centerX, y: 0, z: centerZ, dirX: 0, dirZ: -1 }];
     const far = Math.max(MOB_RESPAWN_MIN_DISTANCE + 8, this.simDistanceBlocks);
     let spot = null, fallback = null;

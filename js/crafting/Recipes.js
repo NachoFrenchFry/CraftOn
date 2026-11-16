@@ -7,7 +7,7 @@
 export const Station = Object.freeze({ INVENTORY: 'inventory', CRAFTING_TABLE: 'crafting_table', FURNACE: 'furnace' });
 
 const ARMOR_COST = { helmet: 5, chestplate: 8, gauntlets: 4, leggings: 7, boots: 4 };
-const ARMOR_MATERIAL = { wooden: 'planks', golden: 'gold_ingot', iron: 'iron_ingot', diamond: 'diamond', obsidian: 'obsidian' }; // obsidian armor (Nov 8 2026): 5 / 8 / 4 / 7 / 4 obsidian like every set
+const ARMOR_MATERIAL = { wooden: 'planks', golden: 'gold_ingot', iron: 'iron_ingot', diamond: 'diamond', obsidian: 'obsidian', encorsed: 'encorsed_obsidian' }; // obsidian armor (Nov 8 2026) and Encorsed armor (Nov 9 2026, from the block): 5 / 8 / 4 / 7 / 4 like every set
 function armorRecipes() {
   const out = [];
   for (const [prefix, material] of Object.entries(ARMOR_MATERIAL)) for (const [piece, cost] of Object.entries(ARMOR_COST)) {
@@ -24,6 +24,7 @@ export const RECIPES = Object.freeze([
   { id: 'chest', result: { item: 'chest', count: 1 }, inputs: [{ item: 'planks', count: 8 }], stations: ['crafting_table'] },
   { id: 'rocket', result: { item: 'rocket', count: 3 }, inputs: [{ item: 'coal', count: 1 }, { item: 'sand', count: 4 }, { item: 'planks', count: 1 }], stations: ['crafting_table'] },
   { id: 'glider', result: { item: 'glider', count: 1 }, inputs: [{ item: 'iron_ingot', count: 10 }, { item: 'obsidian', count: 2 }], stations: ['crafting_table'] },
+  { id: 'boat', result: { item: 'boat', count: 1 }, inputs: [{ item: 'planks', count: 5 }], stations: ['crafting_table'] }, // Nov 15 2026
   { id: 'iron_pickaxe', result: { item: 'iron_pickaxe', count: 1 }, inputs: [{ item: 'iron_ingot', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'diamond_pickaxe', result: { item: 'diamond_pickaxe', count: 1 }, inputs: [{ item: 'diamond', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
   { id: 'stone_pickaxe', result: { item: 'stone_pickaxe', count: 1 }, inputs: [{ item: 'cobblestone', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
@@ -85,6 +86,15 @@ export const RECIPES = Object.freeze([
   { id: 'explosives', result: { item: 'explosives', count: 1 }, inputs: [{ item: 'sand', count: 4 }, { item: 'gravel', count: 4 }, { item: 'iron_ingot', count: 2 }], stations: ['crafting_table'] },
   // Obsidian only comes from here: the two buckets are emptied and handed back (byproducts).
   { id: 'obsidian', result: { item: 'obsidian', count: 1 }, inputs: [{ item: 'lava_bucket', count: 1 }, { item: 'water_bucket', count: 1 }], byproducts: [{ item: 'bucket', count: 2 }], stations: ['crafting_table'] },
+  // Encorsed Obsidian (Nov 9 2026): 4 fragments from 2 obsidian + 4 diamonds + 4 iron + 4 gold, the block from 9 fragments (never back), and the
+  // five tools from the block with the diamond counts.
+  { id: 'encorsed_obsidian_fragment', result: { item: 'encorsed_obsidian_fragment', count: 4 }, inputs: [{ item: 'obsidian', count: 2 }, { item: 'diamond', count: 4 }, { item: 'iron_ingot', count: 4 }, { item: 'gold_ingot', count: 4 }], stations: ['crafting_table'] },
+  { id: 'encorsed_obsidian', result: { item: 'encorsed_obsidian', count: 1 }, inputs: [{ item: 'encorsed_obsidian_fragment', count: 9 }], stations: ['crafting_table'] },
+  { id: 'encorsed_pickaxe', result: { item: 'encorsed_pickaxe', count: 1 }, inputs: [{ item: 'encorsed_obsidian', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
+  { id: 'encorsed_axe', result: { item: 'encorsed_axe', count: 1 }, inputs: [{ item: 'encorsed_obsidian', count: 3 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
+  { id: 'encorsed_shovel', result: { item: 'encorsed_shovel', count: 1 }, inputs: [{ item: 'encorsed_obsidian', count: 1 }, { item: 'planks', count: 2 }], stations: ['crafting_table'] },
+  { id: 'encorsed_sword', result: { item: 'encorsed_sword', count: 1 }, inputs: [{ item: 'encorsed_obsidian', count: 2 }, { item: 'planks', count: 1 }], stations: ['crafting_table'] },
+  { id: 'encorsed_spear', result: { item: 'encorsed_spear', count: 1 }, inputs: [{ item: 'encorsed_obsidian', count: 1 }, { item: 'stick', count: 2 }], stations: ['crafting_table'] },
   // Smelting (instant): 1 coal + 1 ore block each.
   { id: 'stone', result: { item: 'stone', count: 1 }, inputs: [{ item: 'cobblestone', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },
   { id: 'glass', result: { item: 'glass', count: 1 }, inputs: [{ item: 'sand', count: 1 }, { item: 'coal', count: 1 }], stations: ['furnace'] },

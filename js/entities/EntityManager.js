@@ -46,6 +46,8 @@ export class EntityManager {
     this.lavaSim = null;
     /** @type {import('./mobs/MobManager.js').MobManager|null} set by Game once the mob textures loaded */
     this.mobs = null;
+    /** @type {import('./BoatManager.js').BoatManager|null} set by Game (Nov 15 2026): the boats, saved as `boats` beside the items and mobs */
+    this.boats = null;
     this.material = createBlockModelMaterial(atlas.texture);
     this.materialTranslucent = createBlockModelMaterialTranslucent(atlas.texture);
     /** @type {ItemEntity[]} */
@@ -59,6 +61,8 @@ export class EntityManager {
     this.remote = false;
     /** items farther than this do not update (simulation distance) / are hidden (entity distance). */
     this.simDistanceBlocks = Infinity;
+    /** () => [{ x, z, … }] of every player (set by Game): dropped items are simulated near any of them, a guest far from the host included. */
+    this.playerPositions = null;
     this.entityDistanceBlocks = Infinity;
     /** (x, y, z) → brightness factor of the sky light there, set by Game. */
     this.lightAt = null;
@@ -118,6 +122,7 @@ export class EntityManager {
     this.clearItems();
     this.clearProjectiles();
     if (this.mobs) this.mobs.clear();
+    if (this.boats) this.boats.clear();
   }
 
   /** Remove an item at once (host grant, guest mirror). */
@@ -463,6 +468,7 @@ export class EntityManager {
   }
 
   fixedUpdate(dt) {
+    if (this.boats) this.boats.fixedUpdate(dt); // boats first: a rider's body follows its seat after this step (Game._rideFollow)
     const items = this.items;
     const p = this.player;
     this._updateArrows(dt);
@@ -475,9 +481,11 @@ export class EntityManager {
     const canPickUp = !p.isSpectator && !p.dead; // a dead player picks nothing up until respawning (the host checks peer.dead for guests)
     if (this.mobs) this.mobs.fixedUpdate(dt, p);
     const simFar = this.simDistanceBlocks;
+    const players = simFar !== Infinity && this.playerPositions ? this.playerPositions() : null;
+    const nearestPlayer = (x, z) => { let d = Math.hypot(x - p.position.x, z - p.position.z); if (players) for (const pl of players) { const dp = Math.hypot(x - pl.x, z - pl.z); if (dp < d) d = dp; } return d; };
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (simFar !== Infinity && !it.dead && Math.hypot(it.position.x - p.position.x, it.position.z - p.position.z) > simFar) continue; // outside the simulation distance: frozen
+      if (simFar !== Infinity && !it.dead && nearestPlayer(it.position.x, it.position.z) > simFar) continue; // outside every player's simulation distance: frozen
       it.fixedUpdate(dt);
       if (it.requestTimer > 0) it.requestTimer -= dt;
       if (it.dead) { if (it.burned && this.onBurn) { it.burned = false; this.onBurn(it.position.x, it.position.y, it.position.z); } continue; }
@@ -528,6 +536,7 @@ export class EntityManager {
       if (show !== it.group.visible) { it.group.visible = show; if (show) this.scene.add(it.group); else this.scene.remove(it.group); } // out of range: out of the scene
       if (it.group.visible) it.render(alpha, this.time, this.lightAt ? this.lightAt(it.position.x, it.position.y + 0.2, it.position.z) : 1);
     }
+    if (this.boats) this.boats.render(alpha, this.lightAt);
     if (this.mobs) this.mobs.render(alpha, dt, frustum);
   }
 

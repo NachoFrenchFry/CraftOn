@@ -34,6 +34,7 @@ export const PLAYER_WIDTH = 0.6;
 export const PLAYER_HEIGHT = 1.8;
 export const PLAYER_SNEAK_HEIGHT = 1.5;
 export const PLAYER_EYE_HEIGHT = 1.62;
+export const PLAYER_RIDING_EYE_HEIGHT = 1.27; // sitting in a boat (Nov 15 2026): the seat is the feet, the eyes this much above
 export const PLAYER_SNEAK_EYE_HEIGHT = 1.27;
 /** Swimming / crawling pose: a 0.6 cube so the player fits through 1-block gaps. */
 export const PLAYER_SWIM_HEIGHT = 0.6;
@@ -87,6 +88,8 @@ export const FAST_REPEAT_VOLUME = 0.6;
 export const GENERATION_MARGIN = 1.5;
 /** Chunks are unloaded beyond renderDistance + GENERATION_MARGIN + UNLOAD_MARGIN. */
 export const UNLOAD_MARGIN = 2;
+/** The host keeps the world loaded this many chunks around every connected guest (a disc of 29 chunks; Nov 12 2026): generated and lit, never meshed unless the host can see them. */
+export const GUEST_CHUNK_RADIUS = 3;
 export const INTEGRATION_BUDGET_MS = 4;
 export const MAX_MESH_UPLOADS_PER_FRAME = 6;
 

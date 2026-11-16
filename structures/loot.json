@@ -1,56 +1,79 @@
 {
  "house_common": {
   "rolls": [
-   3,
-   6
+   10,
+   15
+  ],
+  "always": [
+   {
+    "item": "cooked_porkchop",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "coal",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     3,
+     6
+    ]
+   }
   ],
   "entries": [
    {
     "item": "raw_beef",
     "weight": 10,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
     "item": "cooked_porkchop",
     "weight": 6,
     "count": [
-     1,
-     2
+     3,
+     6
     ]
    },
    {
     "item": "coal",
     "weight": 10,
     "count": [
-     2,
-     6
+     6,
+     18
     ]
    },
    {
     "item": "torch",
     "weight": 8,
     "count": [
-     2,
-     6
+     6,
+     18
     ]
    },
    {
     "item": "string",
     "weight": 6,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
     "item": "iron_ingot",
     "weight": 4,
     "count": [
-     1,
-     2
+     3,
+     6
     ]
    },
    {
@@ -61,16 +84,16 @@
     "item": "stick",
     "weight": 6,
     "count": [
-     2,
-     5
+     6,
+     15
     ]
    },
    {
     "item": "arrow",
     "weight": 4,
     "count": [
-     3,
-     8
+     9,
+     24
     ]
    },
    {
@@ -80,53 +103,115 @@
    {
     "item": "bucket",
     "weight": 1
-   }
-  ]
- },
- "house_rich": {
-  "rolls": [
-   4,
-   7
-  ],
-  "entries": [
-   {
-    "item": "iron_ingot",
-    "weight": 8,
-    "count": [
-     1,
-     3
-    ]
-   },
-   {
-    "item": "gold_ingot",
-    "weight": 4,
-    "count": [
-     1,
-     2
-    ]
    },
    {
     "item": "cooked_beef",
-    "weight": 8,
-    "count": [
-     1,
-     3
-    ]
-   },
-   {
-    "item": "coal",
-    "weight": 8,
+    "weight": 5,
     "count": [
      3,
      8
     ]
    },
    {
-    "item": "torch",
-    "weight": 8,
+    "item": "cooked_chicken",
+    "weight": 5,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 3,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 1,
+    "count": [
+     1,
+     2
+    ]
+   }
+  ]
+ },
+ "house_rich": {
+  "rolls": [
+   14,
+   20
+  ],
+  "always": [
+   {
+    "item": "cooked_beef",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "gold_ingot",
     "count": [
      4,
      8
+    ]
+   },
+   {
+    "item": "diamond",
+    "count": [
+     2,
+     4
+    ]
+   }
+  ],
+  "entries": [
+   {
+    "item": "iron_ingot",
+    "weight": 8,
+    "count": [
+     3,
+     9
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 4,
+    "count": [
+     3,
+     6
+    ]
+   },
+   {
+    "item": "cooked_beef",
+    "weight": 8,
+    "count": [
+     3,
+     9
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 8,
+    "count": [
+     9,
+     24
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 8,
+    "count": [
+     12,
+     24
     ]
    },
    {
@@ -145,8 +230,8 @@
     "item": "arrow",
     "weight": 6,
     "count": [
-     4,
-     10
+     12,
+     30
     ]
    },
    {
@@ -161,68 +246,117 @@
     "item": "rocket",
     "weight": 2,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
     "item": "diamond",
     "weight": 1
-   }
-  ]
- },
- "sailor": {
-  "rolls": [
-   3,
-   5
-  ],
-  "entries": [
+   },
    {
-    "item": "string",
-    "weight": 10,
+    "item": "cooked_chicken",
+    "weight": 5,
     "count": [
-     2,
-     6
+     4,
+     10
     ]
    },
    {
-    "item": "cooked_porkchop",
-    "weight": 6,
-    "count": [
-     1,
-     3
-    ]
-   },
-   {
-    "item": "coal",
-    "weight": 6,
-    "count": [
-     2,
-     5
-    ]
-   },
-   {
-    "item": "iron_ingot",
-    "weight": 4,
-    "count": [
-     1,
-     3
-    ]
-   },
-   {
-    "item": "gold_ingot",
-    "weight": 3,
+    "item": "iron_block",
+    "weight": 2,
     "count": [
      1,
      2
     ]
    },
    {
+    "item": "gold_block",
+    "weight": 1,
+    "count": 1
+   },
+   {
+    "item": "encorsed_obsidian_fragment",
+    "weight": 1,
+    "count": 1
+   }
+  ]
+ },
+ "sailor": {
+  "rolls": [
+   10,
+   15
+  ],
+  "always": [
+   {
+    "item": "cooked_porkchop",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "coal",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     3,
+     6
+    ]
+   }
+  ],
+  "entries": [
+   {
+    "item": "string",
+    "weight": 10,
+    "count": [
+     6,
+     18
+    ]
+   },
+   {
+    "item": "cooked_porkchop",
+    "weight": 6,
+    "count": [
+     3,
+     9
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 6,
+    "count": [
+     6,
+     15
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 4,
+    "count": [
+     3,
+     9
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 3,
+    "count": [
+     3,
+     6
+    ]
+   },
+   {
     "item": "arrow",
     "weight": 5,
     "count": [
-     3,
-     8
+     9,
+     24
     ]
    },
    {
@@ -233,16 +367,16 @@
     "item": "torch",
     "weight": 6,
     "count": [
-     2,
-     5
+     6,
+     15
     ]
    },
    {
     "item": "rocket",
     "weight": 3,
     "count": [
-     1,
-     2
+     3,
+     6
     ]
    },
    {
@@ -252,37 +386,91 @@
    {
     "item": "glider",
     "weight": 1
+   },
+   {
+    "item": "cooked_beef",
+    "weight": 5,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "cooked_chicken",
+    "weight": 5,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 1,
+    "count": [
+     1,
+     2
+    ]
    }
   ]
  },
  "sailor_rich": {
   "rolls": [
-   4,
-   7
+   14,
+   20
+  ],
+  "always": [
+   {
+    "item": "cooked_beef",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "count": [
+     4,
+     8
+    ]
+   },
+   {
+    "item": "diamond",
+    "count": [
+     2,
+     4
+    ]
+   }
   ],
   "entries": [
    {
     "item": "gold_ingot",
     "weight": 8,
     "count": [
-     2,
-     5
+     6,
+     15
     ]
    },
    {
     "item": "iron_ingot",
     "weight": 6,
     "count": [
-     2,
-     4
+     6,
+     12
     ]
    },
    {
     "item": "diamond",
     "weight": 3,
     "count": [
-     1,
-     2
+     2,
+     4
     ]
    },
    {
@@ -301,8 +489,8 @@
     "item": "arrow",
     "weight": 6,
     "count": [
-     6,
-     12
+     18,
+     36
     ]
    },
    {
@@ -313,52 +501,109 @@
     "item": "rocket",
     "weight": 4,
     "count": [
-     2,
-     4
+     6,
+     12
     ]
    },
    {
     "item": "cooked_beef",
     "weight": 5,
     "count": [
-     2,
-     4
+     6,
+     12
     ]
    },
    {
     "item": "golden_helmet",
     "weight": 2
+   },
+   {
+    "item": "cooked_chicken",
+    "weight": 5,
+    "count": [
+     4,
+     10
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 6,
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_block",
+    "weight": 2,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "gold_block",
+    "weight": 1,
+    "count": 1
+   },
+   {
+    "item": "encorsed_obsidian_fragment",
+    "weight": 1,
+    "count": 1
    }
   ]
  },
  "tree": {
   "rolls": [
-   3,
-   5
+   10,
+   15
+  ],
+  "always": [
+   {
+    "item": "cooked_chicken",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "coal",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     3,
+     6
+    ]
+   }
   ],
   "entries": [
    {
     "item": "stick",
     "weight": 8,
     "count": [
-     3,
-     8
+     9,
+     24
     ]
    },
    {
     "item": "string",
     "weight": 6,
     "count": [
-     1,
-     4
+     3,
+     12
     ]
    },
    {
     "item": "arrow",
     "weight": 6,
     "count": [
-     4,
-     8
+     12,
+     24
     ]
    },
    {
@@ -369,32 +614,32 @@
     "item": "raw_porkchop",
     "weight": 5,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
     "item": "coal",
     "weight": 5,
     "count": [
-     2,
-     5
+     6,
+     15
     ]
    },
    {
     "item": "iron_ingot",
     "weight": 2,
     "count": [
-     1,
-     2
+     3,
+     6
     ]
    },
    {
     "item": "torch",
     "weight": 6,
     "count": [
-     2,
-     6
+     6,
+     18
     ]
    },
    {
@@ -404,37 +649,99 @@
    {
     "item": "glider",
     "weight": 1
+   },
+   {
+    "item": "cooked_beef",
+    "weight": 5,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "cooked_chicken",
+    "weight": 5,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 3,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 1,
+    "count": [
+     1,
+     2
+    ]
    }
   ]
  },
  "ruin_rare": {
   "rolls": [
-   3,
-   6
+   14,
+   20
+  ],
+  "always": [
+   {
+    "item": "cooked_beef",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "count": [
+     4,
+     8
+    ]
+   },
+   {
+    "item": "diamond",
+    "count": [
+     2,
+     4
+    ]
+   }
   ],
   "entries": [
    {
     "item": "gold_ingot",
     "weight": 10,
     "count": [
-     2,
-     6
+     6,
+     18
     ]
    },
    {
     "item": "diamond",
     "weight": 5,
     "count": [
-     1,
-     3
+     2,
+     6
     ]
    },
    {
     "item": "iron_ingot",
     "weight": 6,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
@@ -461,72 +768,129 @@
     "item": "arrow",
     "weight": 4,
     "count": [
+     12,
+     30
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 3,
+    "count": [
+     6,
+     15
+    ]
+   },
+   {
+    "item": "cooked_chicken",
+    "weight": 5,
+    "count": [
      4,
      10
     ]
    },
    {
-    "item": "torch",
-    "weight": 3,
-    "count": [
-     2,
-     5
-    ]
-   }
-  ]
- },
- "igloo": {
-  "rolls": [
-   3,
-   5
-  ],
-  "entries": [
-   {
-    "item": "cooked_mutton",
-    "weight": 8,
-    "count": [
-     1,
-     3
-    ]
-   },
-   {
-    "item": "raw_mutton",
-    "weight": 6,
-    "count": [
-     1,
-     3
-    ]
-   },
-   {
     "item": "coal",
-    "weight": 8,
-    "count": [
-     3,
-     8
-    ]
-   },
-   {
-    "item": "torch",
     "weight": 6,
     "count": [
-     2,
-     6
+     8,
+     16
     ]
    },
    {
-    "item": "iron_ingot",
-    "weight": 3,
+    "item": "iron_block",
+    "weight": 2,
     "count": [
      1,
      2
     ]
    },
    {
+    "item": "gold_block",
+    "weight": 1,
+    "count": 1
+   },
+   {
+    "item": "encorsed_obsidian_fragment",
+    "weight": 1,
+    "count": 1
+   }
+  ]
+ },
+ "igloo": {
+  "rolls": [
+   10,
+   15
+  ],
+  "always": [
+   {
+    "item": "cooked_mutton",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "coal",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     3,
+     6
+    ]
+   }
+  ],
+  "entries": [
+   {
+    "item": "cooked_mutton",
+    "weight": 8,
+    "count": [
+     3,
+     9
+    ]
+   },
+   {
+    "item": "raw_mutton",
+    "weight": 6,
+    "count": [
+     3,
+     9
+    ]
+   },
+   {
+    "item": "coal",
+    "weight": 8,
+    "count": [
+     9,
+     24
+    ]
+   },
+   {
+    "item": "torch",
+    "weight": 6,
+    "count": [
+     6,
+     18
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "weight": 3,
+    "count": [
+     3,
+     6
+    ]
+   },
+   {
     "item": "string",
     "weight": 4,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
@@ -540,45 +904,100 @@
    {
     "item": "wooden_helmet",
     "weight": 1
-   }
-  ]
- },
- "cabin": {
-  "rolls": [
-   3,
-   6
-  ],
-  "entries": [
+   },
    {
-    "item": "coal",
-    "weight": 10,
+    "item": "cooked_beef",
+    "weight": 5,
     "count": [
      3,
      8
     ]
    },
    {
+    "item": "cooked_chicken",
+    "weight": 5,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 3,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 1,
+    "count": [
+     1,
+     2
+    ]
+   }
+  ]
+ },
+ "cabin": {
+  "rolls": [
+   10,
+   15
+  ],
+  "always": [
+   {
+    "item": "cooked_beef",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "coal",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     3,
+     6
+    ]
+   }
+  ],
+  "entries": [
+   {
+    "item": "coal",
+    "weight": 10,
+    "count": [
+     9,
+     24
+    ]
+   },
+   {
     "item": "raw_beef",
     "weight": 6,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
     "item": "cooked_beef",
     "weight": 5,
     "count": [
-     1,
-     2
+     3,
+     6
     ]
    },
    {
     "item": "iron_ingot",
     "weight": 5,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
@@ -593,24 +1012,24 @@
     "item": "torch",
     "weight": 8,
     "count": [
-     3,
-     8
+     9,
+     24
     ]
    },
    {
     "item": "stick",
     "weight": 5,
     "count": [
-     2,
-     6
+     6,
+     18
     ]
    },
    {
     "item": "arrow",
     "weight": 4,
     "count": [
-     3,
-     8
+     9,
+     24
     ]
    },
    {
@@ -620,37 +1039,91 @@
    {
     "item": "iron_helmet",
     "weight": 1
+   },
+   {
+    "item": "cooked_chicken",
+    "weight": 5,
+    "count": [
+     3,
+     8
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "weight": 3,
+    "count": [
+     2,
+     5
+    ]
+   },
+   {
+    "item": "diamond",
+    "weight": 1,
+    "count": [
+     1,
+     2
+    ]
    }
   ]
  },
  "dungeon": {
   "rolls": [
-   3,
-   6
+   14,
+   20
+  ],
+  "always": [
+   {
+    "item": "cooked_beef",
+    "count": [
+     8,
+     16
+    ]
+   },
+   {
+    "item": "iron_ingot",
+    "count": [
+     6,
+     12
+    ]
+   },
+   {
+    "item": "gold_ingot",
+    "count": [
+     4,
+     8
+    ]
+   },
+   {
+    "item": "diamond",
+    "count": [
+     2,
+     4
+    ]
+   }
   ],
   "entries": [
    {
     "item": "iron_ingot",
     "weight": 10,
     "count": [
-     1,
-     4
+     3,
+     12
     ]
    },
    {
     "item": "gold_ingot",
     "weight": 6,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
    },
    {
     "item": "diamond",
     "weight": 2,
     "count": [
-     1,
-     2
+     2,
+     4
     ]
    },
    {
@@ -661,32 +1134,32 @@
     "item": "arrow",
     "weight": 8,
     "count": [
-     4,
-     12
+     12,
+     36
     ]
    },
    {
     "item": "string",
     "weight": 6,
     "count": [
-     1,
-     4
+     3,
+     12
     ]
    },
    {
     "item": "coal",
     "weight": 8,
     "count": [
-     2,
-     6
+     6,
+     18
     ]
    },
    {
     "item": "torch",
     "weight": 6,
     "count": [
-     2,
-     6
+     6,
+     18
     ]
    },
    {
@@ -701,9 +1174,35 @@
     "item": "cooked_beef",
     "weight": 4,
     "count": [
-     1,
-     3
+     3,
+     9
     ]
+   },
+   {
+    "item": "cooked_chicken",
+    "weight": 5,
+    "count": [
+     4,
+     10
+    ]
+   },
+   {
+    "item": "iron_block",
+    "weight": 2,
+    "count": [
+     1,
+     2
+    ]
+   },
+   {
+    "item": "gold_block",
+    "weight": 1,
+    "count": 1
+   },
+   {
+    "item": "encorsed_obsidian_fragment",
+    "weight": 1,
+    "count": 1
    }
   ]
  }

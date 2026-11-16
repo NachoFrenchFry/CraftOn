@@ -5,7 +5,7 @@
 
 import { ItemStack } from './ItemStack.js';
 import { ItemRegistry } from './ItemRegistry.js';
-import { ARMOR_SLOTS, armorPointsFor } from './ItemDefinitions.js';
+import { ARMOR_SLOTS, armorValueFor } from './ItemDefinitions.js';
 
 export const HOTBAR_SIZE = 9;
 export const MAIN_SIZE = 36;
@@ -175,11 +175,15 @@ export class Inventory {
     return a ? a.points : 0;
   }
 
-  /** Total armor points of every worn piece (the shared ItemDefinitions.armorPointsFor over the worn materials). */
-  armorPoints() { return armorPointsFor(this.armorMaterials()); }
+  /** The worn set's armor value `{ points, cap }` for a normal hit (ItemDefinitions.armorValueFor): every damage path hands it to Damage.js. */
+  armorValue() { return armorValueFor(this.armorMaterials()); }
 
-  /** Armor points against an explosion: obsidian pieces count 1.5× (BLAST_ARMOR_MULTIPLIER); used by Game for the local player's blast damage. */
-  explosionArmorPoints() { return armorPointsFor(this.armorMaterials(), { explosion: true }); }
+  /** The worn set's value against an explosion: obsidian / Encorsed pieces count 1.5× and the explosion cap (85 % + 2 % per Encorsed piece). */
+  explosionArmorValue() { return armorValueFor(this.armorMaterials(), { explosion: true }); }
+
+  /** Just the points (F3, tests). */
+  armorPoints() { return this.armorValue().points; }
+  explosionArmorPoints() { return this.explosionArmorValue().points; }
 
   serialize() {
     return {

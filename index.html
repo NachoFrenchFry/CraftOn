@@ -136,6 +136,20 @@
       </div>
       <div class="menu-account"><span id="menu-account"></span> <button id="btn-logout" class="mc-button small" type="button">Log out</button></div>
     </div>
+    <!-- Friends sidebar (Nov 14 2026, FriendsSidebar.js): docked right on the home screen only; in a narrow window it collapses
+         to the corner button, which opens it over the menu. Heading, the Requests section, the list (scrolls), the note, then the
+         search bar at the bottom with its results opening upward above it. -->
+    <button id="btn-friends-toggle" class="mc-button small friends-toggle" type="button" aria-controls="friends-side" aria-expanded="false">Friends</button>
+    <aside id="friends-side" class="friends-side" aria-label="Friends">
+      <div class="friends-head"><span class="friends-title">Friends</span> <span id="friends-online" class="friends-online"></span></div>
+      <div id="friends-requests" class="friends-requests"></div>
+      <div id="friends-list" class="friends-list"></div>
+      <div id="friends-note" class="friends-note"></div>
+      <div class="friends-search-wrap">
+        <div id="friends-results" class="friends-results"></div>
+        <input id="friends-search" type="text" maxlength="16" placeholder="Search a username" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search a username">
+      </div>
+    </aside>
   </div>
 
   <!-- World list: only the worlds, filling the panel; "Create New World" opens its own screen -->
@@ -153,19 +167,14 @@
     </div>
   </div>
 
+  <!-- Create New World: the one shared form (CreateWorldForm.js fills #create-world-form with setting rows; the hosting
+       screen below gets the same rows in #host-create-form, only the button differs) -->
   <div id="create-world-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
-    <div class="menu-content">
+    <div class="menu-content list-content create-content">
       <h2 class="menu-heading">Create New World</h2>
       <div id="create-error" class="acct-error hidden"></div>
-      <div class="create-world">
-        <label>World name <input id="world-name" type="text" maxlength="32" value="New World"></label>
-        <label>Seed (blank = random) <input id="world-seed" type="text" maxlength="32" placeholder="any text or number"></label>
-        <label>Game mode
-          <select id="world-mode"><option value="survival">Survival</option><option value="creative">Creative</option></select>
-        </label>
-        <label class="create-toggle"><span>Hostile mobs (zombies spawn in darkness)</span><input id="world-hostile" type="checkbox" checked></label>
-      </div>
+      <div id="create-world-form" class="settings-list create-form"></div>
       <div class="menu-row">
         <button id="btn-create-world" class="mc-button">Create</button>
         <button id="btn-create-back" class="mc-button">Back</button>
@@ -210,16 +219,10 @@
 
   <div id="host-create-menu" class="screen menu-screen hidden">
     <div class="menu-bg"></div>
-    <div class="menu-content">
+    <div class="menu-content list-content create-content">
       <h2 class="menu-heading">Create New World</h2>
       <div id="host-create-error" class="acct-error hidden"></div>
-      <div class="create-world">
-        <label>World name <input id="host-name" type="text" maxlength="32" value="New World"></label>
-        <label>Seed (blank = random) <input id="host-seed" type="text" maxlength="32" placeholder="any text or number"></label>
-        <label>Game mode
-          <select id="host-mode"><option value="survival">Survival</option><option value="creative">Creative</option></select>
-        </label>
-      </div>
+      <div id="host-create-form" class="settings-list create-form"></div>
       <div class="menu-row">
         <button id="btn-host-create" class="mc-button">Create & Host</button>
         <button id="btn-host-create-back" class="mc-button">Back</button>
@@ -279,6 +282,8 @@
   <div id="pause-menu" class="screen overlay-screen hidden">
     <div class="menu-content">
       <h2 class="menu-heading">Game Menu</h2>
+      <!-- the world's tags: a green Pure Survival badge, a gray Locked tag (PauseMenu.refresh fills it) -->
+      <div id="pause-tags" class="pause-tags"></div>
       <button id="btn-resume" class="mc-button">Back to Game</button>
       <button id="btn-pause-options" class="mc-button">Settings</button>
       <button id="btn-gamemode" class="mc-button">Game Mode: Survival</button>
@@ -299,24 +304,41 @@
     </div>
   </div>
 
-  <!-- Host's Server Settings: default / host / per-player game modes and permissions -->
+  <!-- Host's Server Settings (World Settings in single player): the world type (read-only), game modes, the world toggles
+       (saved in the world, sent to guests at once), Same Wi-Fi multiplayer, and while hosting the per-player permissions -->
   <div id="server-settings" class="screen overlay-screen hidden">
-    <div class="menu-content">
+    <div class="menu-content srv-content">
       <h2 class="menu-heading" id="srv-title">Server Settings</h2>
-      <label class="host-max srv-host-only">Default game mode for new players
-        <select id="srv-default-mode"><option value="survival">Survival</option><option value="creative">Creative</option><option value="spectator">Spectator</option></select>
-      </label>
-      <label class="host-max srv-host-only">Your game mode
+      <div id="srv-world-type" class="srv-text">World type: Default</div>
+      <label class="host-max">Your game mode
         <select id="srv-host-mode"><option value="survival">Survival</option><option value="creative">Creative</option><option value="spectator">Spectator</option></select>
       </label>
+      <label class="host-max">Game mode for other players
+        <select id="srv-default-mode"><option value="survival">Survival</option><option value="creative">Creative</option><option value="spectator">Spectator</option></select>
+      </label>
       <label class="host-max srv-host-only"><span>PvP (players can hurt each other)</span><input id="srv-pvp" type="checkbox" checked></label>
-      <label class="host-max"><span>Keep inventory on death</span><input id="srv-keep-inv" type="checkbox"></label>
+      <label class="host-max"><span>Fall damage</span><input id="srv-fall-damage" type="checkbox" checked></label>
+      <label class="host-max"><span>Natural mob spawning</span><input id="srv-natural-mobs" type="checkbox" checked></label>
       <label class="host-max"><span>Hostile mobs (zombies)</span><input id="srv-hostile" type="checkbox" checked></label>
+      <label class="host-max"><span>Keep inventory on death</span><input id="srv-keep-inv" type="checkbox"></label>
       <label class="host-max"><span>Explosives</span><input id="srv-explosives" type="checkbox" checked></label>
       <label class="host-max"><span>Explosions break blocks</span><input id="srv-explosions-break" type="checkbox" checked></label>
+      <label class="host-max"><span>Same Wi-Fi multiplayer</span><input id="srv-lan-open" type="checkbox"></label>
+      <div id="srv-lan-hint" class="srv-hint">Players on your Wi-Fi can join while you play. To play with people on other networks, host this world from Multiplayer → Host New Server.</div>
       <div class="srv-sub srv-host-only">Players</div>
       <div id="srv-players" class="srv-list srv-host-only"></div>
       <button id="btn-srv-back" class="mc-button">Done</button>
+    </div>
+  </div>
+
+  <!-- The confirm box (ConfirmDialog.js): one sentence, a named action button and Cancel, above every other screen -->
+  <div id="confirm-dialog" class="screen overlay-screen confirm hidden">
+    <div class="menu-content confirm-content">
+      <div id="confirm-text" class="menu-text confirm-text"></div>
+      <div class="menu-row">
+        <button id="btn-confirm-ok" class="mc-button danger" type="button">OK</button>
+        <button id="btn-confirm-cancel" class="mc-button" type="button">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -343,5 +365,7 @@
     }
   </script>
   <script type="module" src="js/main.js"></script>
+  <!-- the fade between menu screens (ScreenFade.js): black, above every menu screen, click-through unless fading -->
+  <div id="screen-fade" aria-hidden="true"></div>
 </body>
 </html>

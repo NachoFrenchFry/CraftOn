@@ -1,7 +1,7 @@
 // Player.js — player state: position, velocity, look angles, movement flags and game mode.
 
 import * as THREE from 'three';
-import { PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SNEAK_HEIGHT, PLAYER_EYE_HEIGHT, PLAYER_SNEAK_EYE_HEIGHT, PLAYER_SWIM_HEIGHT, PLAYER_SWIM_EYE_HEIGHT } from '../config/Constants.js';
+import { PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SNEAK_HEIGHT, PLAYER_EYE_HEIGHT, PLAYER_SNEAK_EYE_HEIGHT, PLAYER_SWIM_HEIGHT, PLAYER_SWIM_EYE_HEIGHT, PLAYER_RIDING_EYE_HEIGHT } from '../config/Constants.js';
 import { AABB } from '../utils/AABB.js';
 
 export const GameMode = Object.freeze({ SURVIVAL: 'survival', CREATIVE: 'creative', SPECTATOR: 'spectator' });
@@ -69,6 +69,9 @@ export class Player {
     this.dashCooldown = 0;
     this.dashGrace = 0;
     this.dashFallBefore = 0;
+    /** Riding a boat (Nov 15 2026): the boat and the seat (0 = the front seat, which drives; 1 = the passenger seat). Never saved. */
+    this.riding = null;
+    this.seat = 0;
     /** Health: 100 max, saved with the player; `dead` while the death screen shows. */
     this.maxHealth = 100;
     this.health = 100;
@@ -85,7 +88,7 @@ export class Player {
   get lowPose() { return this.swimming || this.crawling; }
   get height() { return this.lowPose ? PLAYER_SWIM_HEIGHT : this.sneaking ? PLAYER_SNEAK_HEIGHT : PLAYER_HEIGHT; }
   /** Target eye height for the current pose (renderEyeHeight eases toward it). */
-  get eyeHeight() { return this.lowPose ? PLAYER_SWIM_EYE_HEIGHT : this.sneaking ? PLAYER_SNEAK_EYE_HEIGHT : PLAYER_EYE_HEIGHT; }
+  get eyeHeight() { return this.riding ? PLAYER_RIDING_EYE_HEIGHT : this.lowPose ? PLAYER_SWIM_EYE_HEIGHT : this.sneaking ? PLAYER_SNEAK_EYE_HEIGHT : PLAYER_EYE_HEIGHT; }
 
   /** Update the AABB from the current physics position. */
   updateAABB() {
@@ -105,6 +108,7 @@ export class Player {
   }
 
   teleport(x, y, z) {
+    this.teleports = (this.teleports || 0) + 1; // the controller drops a smooth-camera glide on a respawn, a teleport or a new world
     this.position.set(x, y, z);
     this.prevPosition.set(x, y, z);
     this.renderPosition.set(x, y, z);

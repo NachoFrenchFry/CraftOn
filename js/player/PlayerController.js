@@ -1,7 +1,10 @@
 // PlayerController.js — turns keyboard/mouse input into look angles and a movement intent. Crouch is held by default or
 // toggled (the Crouch mode option): a toggled crouch ends when the player starts flying or swimming, opens a menu or dies.
+// Smooth Camera (F8, Nov 14 2026, for recording): while it is on, mouse look is paid out over Smooth Camera Time on real
+// time (LookSmoothing.js) — the same total turn, eased in and gliding to a stop; off, the look path is exactly the plain one.
 
 import { clamp } from '../utils/MathUtils.js';
+import { lookStep, makePending, clearPending } from './LookSmoothing.js';
 
 const MAX_PITCH = 89.9 * Math.PI / 180;
 const SENSITIVITY_SCALE = 0.0022;
@@ -20,22 +23,56 @@ export class PlayerController {
     this.settings = settings;
     this.enabled = true;
     this._delta = { x: 0, y: 0 };
+    /** Smooth Camera (F8): off on every page load, never saved. */
+    this.smoothCamera = false;
+    this._pending = makePending();
+    this._step = { yaw: 0, pitch: 0 };
+    this._teleports = player.teleports || 0;
     this.sprintLatched = false;
     /** Toggle crouch: on until the key is pressed again (or flight, swimming, a menu or death ends it). */
     this.sneakLatched = false;
   }
 
-  /** Apply mouse look (called once per frame). */
-  updateLook() {
-    if (!this.enabled || !this.input.pointerLocked) return;
+  /** Switch Smooth Camera on or off (anything still to turn is dropped); returns the new state. */
+  setSmoothCamera(on) {
+    this.smoothCamera = !!on;
+    this.clearLook();
+    return this.smoothCamera;
+  }
+
+  /** Drop the smooth camera's pending turn and any mouse movement not yet applied. */
+  clearLook() { clearPending(this._pending); this.input.consumeMouseDelta(this._delta); }
+
+  /** Apply mouse look (called once per frame). `realDt`: wall-clock seconds since the last frame, for the smooth camera's glide. */
+  updateLook(realDt = 0) {
+    // Pause, inventory, chat, the pointer unlocked: with Smooth Camera on nothing is carried over — neither the pending glide nor
+    // movement that arrived while the screen was open (the plain look keeps its old path, which leaves that movement to the lock change).
+    if (!this.enabled || !this.input.pointerLocked) { if (this.smoothCamera) this.clearLook(); return; }
+    const p = this.player;
+    if (p.teleports !== this._teleports) { this._teleports = p.teleports; clearPending(this._pending); } // a respawn, a teleport, a new world
     const d = this.input.consumeMouseDelta(this._delta);
-    if (d.x === 0 && d.y === 0) return;
+    if (!this.smoothCamera) {
+      // the plain look: the whole movement this frame
+      if (d.x === 0 && d.y === 0) return;
+      const sens = this.settings.get('mouseSensitivity') * SENSITIVITY_SCALE;
+      const invert = this.settings.get('invertY') ? -1 : 1;
+      p.yaw -= d.x * sens;
+      p.pitch -= d.y * sens * invert;
+      p.pitch = clamp(p.pitch, -MAX_PITCH, MAX_PITCH);
+      if (p.yaw > Math.PI) p.yaw -= Math.PI * 2;
+      if (p.yaw < -Math.PI) p.yaw += Math.PI * 2;
+      return;
+    }
+    // Smooth Camera: the movement joins the pending turn, and a share of that is paid out every frame (mouse or no mouse)
+    const pend = this._pending;
+    if (d.x === 0 && d.y === 0 && pend.pendingYaw === 0 && pend.pendingPitch === 0) return;
     const sens = this.settings.get('mouseSensitivity') * SENSITIVITY_SCALE;
     const invert = this.settings.get('invertY') ? -1 : 1;
-    const p = this.player;
-    p.yaw -= d.x * sens;
-    p.pitch -= d.y * sens * invert;
-    p.pitch = clamp(p.pitch, -MAX_PITCH, MAX_PITCH);
+    const step = lookStep(pend, d.x * sens, d.y * sens * invert, realDt, this.settings.get('smoothCameraTime'), this._step);
+    p.yaw -= step.yaw;
+    const pitch = p.pitch - step.pitch;
+    p.pitch = clamp(pitch, -MAX_PITCH, MAX_PITCH);
+    if (p.pitch !== pitch) pend.pendingPitch = 0; // at the limit nothing is left to pay out, so the camera never sticks there: the next move the other way turns at once
     if (p.yaw > Math.PI) p.yaw -= Math.PI * 2;
     if (p.yaw < -Math.PI) p.yaw += Math.PI * 2;
   }

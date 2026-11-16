@@ -80,8 +80,8 @@ export class Chat {
     });
     if (!s.items.length && !s.hint && !s.error) { this._hideSuggestions(); return; }
     this.suggestIndex = Math.min(this.suggestIndex, Math.max(0, s.items.length - 1));
+    this.suggestBox.classList.remove('hidden'); // shown first: scrollIntoView does nothing inside a display:none box, and a reopened list kept its old scroll offset (Nov 12 2026)
     this._highlightSuggestion();
-    this.suggestBox.classList.remove('hidden');
   }
 
   _hideSuggestions() { if (this.suggestBox) this.suggestBox.classList.add('hidden'); this.suggestion = null; this.suggestRows = []; this.suggestIndex = 0; }

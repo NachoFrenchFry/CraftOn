@@ -226,13 +226,16 @@
   padding: calc(2px * var(--gui-scale)); display: flex; flex-direction: column; gap: calc(1px * var(--gui-scale)); text-shadow: var(--text-shadow);
 }
 .chat-suggest.hidden { display: none; }
-.chat-suggest-hint { color: #c8c8c8; white-space: pre-wrap; overflow-wrap: anywhere; min-height: calc(10px * var(--gui-scale)); }
+.chat-suggest-hint { flex: 0 0 auto; color: #c8c8c8; white-space: pre-wrap; overflow-wrap: anywhere; min-height: calc(10px * var(--gui-scale)); }
 .chat-suggest-hint .current { color: #ffe566; text-decoration: underline; }
 .chat-suggest-hint.error { color: #ff7a7a; }
-.chat-suggest-list { display: flex; flex-direction: column; max-height: calc(8 * 12px * var(--gui-scale)); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #5b6f85 rgba(46, 74, 107, 0.6); }
+/* exactly 8 rows tall, then it scrolls: a row is pinned to 15px × GUI scale (11px line height + 2px padding top and bottom; measured
+   unpinned it came out 15.5 at scale 2 and 15 at scale 3, the baseline-aligned smaller detail text rounding the line box) */
+.chat-suggest-list { display: flex; flex-direction: column; max-height: calc(8 * 15px * var(--gui-scale)); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #5b6f85 rgba(46, 74, 107, 0.6); }
 .chat-suggest-list::-webkit-scrollbar { width: calc(4px * var(--gui-scale)); }
 .chat-suggest-list::-webkit-scrollbar-thumb { background: #5b6f85; }
-.chat-suggest-row { display: flex; gap: calc(6px * var(--gui-scale)); align-items: baseline; padding: calc(1px * var(--gui-scale)) calc(3px * var(--gui-scale)); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: calc(10px * var(--gui-scale)); }
+/* rows never shrink to fit the box (flex 0 0 auto): the list scrolls instead of squashing them */
+.chat-suggest-row { display: flex; flex: 0 0 auto; gap: calc(6px * var(--gui-scale)); align-items: baseline; box-sizing: border-box; height: calc(15px * var(--gui-scale)); padding: calc(2px * var(--gui-scale)) calc(3px * var(--gui-scale)); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: calc(11px * var(--gui-scale)); }
 .chat-suggest-row:hover { background: rgba(255, 255, 255, 0.1); }
 .chat-suggest-row.selected { background: rgba(255, 255, 255, 0.2); }
 .chat-suggest-row .detail { color: #aab4d8; font-size: calc(7px * var(--gui-scale)); overflow: hidden; text-overflow: ellipsis; }

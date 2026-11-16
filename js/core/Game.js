@@ -31,6 +31,7 @@ import { CloudSaveManager } from './CloudSaveManager.js';
 import { Account } from './Account.js';
 import { createCloudClient } from './cloud/CloudClient.js';
 import { MobManager } from '../entities/mobs/MobManager.js';
+import { BoatManager } from '../entities/BoatManager.js';
 import { loadEntityTextures } from '../entities/mobs/MobModel.js';
 import { StartupTiming } from './StartupTiming.js';
 import { BootScreen } from '../ui/BootScreen.js';
@@ -47,7 +48,11 @@ import { applyBrightness, lightColor } from '../rendering/LightUniforms.js';
 import { TorchEffects } from '../rendering/TorchEffects.js';
 import { getTileIndex } from '../rendering/AtlasLayout.js';
 import { CHUNK_SIZE } from '../config/Constants.js';
-import { MAX_PLAYERS_DEFAULT, RejectReason } from '../net/Protocol.js';
+import { MAX_PLAYERS_DEFAULT, MAX_PLAYERS_MAX, RejectReason } from '../net/Protocol.js';
+import { worldSetting, lockedModeOf, lockedText, modeName, BADGE_SENTENCE, OFFLINE_TEXT, NO_CHEATS_TEXT } from './WorldSettings.js';
+import { Presence } from './Presence.js';
+import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
+import { WORLD_HEIGHT } from '../config/Constants.js';
 import { chunkKeyString } from '../world/ChunkCoords.js';
 import { intersectsSolid } from '../entities/EntityPhysics.js';
 import { SPECTATOR_SPEED_MIN, SPECTATOR_SPEED_MAX, SPECTATOR_SPEED_STEP } from '../config/Constants.js';
@@ -124,6 +129,8 @@ export class Game {
     this.inventory = new Inventory(this.events);
     this.player = new Player();
     this.session = new WorldSession(this);
+    /** What I am doing, for my friends (presence_beat every 30 s while logged in; part 4). */
+    this.presence = new Presence(this);
     this.ui = new UIManager(this);
     this.loop = new GameLoop((dt) => this.fixedUpdate(dt), (alpha, gameDt, realDt) => this.frame(alpha, gameDt, realDt));
     this.loop.isSimulating = () => this.state.simulating;
@@ -137,6 +144,8 @@ export class Game {
     this.structureNames = [];
     fetch('structures/index.json', { cache: 'reload' }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (j && Array.isArray(j.structures)) this.structureNames = j.structures.map((f) => String(f).replace(/\.json$/, '')).sort(); }).catch(() => {});
     this.worldMeta = null;
+    /** A HostServer.start() in progress (Game.startHosting): no second one meanwhile. */
+    this.hostingPending = false;
     this._eye = new THREE.Vector3();
     this._dir = new THREE.Vector3();
     this._lastStepDistance = 0;
@@ -237,9 +246,16 @@ export class Game {
       }
       return out;
     };
+    this.entities.playerPositions = this.entities.mobs.playerPositions; // dropped items are simulated near any player too
+    // Boats (Nov 15 2026): placed on water or land, two seats, the driver's own machine moves its boat.
+    this.entities.boats = new BoatManager(scene, this.world, this.entityTextures, this.player);
+    this.entities.boats.playerPositions = this.entities.mobs.playerPositions;
+    this.entities.boats.onLocalSeat = (boat, seat) => this._onLocalSeat(boat, seat);
+    this._seat = new THREE.Vector3();
+    this._rideTeleports = 0;
     // A zombie's hit: the local player takes it through the health system (armor applies); a guest gets it from the host.
     this.entities.mobs.hurtPlayer = (targetId, base, kx, kz) => {
-      if (targetId === 'self') { if (this.health.active && !this.player.dead) this.health.damage(zombieDamage(this.inventory.armorPoints(), base), { kind: 'zombie' }, { kx, kz }); return; }
+      if (targetId === 'self') { if (this.health.active && !this.player.dead) this.health.damage(zombieDamage(this.inventory.armorValue(), base), { kind: 'zombie' }, { kx, kz }); return; }
       if (this.net && this.net.isHost) this.net.zombieHit(targetId, base, kx, kz);
     };
     // Arrows and explosions: the voxel ray helper for sweeps / exposure, the other players, the effects and the player damage.
@@ -312,6 +328,7 @@ export class Game {
     this.entities.simDistanceBlocks = simBlocks;
     this.entities.entityDistanceBlocks = entityBlocks;
     this.remotePlayers.entityDistanceBlocks = entityBlocks;
+    if (this.entities.boats) { this.entities.boats.simDistanceBlocks = simBlocks; this.entities.boats.entityDistanceBlocks = entityBlocks; }
     this.waterSim.simRadius = simBlocks; this.lavaSim.simRadius = simBlocks;
     this.particles.level = s.get('particles');
   }
@@ -376,7 +393,7 @@ export class Game {
     // The bow: the draw creak, then the shot (an arrow leaves the inventory in Survival; a guest asks the host to shoot it).
     ev.on('player:drawStart', () => this.audio.playPlayer('bow_draw', 0.8));
     // Gliding: a crash into a wall hurts ((lost speed × 10 − 3) × 5 before armor); a rocket boosts the glide.
-    ev.on('player:crash', (dmg) => { if (this.health.active && !this.player.dead) this.health.damage(Math.round(dmg * armorReduction(this.inventory.armorPoints())), { kind: 'crash' }, { ignoreInvuln: true }); });
+    ev.on('player:crash', (dmg) => { if (this.health.active && !this.player.dead) this.health.damage(Math.round(dmg * armorReduction(this.inventory.armorValue())), { kind: 'crash' }, { ignoreInvuln: true }); });
     ev.on('player:rocket', () => this._useRocket());
     ev.on('player:dash', () => this._dash());
     ev.on('player:toast', (text) => this.ui.hud.showToast(text, false));
@@ -389,15 +406,20 @@ export class Game {
     });
     ev.on('player:splash', () => this.audio.playPlayer('splash', 0.8));
     ev.on('item:pickup', () => this.audio.playUI('pop', 0.9));
+    // Boats: placing from the hand, getting in with use, hitting one (the host does each for a guest).
+    ev.on('boat:place', (x, y, z, yaw) => this.placeBoat(x, y, z, yaw));
+    ev.on('boat:enter', (boat) => this.enterBoat(boat));
+    ev.on('boat:hit', (boat) => this.hitBoat(boat));
     ev.on('block:changed', (x, y, z) => { if (this.isGuest) return; this.waterSim.onBlockChanged(x, y, z); this.lavaSim.onBlockChanged(x, y, z); }); // guests only mirror the host's flow
     ev.on('chunk:loaded', (cx, cz) => {
       if (this.net && !this.net.isHost) return; // guests: the host owns water flow and mobs
       this.waterSim.onChunkLoaded(cx, cz);
       this.lavaSim.onChunkLoaded(cx, cz); // lava flow parked at an unloaded chunk border resumes too
       this.entities.mobs.onChunkLoaded(cx, cz);
-      // First generation of this chunk in this world: roll the deterministic mob group.
+      // First generation of this chunk in this world: roll the deterministic mob group. While natural spawning is off the chunk
+      // stays out of spawnedChunks, so turning the setting on later fills it the next time it loads.
       const key = chunkKeyString(cx, cz);
-      if (!this.session.spawnedChunks.has(key)) {
+      if (this.entities.mobs.naturalEnabled && !this.session.spawnedChunks.has(key)) {
         this.session.spawnedChunks.add(key);
         const chunk = this.world.getChunk(cx, cz);
         if (chunk) this.entities.mobs.spawnForChunk(this.world.seed, chunk);
@@ -415,7 +437,7 @@ export class Game {
       if (document.hidden) { this.session.save(false); this._hiddenSince = performance.now(); }
       else this.loop.resetTiming();
       // A hosting tab keeps simulating in the background on a worker ticker (page timers are throttled there).
-      this.loop.setHiddenTicker(document.hidden && !!(this.net && this.net.isHost));
+      this._updateHiddenTicker();
     });
     // Async cloud saves cannot finish while the page closes: warn when edits are still unsaved.
     window.addEventListener('beforeunload', (e) => { if (this.session.hasUnsavedChanges()) { e.preventDefault(); e.returnValue = ''; } });
@@ -455,40 +477,68 @@ export class Game {
     else if (r.msaaUnsupported && msaaSamplesOf(this.settings.get('antialias')) > 0) this.ui.hud.showToast('MSAA is not available here; FXAA is used instead', false);
   }
 
-  /** Load one of my worlds and host it (Multiplayer → Host New Server). `opts`: { maxPlayers, visibility } or just the player limit. */
+  /** Load one of my worlds and host it (Multiplayer → Host New Server); it wins over the world's Same Wi-Fi setting. `opts`: { maxPlayers, visibility } or just the player limit. */
   async hostWorld(worldId, opts = MAX_PLAYERS_DEFAULT) {
-    const ok = await this.startWorld(worldId);
+    const ok = await this.startWorld(worldId, { lan: false });
     if (!ok) return false;
     return this.startHosting(opts);
   }
 
-  /** Publish the lobby for the world being played; the host plays on as a normal player. `opts`: { maxPlayers, visibility } or the player limit. */
+  /**
+   * Publish the lobby for the world being played; the host plays on as a normal player. `opts`: { maxPlayers, visibility } or
+   * the player limit — or `{ lan: true }` for the world's Same Wi-Fi multiplayer setting: a Private lobby for up to 8 players
+   * with no relay credentials fetched and offers polled every 2 s, announced with one short line instead of the hosting toast.
+   */
   async startHosting(opts = MAX_PLAYERS_DEFAULT) {
-    if (this.net || !this.state.inWorld || this.session.remote) return false;
+    if (this.net || this.hostingPending || !this.state.inWorld || this.session.remote) return false;
     const options = typeof opts === 'number' ? { maxPlayers: opts } : { ...(opts || {}) };
+    if (options.lan) Object.assign(options, { visibility: 'private', maxPlayers: MAX_PLAYERS_MAX, turn: false, offerPollMs: 2000 });
     const host = new HostServer(this, options);
+    this.hostingPending = true;
     try { await host.start(); } catch (e) {
       console.warn('Game: hosting failed', e);
-      this.ui.hud.showToast("Couldn't publish the server. Check your connection.", false);
+      this.ui.hud.showToast(options.lan ? "Couldn't open the world to your Wi-Fi. Check your connection." : "Couldn't publish the server. Check your connection.", false);
       return false;
-    }
+    } finally { this.hostingPending = false; }
+    if (!this.state.inWorld) { host.stop('closed'); return false; } // the world was left while the lobby was being published
     this.net = host;
-    this.loop.setHiddenTicker(document.hidden);
-    this.ui.hud.showToast(`Hosting (${host.visibility}) · code ${host.joinCode} · keep this tab visible while hosting`, false);
-    this.systemChat(`Hosting a ${host.visibility} server · join code ${host.joinCode}`, 'gray', false);
+    if (host.lanMode) this.ui.hud.showToast(host.networkDetected ? `Open to your Wi-Fi · code ${host.joinCode}` : `Couldn't detect your Wi-Fi. Players can still join with code ${host.joinCode}.`, false);
+    else {
+      this.ui.hud.showToast(`Hosting (${host.visibility}) · code ${host.joinCode} · keep this tab visible while hosting`, false);
+      this.systemChat(`Hosting a ${host.visibility} server · join code ${host.joinCode}`, 'gray', false);
+    }
     this.ui.pause.refresh();
     this._netChanged();
     return true;
   }
 
-  /** Back to single player in the same world; guests see "The host closed the server". */
-  stopHosting() {
+  /**
+   * Back to single player in the same world; guests see "The host closed the server". `reopenLan` (the pause menu's Stop
+   * Hosting): a world whose Same Wi-Fi multiplayer setting is on opens to the network again, since that setting is its switch.
+   */
+  stopHosting(reopenLan = false) {
     if (!this.net || !this.net.isHost) return;
     this.net.stop('stopped');
     this.net = null;
-    this.loop.setHiddenTicker(false);
     this.ui.pause.refresh();
     this._netChanged();
+    if (reopenLan && this.state.inWorld && worldSetting(this.worldMeta, 'lanOpen')) this.startHosting({ lan: true }).then(() => this.ui.pause.refresh());
+  }
+
+  /** The worker ticker that keeps a hidden hosting tab simulating: only while a guest is connected to a world open through its Same Wi-Fi setting. */
+  _updateHiddenTicker() {
+    const host = this.net && this.net.isHost ? this.net : null;
+    this.loop.setHiddenTicker(document.hidden && !!host && (!host.lanMode || host.peers.size > 0));
+  }
+
+  /** Push the world's mob-related settings (hostile mobs, natural spawning, fall damage) to the mob manager; guests only mirror the host's mobs. */
+  applyWorldSettings() {
+    const mobs = this.entities && this.entities.mobs;
+    if (!mobs || this.isGuest) return;
+    const m = this.worldMeta;
+    mobs.setHostileEnabled(worldSetting(m, 'hostileMobs') !== false);
+    mobs.setNaturalEnabled(worldSetting(m, 'naturalMobs') !== false);
+    mobs.fallDamageEnabled = worldSetting(m, 'fallDamage') !== false;
   }
 
   /** Join a lobby (Find Server / Join by code): connect, download, generate, play. Errors go back to the Find screen. */
@@ -500,7 +550,7 @@ export class Game {
     let welcome;
     try { welcome = await client.connect(lobby); } catch (e) {
       this.state.set(State.MENU);
-      this.ui.multiplayer.showFind(e.message || 'Could not connect.');
+      this.ui.fade(() => this.ui.multiplayer.showFind(e.message || 'Could not connect.')); // queued behind the state's own switch: both run at black
       return false;
     }
     this.net = client;
@@ -524,7 +574,7 @@ export class Game {
     this.net = null;
     client.close(true);
     if (this.state.inWorld || this.state.is(State.LOADING)) this.session.abandon();
-    if (!this.state.is(State.KICKED)) { this.state.set(State.MENU); this.ui.multiplayer.showMain(message); }
+    if (!this.state.is(State.KICKED)) { this.state.set(State.MENU); this.ui.fade(() => this.ui.multiplayer.showMain(message)); }
     this._netChanged();
   }
 
@@ -539,7 +589,7 @@ export class Game {
 
   _dropNet() {
     if (!this.net) return;
-    if (this.net.isHost) { this.net.stop('closed'); this.loop.setHiddenTicker(false); }
+    if (this.net.isHost) this.net.stop('closed');
     else this.net.close(true);
     this.net = null;
     this._netChanged();
@@ -555,6 +605,7 @@ export class Game {
     console.warn('Game: kicked (' + reason + ')');
     const wasInWorld = this.state.inWorld || this.state.is(State.LOADING);
     const remote = this.session.remote;
+    this.presence.stop(); // the other place is the one that is online now
     this._dropNet();
     if (wasInWorld && !remote) { try { await this.session.saveWithTimeout(3000); } catch (e) { /* best effort */ } }
     if (wasInWorld) this.session.abandon();
@@ -569,6 +620,7 @@ export class Game {
     this.kicked = false;
     this.prefetchWorlds();
     this.state.set(State.MENU);
+    this.presence.start();
     return true;
   }
 
@@ -660,14 +712,14 @@ export class Game {
   _projectileHurt(shooter, hit) {
     if (hit.id === 'self') {
       if (!this.health.active || this.player.dead || this.player.isCreative || this.player.isSpectator) return;
-      const armor = this.inventory.armorPoints();
+      const armor = this.inventory.armorValue(); // { points, cap }: Encorsed pieces lift the cap
       if (hit.kind === 'arrow') {
         if (shooter !== 'self' && this.worldMeta && this.worldMeta.pvp === false) return;
         const rp = shooter === 'self' ? null : this.remotePlayers.get(shooter);
         const by = rp ? rp.name : 'another player';
         this.health.damage(arrowPlayerDamage(hit.power, hit.bonus, armor), { kind: 'arrow', by }, { kx: hit.kx, kz: hit.kz, crit: hit.crit, ignoreInvuln: true });
       } else {
-        const n = explosionPlayerDamage(hit.impact, hit.power, this.inventory.explosionArmorPoints()); // obsidian counts 1.5× here
+        const n = explosionPlayerDamage(hit.impact, hit.power, this.inventory.explosionArmorValue()); // obsidian / Encorsed count 1.5× here, with the explosion cap
         this.health.damage(n, { kind: 'explosion' }, { ignoreInvuln: true });
         const k = EXPLOSION_KNOCKBACK * hit.impact, v = this.player.velocity;
         v.x += hit.kx * k; v.z += hit.kz * k; v.y += hit.ky * k;
@@ -722,7 +774,15 @@ export class Game {
 
   // ---- State transitions ----
 
-  startWorld(worldId) { return this.session.start(worldId); }
+  /**
+   * Load a world (the world list's Play, ?world=, ?autoplay). A world whose Same Wi-Fi multiplayer setting is on opens to the
+   * network as soon as it plays; Multiplayer → Host passes `lan: false` and hosts on its own terms afterwards.
+   */
+  async startWorld(worldId, { lan = true } = {}) {
+    const ok = await this.session.start(worldId);
+    if (ok && lan && !this.net && this.state.inWorld && worldSetting(this.worldMeta, 'lanOpen')) await this.startHosting({ lan: true });
+    return ok;
+  }
 
   /** Ask the lock controller for the mouse; `source` is for the ?debuglog trace. */
   requestPointerLock(source = 'game') { return this.lock.request(source); }
@@ -844,34 +904,271 @@ export class Game {
     this.events.emit('tick:changed', this.tick);
   }
 
-  /** The pause menu is only an overlay in multiplayer (the host's simulation never stops, guests keep mirroring). */
+  /**
+   * The pause menu is only an overlay in multiplayer (the host's simulation never stops, guests keep mirroring) — except in a
+   * world open through its Same Wi-Fi setting with nobody joined, which pauses like single player. Also called by the host
+   * server when a guest joins or leaves.
+   */
   _netChanged() {
-    this.state.overlayPause = !!this.net;
+    const n = this.net;
+    this.state.overlayPause = !!n && (!n.isHost || !n.lanMode || n.peers.size > 0);
+    this._updateHiddenTicker();
     this.events.emit('net:changed');
   }
 
-  /** Survival → Creative → Spectator → Survival. */
+  /** Survival → Creative → Spectator → Survival (the pause menu's button and the toggleGameMode key): asks before the badge is lost, refused in a locked world. */
   cycleGameMode() {
     const i = GAME_MODE_ORDER.indexOf(this.player.gameMode);
-    this.setGameMode(GAME_MODE_ORDER[(i + 1) % GAME_MODE_ORDER.length]);
+    return this.requestGameMode(GAME_MODE_ORDER[(i + 1) % GAME_MODE_ORDER.length]);
   }
 
   /** @deprecated use cycleGameMode */
-  toggleGameMode() { this.cycleGameMode(); }
+  toggleGameMode() { return this.cycleGameMode(); }
 
-  /** `forced` is the host's decision (the WELCOME or a MODE message); a guest cannot change its own mode without permission. */
+  // ---- the game mode lock and the Pure Survival badge (part 3 of 4, Nov 11 2026) ----
+
+  /** The mode this world is locked to (chosen at creation, never changes), or null. */
+  get lockedMode() { return lockedModeOf(this.worldMeta); }
+
+  /** Does this world still have its Pure Survival badge? */
+  get survivalOnly() { return !!(this.worldMeta && this.worldMeta.survivalOnly === true); }
+
+  /** Would a cheat take the badge away here (only the owner / host writes the badge off; a guest never owns it)? */
+  get badgeAtStake() { return this.survivalOnly && !this.isGuest; }
+
+  /** Why no cheat may run right now — a world locked to Survival, a guest without the host's permission — or null. */
+  cheatDenied() {
+    if (this.lockedMode === 'survival') return lockedText('survival');
+    if (this.isGuest && !this.net.canChangeMode) return NO_CHEATS_TEXT;
+    return null;
+  }
+
+  /**
+   * A player-initiated mode change (the pause button, the key, the mode selects, /set gamemode): refused in a locked world
+   * and for a guest without permission; leaving Survival first asks to give up the badge (`confirm`; the command flow asked
+   * already) and writes it off — a failed write refuses the change. Returns true / false, or a promise of it when it had to ask or write.
+   */
+  requestGameMode(mode, { confirm = true } = {}) {
+    const locked = this.lockedMode;
+    if (locked) { this.ui.hud.showMessage(lockedText(locked)); return false; }
+    if (this.isGuest && !this.net.canChangeMode) { this.ui.hud.showMessage('The host controls your game mode.'); return false; }
+    if (mode === this.player.gameMode) return true;
+    if (mode !== 'survival' && this.badgeAtStake) return this.loseBadge({ confirm }).then((ok) => ok && this.setGameMode(mode));
+    return this.setGameMode(mode);
+  }
+
+  /**
+   * Give up the world's Pure Survival badge: ask first (`confirm`, the in-game confirm box with "Remove the badge" / "Cancel"),
+   * write `survival_only: false` to the world row at once, and only then forget it here (guests follow through WORLD).
+   * Resolves false when cancelled or when the write failed (OFFLINE_TEXT, shown unless `silent`): the action must not happen.
+   */
+  async loseBadge({ confirm = true, silent = false } = {}) {
+    const meta = this.worldMeta;
+    if (!meta || meta.survivalOnly !== true) return true;
+    if (confirm && !(await this.ui.confirm.ask(BADGE_SENTENCE, { ok: 'Remove the badge', cancel: 'Cancel' }))) return false;
+    if (meta.survivalOnly !== true || this.worldMeta !== meta) return true; // lost or left meanwhile
+    if (!this.isGuest && meta.id) {
+      try { await this.saveManager.removeSurvivalBadge(meta.id); }
+      catch (e) { console.warn('Game: could not write the badge off', e); if (!silent) this.ui.hud.showMessage(OFFLINE_TEXT); return false; }
+    }
+    meta.survivalOnly = false;
+    this.session.changedSinceSave = true;
+    if (this.net && this.net.isHost) this.net.broadcastWorldSettings();
+    this.events.emit('badge:changed', false);
+    if (this.ui.pause) this.ui.pause.refresh();
+    return true;
+  }
+
+  /**
+   * The raw mode setter. `forced` is the host's decision (the WELCOME or a MODE message); a guest cannot change its own mode
+   * without permission. A locked world never leaves its mode (not even forced); leaving Survival through this direct call
+   * (a debug / test hook — the UI and the commands go through requestGameMode, which asks first) still writes the badge off.
+   */
   setGameMode(mode, forced = false) {
+    const locked = this.lockedMode;
+    if (locked && mode !== locked) { if (!forced) this.ui.hud.showMessage(lockedText(locked)); return false; }
     if (!forced && this.isGuest && !this.net.canChangeMode) { this.ui.hud.showMessage('The host controls your game mode.'); return false; }
     const p = this.player;
     const wasSpectator = p.isSpectator;
     p.gameMode = mode;
+    if (p.isSpectator && p.riding) this.leaveBoat();
     if (p.isSpectator) { p.flying = true; p.velocity.set(0, 0, 0); }
     else if (!p.isCreative) p.flying = false;
     if (wasSpectator && !p.isSpectator) this._unbury();
     if (this.worldMeta) this.worldMeta.gameMode = mode;
     this.session.gameModeChanged(mode);
-    this.ui.hud.showMessage(`Game Mode: ${mode.charAt(0).toUpperCase() + mode.slice(1)}`);
+    this.ui.hud.showMessage(`Game Mode: ${modeName(mode)}`);
     this.events.emit('gamemode:changed', mode);
+    if (mode !== 'survival' && this.badgeAtStake) this.loseBadge({ confirm: false, silent: true }); // never a badge on a world that left Survival
+    return true;
+  }
+
+  // ---- boats (Nov 15 2026): placing, seats, getting in and out, breaking ----
+
+  /** A boat from the hand at (x, y, z) facing `yaw` (BlockInteraction checked the space and used the item); a guest asks the host. */
+  placeBoat(x, y, z, yaw) {
+    if (this.net && !this.net.isHost) { this.net.boatPlace(x, y, z, yaw); return; }
+    this.entities.boats.spawn(x, y, z, yaw);
+    this.audio.playBlock('place', BlockIds.PLANKS, x, y + 0.3, z);
+  }
+
+  /** Use on a boat: the front seat when it is free (and drive), else the back seat; a full boat does nothing. A guest asks the host, which answers with the seats. */
+  enterBoat(boat) {
+    const p = this.player;
+    if (!boat || boat.dead || p.riding === boat || p.dead || p.isSpectator) return;
+    if (boat.driver !== null && boat.passenger !== null) return;
+    if (this.net && !this.net.isHost) { this.net.boatEnter(boat.id); return; }
+    this.entities.boats.assign(boat, this.entities.boats.localId);
+  }
+
+  /** Out of the boat: onto the nearest free spot beside it (`forced`: wherever the body already is — a death, a teleport, the boat gone). */
+  leaveBoat(forced = false) {
+    const p = this.player, boats = this.entities.boats, boat = p.riding;
+    if (!boat) return;
+    boats.clearRider(boats.localId);
+    if (!forced && !boat.dead) { boats.exitSpot(boat, this._seat); p.teleport(this._seat.x, this._seat.y, this._seat.z); this._unbury(); }
+    p.velocity.set(0, 0, 0); p.fallStartY = null; p.onGround = false;
+    if (this.net && !this.net.isHost) this.net.boatLeave();
+  }
+
+  /** Hit a boat: an empty one breaks and drops the item (not in Creative); one with a rider only takes the swing. A guest asks the host. */
+  hitBoat(boat) {
+    if (!boat || boat.dead) return;
+    this.events.emit('player:swing');
+    const bp = boat.position;
+    if (boat.driver !== null || boat.passenger !== null) { this.audio.playBlock('hit', BlockIds.PLANKS, bp.x, bp.y + 0.3, bp.z); return; }
+    if (this.net && !this.net.isHost) { this.net.boatBreak(boat.id); return; }
+    this.breakBoat(boat, !this.player.isCreative);
+  }
+
+  breakBoat(boat, drop) {
+    const bp = boat.position.clone();
+    this.entities.boats.remove(boat);
+    if (drop) this.entities.spawnItem(bp.x, bp.y + 0.3, bp.z, ItemIds.BOAT, 1, 0, 1.5, 0, ITEM_PICKUP_DELAY);
+    this.audio.playBlock('break', BlockIds.PLANKS, bp.x, bp.y + 0.3, bp.z);
+    this.particles.spawnBlockBreak(Math.floor(bp.x), Math.floor(bp.y), Math.floor(bp.z), BlockIds.PLANKS, 10);
+  }
+
+  /** The local player sat down (seat 0 / 1) or got up (-1): the body is put on the seat at once, no pose of its own. */
+  _onLocalSeat(boat, seat) {
+    const p = this.player;
+    if (boat && seat >= 0) {
+      p.sneaking = false; p.swimming = false; p.crawling = false; p.sprinting = false; p.gliding = false; p.rocketTime = 0; p.dashTime = 0; p.flying = false; p.fallStartY = null;
+      boat.seatPosition(seat, this._seat);
+      p.position.copy(this._seat); p.prevPosition.copy(this._seat); p.renderPosition.copy(this._seat);
+      p.velocity.copy(boat.velocity);
+      this._rideTeleports = p.teleports || 0;
+      this.interaction.placeTimer = 0;
+    }
+  }
+
+  /** Before the entities step: a teleport since the last step (a /tp, a respawn, a correction) ends the ride; the driver's keys steer. */
+  _rideInput() {
+    const p = this.player, boat = p.riding;
+    if ((p.teleports || 0) !== this._rideTeleports || boat.dead) { this.leaveBoat(true); return; }
+    if (p.seat === 0 && !boat.remote) { boat.input.forward = p.intent.forward; boat.input.turn = -p.intent.strafe; }
+  }
+
+  /** After the entities step: the body sits on its seat with the boat's velocity, no pose of its own; water and lava still count. */
+  _rideFollow() {
+    const p = this.player, boat = p.riding;
+    if (!boat || boat.dead) { if (boat) this.leaveBoat(true); return; }
+    boat.seatPosition(p.seat, this._seat);
+    p.prevPosition.copy(p.position);
+    p.position.copy(this._seat);
+    p.velocity.copy(boat.velocity);
+    p.onGround = boat.onGround;
+    p.sneaking = false; p.swimming = false; p.crawling = false; p.sprinting = false; p.gliding = false; p.flying = false; p.fallStartY = null; p.fallIgnoreAboveY = null;
+    p.horizontalSpeed = boat.speed;
+    p.updateAABB();
+    this.physics.liquidState(p);
+    this._rideTeleports = p.teleports || 0;
+  }
+
+  // ---- what the commands act on: players, items, mobs ----
+
+  /** This player's name (the account's username). */
+  playerName() { return (this.account && this.account.username) || 'you'; }
+
+  /** The actor of a command typed here: { id: 'self', name, x, y, z }. */
+  selfActor() { const p = this.player.position; return { id: 'self', name: this.playerName(), x: p.x, y: p.y, z: p.z, remote: false }; }
+
+  /** Every player in this world, this one first: the host sees its guests, a guest the other players it knows. */
+  playerNames() {
+    const names = [this.playerName()];
+    if (this.net && this.net.isHost) { for (const peer of this.net.peers.values()) if (peer.name) names.push(peer.name); }
+    else if (this.remotePlayers) { for (const rp of this.remotePlayers.players.values()) if (rp.name) names.push(rp.name); }
+    return names;
+  }
+
+  /** A player by name (case-insensitive) with its current position, or null: { id ('self' | userId), name, x, y, z }. */
+  playerByName(name) {
+    const want = String(name || '').toLowerCase();
+    if (want === this.playerName().toLowerCase()) return this.selfActor();
+    if (this.net && this.net.isHost) {
+      for (const peer of this.net.peers.values()) if (peer.name && peer.name.toLowerCase() === want && peer.state) return { id: peer.userId, name: peer.name, x: peer.state[0], y: peer.state[1], z: peer.state[2], remote: true };
+    } else if (this.remotePlayers) {
+      for (const [id, rp] of this.remotePlayers.players) if (rp.name && rp.name.toLowerCase() === want) return { id, name: rp.name, x: rp.position.x, y: rp.position.y, z: rp.position.z, remote: true };
+    }
+    return null;
+  }
+
+  /** The item names /give accepts (the creative catalog) and their display names. */
+  itemNames() { return ItemRegistry.catalog().map((it) => it.name); }
+  itemLabel(name) { const id = ItemRegistry.idOf(name); return id >= 0 ? ItemRegistry.displayName(id) : ''; }
+  /** The mob types /summon accepts and their names. */
+  mobNames() { return Object.keys(MOB_BY_TYPE); }
+  mobLabel(type) { const def = MOB_BY_TYPE[type]; return def ? (def.name || type.charAt(0).toUpperCase() + type.slice(1)) : ''; }
+
+  /**
+   * Move a player (/tp, /spawn): y clamped to the world; this player teleports and is un-buried, a connected guest gets SPAWN_AT
+   * with its movement baseline reset (HostServer.movePeer), so the jump is never rejected. Returns { ok, x, y, z } or { ok: false, error }.
+   */
+  teleportPlayer(id, dest) {
+    const x = Number(dest.x), z = Number(dest.z);
+    const y = Math.max(1, Math.min(WORLD_HEIGHT - 3, Number(dest.y)));
+    if (![x, y, z].every(Number.isFinite)) return { ok: false, error: 'That position is not valid.' };
+    if (id === 'self') { this.player.teleport(x, y, z); this._unbury(); return { ok: true, x, y, z }; }
+    if (this.net && this.net.isHost && this.net.movePeer(id, x, y, z)) return { ok: true, x, y, z };
+    return { ok: false, error: 'That player is not here.' };
+  }
+
+  /** /give: into this player's inventory (the rest drops at the feet) or, as the host, granted to a guest. Returns the count given, 0 for an unknown item. */
+  giveItem(id, name, count) {
+    const itemId = ItemRegistry.idOf(name);
+    if (itemId < 0 || !(count > 0)) return 0;
+    if (id === 'self') { const left = this.inventory.addItem(itemId, count); if (left > 0) this._dropAtFeet(itemId, left); return count; }
+    if (this.net && this.net.isHost && this.net.grantItem(id, itemId, count)) return count;
+    return 0;
+  }
+
+  _dropAtFeet(itemId, n) {
+    const p = this.player.position, max = ItemRegistry.stackSize(itemId);
+    while (n > 0) { const k = Math.min(max, n); this.entities.spawnItem(p.x, p.y + 0.5, p.z, itemId, k, 0, 0, 0, ITEM_PICKUP_DELAY); n -= k; }
+  }
+
+  /** /summon: `count` mobs of `type` around `at` ({ x, y, z }), past the caps; zombies need Hostile mobs on. Returns { spawned } or { error }. */
+  summonMobs(type, count, at) {
+    const def = MOB_BY_TYPE[type];
+    if (!def) return { error: `Unknown mob '${type}'` };
+    const mobs = this.entities.mobs;
+    if (def.hostile && !mobs.hostileEnabled) return { error: 'Hostile mobs are turned off in this world.' };
+    let spawned = 0;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2, d = i === 0 ? 0 : 0.5 + Math.random() * 1.5;
+      if (mobs._add(def, at.x + Math.cos(a) * d, at.y, at.z + Math.sin(a) * d, (Math.random() * 4294967296) >>> 0, Math.random() * Math.PI * 2, def.health, null, true)) spawned++;
+    }
+    return { spawned };
+  }
+
+  /** /setspawn: the world spawn (where every player respawns, the saved guests included) moves to `pos`. */
+  setWorldSpawn(pos) {
+    const p = this.player;
+    p.spawn.set(pos.x, pos.y, pos.z);
+    const meta = this.worldMeta;
+    if (meta && meta.guests) for (const g of Object.values(meta.guests)) if (g && g.player) { g.player.spawnX = pos.x; g.player.spawnY = pos.y; g.player.spawnZ = pos.z; }
+    this.session.changedSinceSave = true;
+    return { x: pos.x, y: pos.y, z: pos.z };
   }
 
   /** Leaving Spectator inside blocks: move up to the nearest free space that fits the hitbox. */
@@ -891,7 +1188,7 @@ export class Game {
       if (this.isGuest) { this.leaveServer(); return; } // → the server list
       if (this.net && this.net.isHost) this.stopHosting();
       const left = await this.session.quit();
-      if (left && this.state.is(State.MENU)) this.ui.mainMenu.showWorlds(); // back to the world selection, not the home page
+      if (left && this.state.is(State.MENU)) this.ui.fade(() => this.ui.mainMenu.showWorlds()); // back to the world selection, not the home page (at the same black as the state's switch)
     } finally { this.ui.pause.setBusy(false); }
   }
 
@@ -902,6 +1199,7 @@ export class Game {
     if (this.state.inWorld) { const left = await this.session.quit(); if (!left) return; }
     if (this.sessionGuard) this.sessionGuard.release();
     this.kicked = false;
+    await this.presence.clear(); // friends see me offline at once (best effort)
     await this.account.signOut();
     this.state.set(State.ACCOUNT);
   }
@@ -937,7 +1235,9 @@ export class Game {
       if (a.wasPressed('chat') || this.input.wasPressed(CHAT_ENTER_CODE)) { this.openChat(''); return; }
       if (this.input.wasPressed(CHAT_SLASH_CODE)) { this.openChat('/'); return; }
     }
+    if (this.player.riding && a.wasPressed('sneak')) this.leaveBoat(); // the crouch key gets out of a boat (Nov 15 2026)
     if (a.wasPressed('perspective')) this.cameraController.cycle();
+    if (a.wasPressed('smoothCamera')) this.ui.hud.showMessage(`Smooth Camera: ${this.controller.setSmoothCamera(!this.controller.smoothCamera) ? 'On' : 'Off'}`); // F8 (for recording): off again on every page load
     if (a.wasPressed('toggleGameMode')) this.cycleGameMode();
     const wheel = this.input.consumeWheel();
     if (this.player.isSpectator) {
@@ -988,23 +1288,33 @@ export class Game {
     if (!this.state.simulating) return;
     const pr = this.profiler;
     pr.begin('physics');
-    if (!this.player.dead) this.physics.step(dt); // a dead player's body waits for Respawn
+    if (this.player.riding) this._rideInput(); // a rider is carried by its boat (below); the driver's keys steer it
+    else if (!this.player.dead) this.physics.step(dt); // a dead player's body waits for Respawn
     pr.end('physics');
     pr.begin('mobs');
     this.entities.fixedUpdate(dt);
+    if (this.player.riding) this._rideFollow();
     pr.end('mobs');
     // Scheduled water updates every WATER_TICK_SECONDS (only blocks touched by a change are processed); the host
     // of a LAN server runs them for everyone, guests only mirror.
     this._waterTimer += dt;
     if (this._waterTimer >= WATER_TICK_SECONDS) {
       this._waterTimer -= WATER_TICK_SECONDS;
-      if (!this.isGuest) { pr.begin('water'); this.waterSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.waterSim.tick(); pr.end('water'); }
+      if (!this.isGuest) { pr.begin('water'); this.waterSim.setSimulationCenters(this._simCenters()); this.waterSim.tick(); pr.end('water'); }
     }
     this._lavaTimer += dt;
     if (this._lavaTimer >= LAVA_TICK_SECONDS) {
       this._lavaTimer -= LAVA_TICK_SECONDS;
-      if (!this.isGuest) { pr.begin('lava'); this.lavaSim.setSimulationCenter(this.player.position.x, this.player.position.z); this.lavaSim.tick(); pr.end('lava'); }
+      if (!this.isGuest) { pr.begin('lava'); this.lavaSim.setSimulationCenters(this._simCenters()); this.lavaSim.tick(); pr.end('lava'); }
     }
+  }
+
+  /** The simulation centers for the liquids: this player and, when hosting, every connected guest (its latest position). */
+  _simCenters() {
+    const p = this.player.position;
+    const out = [{ x: p.x, z: p.z }];
+    if (this.net && this.net.isHost && this.net.peers) for (const peer of this.net.peers.values()) if (peer.state) out.push({ x: peer.state[0], z: peer.state[2] }); // `peers` guarded: a test double may host without any
+    return out;
   }
 
   /**
@@ -1025,9 +1335,10 @@ export class Game {
       if (this.bench.active) this.bench.update(realDt);
       pr.begin('misc');
       this.controller.enabled = playing && this.input.pointerLocked && !this.ui.chat.isOpen;
-      this.controller.updateLook();
+      this.controller.updateLook(realDt); // mouse look (and the smooth camera's glide) run on real time, never /tick
       this.controller.updateIntent();
       p.interpolate(alpha);
+      if (p.riding && p.riding.remote) { p.riding.sampleRemote(performance.now() / 1000); p.renderPosition.copy(p.riding.seatPosition(p.seat, this._seat, true)); } // a passenger (or the host behind a guest driver) sits where the mirrored boat is drawn this frame
       this.cameraController.update(dt);
       const first = this.cameraController.isFirstPerson;
       p.getEyePosition(this._eye);

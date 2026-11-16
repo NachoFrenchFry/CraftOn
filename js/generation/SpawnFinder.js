@@ -40,6 +40,7 @@ export function scoreSpawnColumn(gen, x, z, sample = createColumnSample()) {
  * @returns {{x:number, z:number, height:number, biome:number, continent:number, score:number}|null}
  */
 export function findSpawnColumn(gen, radius = SPAWN_SEARCH_RADIUS, step = SPAWN_STEP, avoidLava = true) {
+  if (gen.flat) return { x: 0, z: 0, height: gen.surfaceHeight(0, 0), biome: BiomeIds.PLAINS, continent: 1, score: 1 }; // Superflat: on top of the layers at the origin
   const sample = createColumnSample();
   const rejected = new Set();
   for (let attempt = 0; attempt < 6; attempt++) {

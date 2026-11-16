@@ -13,6 +13,8 @@ import { SOLID } from '../blocks/BlockRegistry.js';
 import { GameMode } from '../player/Player.js';
 import { WorldLock } from './cloud/WorldLock.js';
 import { decodeChunkRow } from '../net/Protocol.js';
+import { normalizeWorldMeta, applyWorldSettingsMessage, lockedModeOf } from './WorldSettings.js';
+import { worldOptionsOf } from '../generation/Superflat.js';
 
 const AUTOSAVE_SECONDS = 60;
 const LOAD_TIMEOUT_MS = 60000;
@@ -79,13 +81,13 @@ export class WorldSession {
       lock.release();
       this.loading = false;
       g.state.set(State.MENU);
-      g.ui.mainMenu.showWorlds();
-      g.ui.mainMenu.showError("Couldn't download the world. Check your connection.");
+      g.ui.fade(() => { g.ui.mainMenu.showWorlds(); g.ui.mainMenu.showError("Couldn't download the world. Check your connection."); });
       return false;
     }
     this.lock = lock;
     this.meta = meta;
     meta.guests = meta.guests && typeof meta.guests === 'object' ? meta.guests : {}; // LAN guests' player data
+    normalizeWorldMeta(meta); // an old world without the newer keys gets their defaults; the world type and layers are checked
     g.worldMeta = meta;
     if (g.sessionGuard) g.sessionGuard.claim(); // entering a world claims the account again
     g.ui.loading.show('Generating terrain…');
@@ -98,12 +100,13 @@ export class WorldSession {
     if (g.chests) g.chests.clear();
     g.waterSim.clear(); g.lavaSim.clear(); g.torchEffects.clear();
     g.world.seed = meta.seed >>> 0;
-    g.chunkManager.setSeed(g.world.seed);
+    g.chunkManager.setSeed(g.world.seed, worldOptionsOf(meta)); // the world type and layers reach the workers with the seed, before any chunk generates
     g.chunkManager.applyGeneratedLoot = true;
     for (const [key, data] of edits) g.world.edits.loadChunk(key, data);
     // Mobs must be registered before chunks stream in, so they reappear when their chunk loads.
     this.spawnedChunks = new Set(Array.isArray(meta.spawnedChunks) ? meta.spawnedChunks : []);
-    if (g.entities.mobs) { g.entities.mobs.deserialize(meta.mobs); g.entities.mobs.setHostileEnabled(meta.hostileMobs !== false); }
+    if (g.entities.mobs) g.entities.mobs.deserialize(meta.mobs);
+    g.applyWorldSettings(); // hostile mobs, natural spawning, fall damage
 
     // Player, inventory and mode.
     const p = g.player;
@@ -120,12 +123,14 @@ export class WorldSession {
       if (meta.perspective) g.cameraController.perspective = meta.perspective;
     } else {
       const spawnPhase = T.start('spawn column search', 'play');
-      const spawn = this._findSpawn(g.world.seed);
+      const spawn = this._findSpawn(g.world.seed, meta);
       T.end(spawnPhase);
       p.spawn.set(spawn.x, spawn.y, spawn.z);
       p.teleport(spawn.x, spawn.y, spawn.z);
       p.yaw = 0; p.pitch = 0;
     }
+    const locked = lockedModeOf(meta); // a locked world: the owner plays in the mode it was created in, whatever was saved
+    if (locked && p.gameMode !== locked) { p.gameMode = locked; meta.gameMode = locked; if (p.isSpectator) p.flying = true; else if (!p.isCreative) p.flying = false; }
 
     await this._streamSpawnArea();
     g.ui.loading.show('Almost ready…', { keepProgress: true });
@@ -134,6 +139,7 @@ export class WorldSession {
     if (!meta.player) this._settleOnSurface();
     else this._settleIfBuried();
     g.entities.deserialize(meta.entities);
+    if (g.entities.boats) g.entities.boats.deserialize(meta.boats); // worlds saved before the boats load without any
     T.end(genPhase, `${g.world.chunks.size} chunks loaded`);
     if (g.debuglog) T.report('play');
     this.autosaveTimer = AUTOSAVE_SECONDS;
@@ -167,11 +173,14 @@ export class WorldSession {
       this.loading = false;
       g.net = null;
       g.state.set(State.MENU);
-      g.ui.multiplayer.showFind('The host closed the server.');
+      g.ui.fade(() => g.ui.multiplayer.showFind('The host closed the server.'));
       return false;
     }
     if (g.sessionGuard) g.sessionGuard.claim();
-    const meta = { id: null, remote: true, name: w.worldName, seed: w.seed >>> 0, seedText: '', gameMode: w.gameMode, hostName: w.hostName, player: w.you ? w.you.player : null, inventory: w.you ? w.you.inventory : null, spawnedChunks: [], entities: [], mobs: [], guests: {}, hostileMobs: w.hostileMobs !== false, explosives: w.explosives !== false, explosionsBreakBlocks: w.explosionsBreakBlocks !== false };
+    // The world type and layers come with the WELCOME and must be set before any chunk generates (a guest would otherwise see normal terrain).
+    const options = worldOptionsOf(w);
+    const meta = { id: null, remote: true, name: w.worldName, seed: w.seed >>> 0, seedText: typeof w.seedText === 'string' ? w.seedText.slice(0, 32) : '', gameMode: w.gameMode, hostName: w.hostName, player: w.you ? w.you.player : null, inventory: w.you ? w.you.inventory : null, spawnedChunks: [], entities: [], mobs: [], guests: {}, worldType: options.worldType, flatLayers: options.flatLayers || undefined };
+    applyWorldSettingsMessage(meta, w); // keep inventory, PvP, hostile mobs, explosives, fall damage, natural spawning
     this.meta = meta;
     g.worldMeta = meta;
     g.ui.loading.show('Generating terrain…');
@@ -181,7 +190,7 @@ export class WorldSession {
     if (g.chests) g.chests.clear();
     g.waterSim.clear(); g.lavaSim.clear(); g.torchEffects.clear();
     g.world.seed = meta.seed;
-    g.chunkManager.setSeed(g.world.seed);
+    g.chunkManager.setSeed(g.world.seed, options);
     g.chunkManager.applyGeneratedLoot = false; // the host's chunk rows carry the chest contents
     for (const row of rows) {
       try { const { key, diff } = await decodeChunkRow(row); g.world.edits.loadChunk(key, diff); } catch (e) { console.warn('WorldSession: bad chunk row from the host', row && row.key, e); }
@@ -190,6 +199,7 @@ export class WorldSession {
     g.entities.remote = true;
     g.entities.mobs.remote = true;
     g.entities.mobs.deserializeRemote(w.mobs);
+    if (g.entities.boats) { g.entities.boats.remote = true; g.entities.boats.localId = client.userId; g.entities.boats.deserializeRemote(w.boats); } // the host's boats and who sits in them
     for (const it of w.items || []) g.entities.spawnItem(it.x, it.y, it.z, it.item, it.n, it.vx, it.vy, it.vz, 0.25, it.id);
     const now = performance.now() / 1000;
     for (const p of w.players || []) { const rp = g.remotePlayers.add(p.id, p.name); rp.setMeta(p); if (p.state) rp.snapshot(now, p.state); }
@@ -211,7 +221,7 @@ export class WorldSession {
       p.yaw = 0; p.pitch = 0;
     }
     await this._streamSpawnArea();
-    if (client.closed) { this.loading = false; this._leave(); g.net = null; g.state.set(State.MENU); g.ui.multiplayer.showFind('The host closed the server.'); return false; }
+    if (client.closed) { this.loading = false; this._leave(); g.net = null; g.state.set(State.MENU); g.ui.fade(() => g.ui.multiplayer.showFind('The host closed the server.')); return false; }
     g.ui.loading.show('Almost ready…', { keepProgress: true });
     await g.renderer.precompile(g.precompileMaterials()); // every shader variant compiled before the first frame
     g.ui.loading.setProgress(1);
@@ -239,10 +249,12 @@ export class WorldSession {
 
   /**
    * Spawn column: the scored spiral search (inland, plains / forest, gentle, not a peak), falling back to
-   * the first land column outward from the origin when nothing within range qualifies.
+   * the first land column outward from the origin when nothing within range qualifies. A Superflat world spawns on top
+   * of its layers at x = 0.5, z = 0.5.
    */
-  _findSpawn(seed) {
-    const gen = new WorldGenerator(seed);
+  _findSpawn(seed, meta = this.meta) {
+    const gen = new WorldGenerator(seed, worldOptionsOf(meta));
+    if (gen.flat) return gen.flatSpawn();
     const best = findSpawnColumn(gen);
     if (best) return { x: best.x + 0.5, y: best.height + 1, z: best.z + 0.5 };
     const ok = (x, z) => gen.surfaceHeight(x, z) >= SEA_LEVEL + 2 && gen.biomeAt(x, z) !== BiomeIds.OCEAN;
@@ -345,6 +357,7 @@ export class WorldSession {
       meta.inventory = g.inventory.serialize();
       meta.entities = g.entities.serialize();
       meta.mobs = g.entities.mobs ? g.entities.mobs.serialize() : [];
+      meta.boats = g.entities.boats ? g.entities.boats.serialize() : []; // position, heading and velocity; a rider loads standing (Nov 15 2026)
       meta.spawnedChunks = [...this.spawnedChunks];
       meta.gameMode = g.player.gameMode;
       meta.perspective = g.cameraController.perspective;
@@ -420,6 +433,7 @@ export class WorldSession {
     if (g.chests) g.chests.clear();
     g.entities.remote = false;
     if (g.entities.mobs) g.entities.mobs.remote = false;
+    if (g.entities.boats) { g.entities.boats.remote = false; g.entities.boats.localId = 'self'; }
     if (g.remotePlayers) g.remotePlayers.clear();
     g.waterSim.clear(); g.lavaSim.clear(); g.torchEffects.clear();
     g.audio.stopAmbient();

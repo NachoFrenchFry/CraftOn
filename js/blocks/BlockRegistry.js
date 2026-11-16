@@ -13,6 +13,8 @@ const PASS_MAP = { opaque: RenderPass.OPAQUE, cutout: RenderPass.CUTOUT, translu
 
 export const OPAQUE = new Uint8Array(BLOCK_COUNT);
 export const SOLID = new Uint8Array(BLOCK_COUNT);
+/** 1 for blocks a player slides on (ice, Nov 15 2026): PlayerPhysics uses Movement.js's 'ice' mode on them; part 2's boats read it too. */
+export const SLIPPERY = new Uint8Array(BLOCK_COUNT);
 export const RENDER_TYPE = new Uint8Array(BLOCK_COUNT);
 export const PASS = new Uint8Array(BLOCK_COUNT);
 export const BREAK_TIME = new Float32Array(BLOCK_COUNT);
@@ -70,6 +72,7 @@ for (const def of BLOCK_DEFINITIONS) {
   idByName.set(def.name, id);
   OPAQUE[id] = def.opaque ? 1 : 0;
   SOLID[id] = def.solid ? 1 : 0;
+  SLIPPERY[id] = def.slippery ? 1 : 0;
   RENDER_TYPE[id] = RENDER_TYPE_MAP[def.renderType] ?? RenderType.NONE;
   PASS[id] = PASS_MAP[def.pass] ?? RenderPass.OPAQUE;
   BREAK_TIME[id] = def.breakTime;

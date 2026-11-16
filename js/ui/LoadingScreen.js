@@ -9,6 +9,8 @@ export class LoadingScreen {
     this.title = document.getElementById('loading-title');
     this.progress = document.getElementById('loading-progress');
     this.lastPercent = -1;
+    /** The menu fade (UIManager): while it is on its way to black the screen is revealed there, not at once. */
+    this.fade = null;
   }
 
   /** @param {{ indeterminate?: boolean, keepProgress?: boolean }} [opts] indeterminate = animated bar with no percentage (saving) */
@@ -17,8 +19,10 @@ export class LoadingScreen {
     this.progress.classList.toggle('indeterminate', !!opts.indeterminate);
     if (opts.indeterminate) { this.lastPercent = -1; this.text.textContent = ''; }
     else if (!opts.keepProgress) this.setProgress(0);
-    this.root.classList.remove('hidden');
+    if (!(this.fade && this.fade.phase === 'out')) this.reveal(); // a fade to black is running: UIManager reveals the screen at black
   }
+
+  reveal() { this.root.classList.remove('hidden'); }
 
   hide() { this.root.classList.add('hidden'); }
 

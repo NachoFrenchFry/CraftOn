@@ -29,44 +29,55 @@ export const FIRE_INTERVAL = 1;
 export const MOB_LAVA_DAMAGE = 100;
 export const MOB_FIRE_DAMAGE = 25;
 
-/** Lava / fire damage after armor (the usual formula, boots count once). */
-export function lavaDamage(armorPoints = 0) { return Math.max(1, Math.round(LAVA_DAMAGE * armorReduction(armorPoints))); }
-export function fireDamage(armorPoints = 0) { return Math.max(1, Math.round(FIRE_DAMAGE * armorReduction(armorPoints))); }
+/** Lava / fire damage after armor (the usual formula, boots count once; `armor` is an armor value or points). */
+export function lavaDamage(armor = 0) { return Math.max(1, Math.round(LAVA_DAMAGE * armorReduction(armor))); }
+export function fireDamage(armor = 0) { return Math.max(1, Math.round(FIRE_DAMAGE * armorReduction(armor))); }
 /** Seconds a full-health player survives standing in lava with that armor. */
-export function lavaSurvivalSeconds(armorPoints = 0) { return Math.ceil(MAX_HEALTH / lavaDamage(armorPoints)) * LAVA_DAMAGE_INTERVAL; }
-
-/** Fraction of damage that gets through `points` of armor: 3 % per point, at most 70 % blocked. */
-export function armorReduction(points) { return 1 - Math.min(0.7, Math.max(0, points) * 0.03); }
+export function lavaSurvivalSeconds(armor = 0) { return Math.ceil(MAX_HEALTH / lavaDamage(armor)) * LAVA_DAMAGE_INTERVAL; }
 
 /**
- * Explosions (Nov 8 2026): the same 3 % per point on the *explosion* armor points — obsidian pieces count 1.5× there
- * (ItemDefinitions.armorPointsFor(materials, { explosion: true })) — with its own cap of 85 %. The cap only matters with
- * obsidian: full diamond's 23 points still block 69 %, full obsidian's 34.5 would block 103 % and stop at 85 %.
+ * Armor: 3 % of a hit blocked per point, at most ARMOR_CAP (70 %) — explosions use the explosion points (obsidian / Encorsed
+ * pieces count 1.5×, Nov 8 2026) and EXPLOSION_ARMOR_CAP (85 %). Since Nov 9 2026 an armor value is `{ points, cap }`
+ * (ItemDefinitions.armorValueFor over the worn materials: Encorsed pieces lift the caps, +3 % / +2 % each, so a full
+ * Encorsed set blocks 85 % and 95 %); a plain number still means points at the base cap, so every table and test reads the
+ * same. Full diamond (23 points) blocks 69 % either way.
  */
+export const ARMOR_CAP = 0.7;
 export const EXPLOSION_ARMOR_CAP = 0.85;
-export function explosionArmorReduction(explosionPoints) { return 1 - Math.min(EXPLOSION_ARMOR_CAP, Math.max(0, explosionPoints) * 0.03); }
+export const ARMOR_PER_POINT = 0.03;
+/** Normalise an armor argument: a number of points (base cap), `{ points, cap }`, or nothing. */
+export function armorValue(armor, baseCap = ARMOR_CAP) {
+  if (typeof armor === 'number') return { points: armor, cap: baseCap };
+  return armor ? { points: Number(armor.points) || 0, cap: armor.cap ?? baseCap } : { points: 0, cap: baseCap };
+}
+/** Fraction of damage that gets through the armor (a normal hit). */
+export function armorReduction(armor) { const a = armorValue(armor, ARMOR_CAP); return 1 - Math.min(a.cap, Math.max(0, a.points) * ARMOR_PER_POINT); }
+/** Fraction of an explosion's damage that gets through (the explosion value: ×1.5 points for obsidian / Encorsed, the 85 % + cap). */
+export function explosionArmorReduction(armor) { const a = armorValue(armor, EXPLOSION_ARMOR_CAP); return 1 - Math.min(a.cap, Math.max(0, a.points) * ARMOR_PER_POINT); }
 
 /** Raw fall damage before armor: nothing up to 3 blocks, then 2.15 per block, rounded (50 blocks ≈ 101). */
 export function rawFallDamage(fallDistance) { return Math.round(Math.max(0, fallDistance - 3) * 2.15); }
 
-/** Fall damage after armor; `bootsPoints` are the boots' points, counted a second time (boots count double). */
-export function fallDamage(fallDistance, armorPoints = 0, bootsPoints = 0) {
+/** Fall damage after armor; `bootsPoints` are the boots' points, counted a second time (boots count double; the set's cap applies). */
+export function fallDamage(fallDistance, armor = 0, bootsPoints = 0) {
   const raw = rawFallDamage(fallDistance);
-  return raw <= 0 ? 0 : Math.round(raw * armorReduction(armorPoints + bootsPoints));
+  if (raw <= 0) return 0;
+  const a = armorValue(armor);
+  return Math.round(raw * armorReduction({ points: a.points + bootsPoints, cap: a.cap }));
 }
 
 /** Mob fall damage: the player's curve on the mob's health scale, max(0, fall − 3) × 1.075 (a 50-health cow dies from about 50 blocks). */
 export function mobFallDamage(fallDistance) { return Math.max(0, fallDistance - 3) * 1.075; }
 
 /** Smallest whole fall (blocks) that kills a 100-health player with that armor. */
-export function lethalFall(armorPoints = 0, bootsPoints = 0) {
-  for (let f = 3; f < 2000; f++) if (fallDamage(f, armorPoints, bootsPoints) >= MAX_HEALTH) return f;
+export function lethalFall(armor = 0, bootsPoints = 0) {
+  for (let f = 3; f < 2000; f++) if (fallDamage(f, armor, bootsPoints) >= MAX_HEALTH) return f;
   return Infinity;
 }
 
-/** Player-vs-player damage: the item's attack damage (the number its tooltip shows), ×1.5 on a critical hit, reduced by the victim's armor. */
-export function pvpDamage(attackDamage, crit, victimArmorPoints = 0) {
-  return Math.max(0, Math.round(attackDamage * (crit ? CRIT_MULTIPLIER : 1) * armorReduction(victimArmorPoints)));
+/** Player-vs-player damage: the item's attack damage (the number its tooltip shows), ×1.5 on a critical hit, reduced by the victim's armor (a value or points). */
+export function pvpDamage(attackDamage, crit, victimArmor = 0) {
+  return Math.max(0, Math.round(attackDamage * (crit ? CRIT_MULTIPLIER : 1) * armorReduction(victimArmor)));
 }
 
 // ---- The mace: damage from the vertical closing speed, smash attacks and the wind burst ----
@@ -90,7 +101,7 @@ export function maceDamage(closingSpeed) { return MACE_BASE_DAMAGE + Math.max(0,
 /** A smash attack: closing at MACE_SMASH_SPEED or more (the "fell more than 1.5 blocks" rule, as a speed). */
 export function isMaceSmash(closingSpeed) { return closingSpeed >= MACE_SMASH_SPEED; }
 /** Mace damage to a player: the victim's armor on top; no 1.5× critical multiplier (the velocity bonus replaces it). */
-export function macePlayerDamage(closingSpeed, victimArmorPoints = 0) { return Math.max(0, Math.round(maceDamage(closingSpeed) * armorReduction(victimArmorPoints))); }
+export function macePlayerDamage(closingSpeed, victimArmor = 0) { return Math.max(0, Math.round(maceDamage(closingSpeed) * armorReduction(victimArmor))); }
 /** Speed after falling `blocks` from rest, √(2 × GRAVITY × blocks), capped at the terminal velocity (for tables and tests). */
 export function fallSpeedAfter(blocks) { return Math.min(TERMINAL_VELOCITY, Math.sqrt(2 * GRAVITY * Math.max(0, blocks))); }
 
@@ -121,16 +132,16 @@ export function spearClosingSpeed(attackerVx, attackerVz, targetVx, targetVz, dx
 export function spearDamage(baseDamage, closingSpeed) { return baseDamage + Math.max(0, closingSpeed) * (SPEAR_VELOCITY_FACTOR * SPEAR_DAMAGE_PER_UNIT); }
 export function isSpearFast(closingSpeed) { return closingSpeed >= SPEAR_FAST_SPEED; }
 /** Spear damage to a player: the victim's armor on top; no 1.5× critical multiplier. */
-export function spearPlayerDamage(baseDamage, closingSpeed, victimArmorPoints = 0) { return Math.max(0, Math.round(spearDamage(baseDamage, closingSpeed) * armorReduction(victimArmorPoints))); }
+export function spearPlayerDamage(baseDamage, closingSpeed, victimArmor = 0) { return Math.max(0, Math.round(spearDamage(baseDamage, closingSpeed) * armorReduction(victimArmor))); }
 
 // ---- Zombies, arrows and explosions ----
 /** A zombie's melee hit after the victim's armor (15 before it). */
-export function zombieDamage(armorPoints = 0, base = 15) { return Math.max(1, Math.round(base * armorReduction(armorPoints))); }
+export function zombieDamage(armor = 0, base = 15) { return Math.max(1, Math.round(base * armorReduction(armor))); }
 
 /** Arrow damage at draw power `p` (0..1): (round(9 × p) + `bonus`) × 5 — 45 at a full draw, up to 65 with the 0–4 bonus (rolled by the caller, counted only when fully drawn). Mobs take it directly. */
 export function arrowDamage(power, bonus = 0) { return (Math.round(9 * power) + (power >= 1 ? bonus : 0)) * 5; }
 /** Arrow damage against a player: the same amount, reduced by armor. */
-export function arrowPlayerDamage(power, bonus = 0, victimArmorPoints = 0) { return Math.max(0, Math.round(arrowDamage(power, bonus) * armorReduction(victimArmorPoints))); }
+export function arrowPlayerDamage(power, bonus = 0, victimArmor = 0) { return Math.max(0, Math.round(arrowDamage(power, bonus) * armorReduction(victimArmor))); }
 /** The bow's power curve: (t² + 2t) / 3 for the draw fraction t (1 at a full draw). */
 export function bowPower(t) { t = Math.max(0, Math.min(1, t)); return (t * t + 2 * t) / 3; }
 
@@ -138,8 +149,8 @@ export function bowPower(t) { t = Math.max(0, Math.min(1, t)); return (t * t + 2
 export function explosionImpact(distance, exposure, power) { return Math.max(0, Math.min(1, (1 - distance / (2 * power)) * exposure)); }
 /** Explosion damage before armor: Minecraft's ((impact² + impact) / 2) × 7 × power + 1 on the 100-health scale (× 5): 145 at full impact with power 4. */
 export function explosionBaseDamage(impact, power) { return impact <= 0 ? 0 : (((impact * impact + impact) / 2) * 7 * power + 1) * 5; }
-/** A player's explosion damage: the base reduced by the explosion armor points (obsidian ×1.5, cap 85 %): at point blank 145 bare, 45 in full diamond, 22 in full obsidian, 28 in diamond with an obsidian chestplate. */
-export function explosionPlayerDamage(impact, power, explosionArmorPoints = 0) { return impact <= 0 ? 0 : Math.max(0, Math.round(explosionBaseDamage(impact, power) * explosionArmorReduction(explosionArmorPoints))); }
+/** A player's explosion damage: the base reduced by the explosion armor value (obsidian / Encorsed ×1.5, cap 85 % + 2 % per Encorsed piece): at point blank 145 bare, 45 in full diamond, 22 in full obsidian, 28 in diamond with an obsidian chestplate, 7 in full Encorsed. */
+export function explosionPlayerDamage(impact, power, explosionArmor = 0) { return impact <= 0 ? 0 : Math.max(0, Math.round(explosionBaseDamage(impact, power) * explosionArmorReduction(explosionArmor))); }
 /** A mob's explosion damage: the base, rounded to one decimal. */
 export function explosionMobDamage(impact, power) { return impact <= 0 ? 0 : Math.round(explosionBaseDamage(impact, power) * 10) / 10; }
 
@@ -155,6 +166,7 @@ export function causeText(cause) {
   if (cause.kind === 'arrow') return `Shot by ${cause.by || 'another player'}`;
   if (cause.kind === 'explosion') return 'Blown up';
   if (cause.kind === 'crash') return 'Crashed while gliding';
+  if (cause.kind === 'kill') return 'Killed';
   return 'Died';
 }
 
@@ -170,5 +182,6 @@ export function deathMessage(name, cause) {
   if (cause.kind === 'arrow') return `${name} was shot by ${cause.by || 'another player'}`;
   if (cause.kind === 'explosion') return `${name} was blown up`;
   if (cause.kind === 'crash') return `${name} crashed while gliding`;
+  if (cause.kind === 'kill') return `${name} was killed`;
   return `${name} died`;
 }

@@ -8,6 +8,9 @@ import * as THREE from 'three';
 import { PlayerModel } from '../player/models/PlayerModel.js';
 import { BreakOverlay } from '../rendering/BreakOverlay.js';
 import { Interpolator } from './Interpolator.js';
+
+/** Scratch: a rider's seat position. */
+const SEAT = new THREE.Vector3();
 import { Pose, bowFrameOf } from './Protocol.js';
 import { rayBox } from '../utils/RayBox.js';
 import { BlockRegistry } from '../blocks/BlockRegistry.js';
@@ -75,7 +78,7 @@ export class RemotePlayer {
     /** The fields PlayerModel.update reads, filled from the interpolated snapshot. */
     this.state = {
       renderPosition: new THREE.Vector3(), yaw: 0, pitch: 0, horizontalSpeed: 0, sprinting: false, flying: false, inWater: false,
-      onGround: true, swimming: false, crawling: false, swimTime: 0, velocity: { x: 0, y: 0, z: 0 }, sneaking: false, spectator: false,
+      onGround: true, swimming: false, crawling: false, swimTime: 0, velocity: { x: 0, y: 0, z: 0 }, sneaking: false, spectator: false, riding: false,
     };
     this.held = 0;
     this.armor = null;
@@ -145,6 +148,12 @@ export class RemotePlayer {
     st.bowFrame = bowFrameOf(pose); this.model.setAiming(st.bowFrame); // the bow draw frame (aiming pose + pulling frame)
     st.dead = !!(pose & Pose.DEAD);
     st.gliding = !!(pose & Pose.GLIDING); st.rocketTime = (pose & Pose.ROCKET) ? 1 : 0;
+    // Riding (Nov 15 2026): a rider is drawn on its boat's seat (BOAT_RIDERS says which), never at its own reported position, so it never jitters against the hull.
+    st.riding = !!(pose & Pose.RIDING);
+    if (st.riding && this.game.entities.boats) {
+      const seat = this.game.entities.boats.seatOf(this.id);
+      if (seat) { seat.boat.seatPosition(seat.index, SEAT, true); o.x = SEAT.x; o.y = SEAT.y; o.z = SEAT.z; st.renderPosition.copy(SEAT); }
+    }
     st.velocity.x = o.vx; st.velocity.y = o.vy; st.velocity.z = o.vz;
     st.horizontalSpeed = Math.hypot(o.vx, o.vz);
     const s = o;

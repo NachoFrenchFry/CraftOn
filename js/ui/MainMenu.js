@@ -1,9 +1,24 @@
-// MainMenu.js — title screen (shows who is logged in, with Log out) and the world select/create panel: the
+// MainMenu.js — title screen (shows who is logged in, with Log out; the Friends sidebar on its right, FriendsSidebar.js) and the world select/create panel: the
 // list comes from the cloud (name, seed, mode, last played) with a Retry when the server cannot be reached.
 // The list is prefetched as soon as the session is known (Game.prefetchWorlds), shows a spinner while it
-// loads, and Create / Delete / Log out disable their buttons with a spinner until the server answers.
+// loads, and Create / Delete / Log out disable their buttons with a spinner until the server answers. The create screen
+// holds the one Create World form (CreateWorldForm.js, shared with Multiplayer → Host New Server) with every world setting.
 
-import { hashSeed, randomSeed } from '../utils/Random.js';
+import { CreateWorldForm } from './CreateWorldForm.js';
+import { modeName, lockedText } from '../core/WorldSettings.js';
+
+/** The row's name line and meta line with the world's tags: a green Pure Survival badge after the name, a gray Locked tag after the mode. */
+export function worldRowLines(w) {
+  const name = document.createElement('div');
+  name.className = 'world-name';
+  const title = document.createElement('span'); title.textContent = w.name; name.appendChild(title);
+  if (w.survivalOnly) { const t = document.createElement('span'); t.className = 'tag tag-green'; t.textContent = 'Pure Survival'; t.title = 'Only ever played in Survival, without cheats'; name.appendChild(t); }
+  const meta = document.createElement('div');
+  meta.className = 'world-meta';
+  meta.appendChild(document.createTextNode(`seed ${w.seedText || w.seed} · ${w.gameMode}`));
+  if (w.modeLocked) { const t = document.createElement('span'); t.className = 'tag tag-gray'; t.textContent = 'Locked'; t.title = lockedText(w.gameMode); meta.appendChild(t); }
+  return { name, meta };
+}
 
 export class MainMenu {
   /** @param {import('../core/Game.js').Game} game */
@@ -15,10 +30,8 @@ export class MainMenu {
     this.createRoot = document.getElementById('create-world-menu');
     this.createError = document.getElementById('create-error');
     this.worldList = document.getElementById('world-list');
-    this.nameInput = document.getElementById('world-name');
-    this.seedInput = document.getElementById('world-seed');
-    this.modeSelect = document.getElementById('world-mode');
-    this.hostileToggle = document.getElementById('world-hostile');
+    /** The shared Create World form (controls world-name, world-seed, world-gameMode, …). */
+    this.form = new CreateWorldForm(game, document.getElementById('create-world-form'), { idPrefix: 'world', onSubmit: () => this._create() });
     this.accountLine = document.getElementById('menu-account');
     this.worldError = document.getElementById('world-error');
     this.worldRetry = document.getElementById('btn-worlds-retry');
@@ -35,21 +48,18 @@ export class MainMenu {
     });
     this.worldRetry.addEventListener('click', () => { game.audio.playUI('click'); this.refreshList(); });
     game.events.on('account:changed', () => this.refreshAccount());
-    document.getElementById('btn-play').addEventListener('click', () => { game.audio.playUI('click'); this.showWorlds(); });
-    document.getElementById('btn-multiplayer').addEventListener('click', () => { game.audio.playUI('click'); ui.multiplayer.showMain(); });
-    document.getElementById('btn-options').addEventListener('click', () => { game.audio.playUI('click'); ui.settings.open(() => this.show()); this.hide(); }); // "Settings"
-    document.getElementById('btn-world-back').addEventListener('click', () => { game.audio.playUI('click'); this.hideWorlds(); this.show(); });
-    document.getElementById('btn-new-world').addEventListener('click', () => { game.audio.playUI('click'); this.showCreate(); });
-    document.getElementById('btn-create-back').addEventListener('click', () => { game.audio.playUI('click'); this.hideCreate(); this.showWorlds(); });
+    const fade = (change) => ui.fade(change); // every move between full menu screens goes through black (Nov 15 2026)
+    document.getElementById('btn-play').addEventListener('click', () => { game.audio.playUI('click'); fade(() => this.showWorlds()); });
+    document.getElementById('btn-multiplayer').addEventListener('click', () => { game.audio.playUI('click'); fade(() => ui.multiplayer.showMain()); });
+    document.getElementById('btn-options').addEventListener('click', () => { game.audio.playUI('click'); fade(() => { ui.settings.open(() => fade(() => this.show())); this.hide(); }); }); // "Settings" from the home screen fades both ways (from the pause menu it is instant)
+    document.getElementById('btn-world-back').addEventListener('click', () => { game.audio.playUI('click'); fade(() => { this.hideWorlds(); this.show(); }); });
+    document.getElementById('btn-new-world').addEventListener('click', () => { game.audio.playUI('click'); fade(() => this.showCreate()); });
+    document.getElementById('btn-create-back').addEventListener('click', () => { game.audio.playUI('click'); fade(() => { this.hideCreate(); this.showWorlds(); }); });
     document.getElementById('btn-create-world').addEventListener('click', () => this._create());
-    for (const input of [this.nameInput, this.seedInput]) {
-      input.addEventListener('focus', () => { game.input.textInputActive = true; });
-      input.addEventListener('blur', () => { game.input.textInputActive = false; });
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._create(); e.stopPropagation(); });
-    }
   }
 
-  show() { this.refreshAccount(); this.root.classList.remove('hidden'); }
+  /** The home screen, with the Friends sidebar (FriendsSidebar.js) that refreshes only while it is up. */
+  show() { this.refreshAccount(); this.root.classList.remove('hidden'); this.game.ui.friends.show(); }
 
   /** Put a spinner + label on a button and disable it (label null = restore `restoreText`). */
   _busyButton(button, label, restoreText = '') {
@@ -63,13 +73,14 @@ export class MainMenu {
   /** Creating a world: the form and every world row are frozen until the server answers. */
   _setBusy(busy, label = 'Creating…') {
     this.busy = busy;
-    for (const el of [this.nameInput, this.seedInput, this.modeSelect]) el.disabled = busy;
+    this.form.setBusy(busy);
     for (const b of this.worldList.querySelectorAll('button')) b.disabled = busy;
     this._busyButton(this.createButton, busy ? label : null, 'Create');
   }
 
   refreshAccount() { const u = this.game.account && this.game.account.username; this.accountLine.textContent = u ? `Logged in as ${u}` : ''; }
-  hide() { this.root.classList.add('hidden'); }
+
+  hide() { this.root.classList.add('hidden'); this.game.ui.friends.hide(); }
 
   async showWorlds() {
     this.hide();
@@ -79,12 +90,13 @@ export class MainMenu {
 
   hideWorlds() { this.worldRoot.classList.add('hidden'); this.hideCreate(); }
 
-  /** The create form (name, seed, game mode) on its own screen; Back returns to the list. */
+  /** The create form (every world setting, back at its defaults) on its own screen; Back returns to the list. */
   showCreate() {
     this.worldRoot.classList.add('hidden');
     this.createRoot.classList.remove('hidden');
     this.createError.textContent = ''; this.createError.classList.add('hidden');
-    this.nameInput.focus();
+    this.form.reset(); // a fresh form every time: the last world's name, seed and mode never leak into the next one
+    this.form.focus();
   }
 
   hideCreate() { this.createRoot.classList.add('hidden'); this.game.input.textInputActive = false; }
@@ -129,17 +141,13 @@ export class MainMenu {
       row.className = 'world-entry';
       const info = document.createElement('div');
       info.className = 'world-info';
-      const name = document.createElement('div');
-      name.className = 'world-name';
-      name.textContent = w.name;
-      const meta = document.createElement('div');
-      meta.className = 'world-meta';
-      meta.textContent = `seed ${w.seedText || w.seed} · ${w.gameMode} · last played ${w.lastPlayed ? new Date(w.lastPlayed).toLocaleString() : 'never'}`;
+      const { name, meta } = worldRowLines(w);
+      meta.appendChild(document.createTextNode(` · last played ${w.lastPlayed ? new Date(w.lastPlayed).toLocaleString() : 'never'}`));
       info.append(name, meta);
       const play = document.createElement('button');
       play.className = 'mc-button small';
       play.textContent = 'Play';
-      play.addEventListener('click', () => { if (this.busy) return; this.game.audio.playUI('click'); this.hideWorlds(); this.game.startWorld(w.id); });
+      play.addEventListener('click', () => { if (this.busy) return; this.game.audio.playUI('click'); this.game.startWorld(w.id); }); // the LOADING state hides the list — at black when the fades are on
       const del = document.createElement('button');
       del.className = 'mc-button small danger';
       del.textContent = 'Delete';
@@ -161,17 +169,13 @@ export class MainMenu {
   async _create() {
     if (this.busy) return;
     this.game.audio.playUI('click');
-    const name = this.nameInput.value.trim() || 'New World';
-    const seedText = this.seedInput.value.trim();
-    const seed = seedText ? hashSeed(seedText) : randomSeed();
-    const gameMode = this.modeSelect.value;
-    const hostileMobs = !this.hostileToggle || this.hostileToggle.checked;
+    const settings = this.form.values(); // name, seed, game mode and every world setting (createWorld stores them all)
     this._showCreateError('');
+    if (settings.modeLocked && !(await this.game.ui.confirm.ask(`Lock this world to ${modeName(settings.gameMode)} forever?`, { ok: 'Lock it', cancel: 'Cancel' }))) return; // the lock can never be turned off
     this._setBusy(true, 'Creating…');
     let record;
-    try { record = await this.game.saveManager.createWorld({ name, seed, seedText, gameMode, hostileMobs }); } catch (e) { this._setBusy(false); this._showCreateError("Couldn't create the world. Check your connection."); return; }
+    try { record = await this.game.saveManager.createWorld(settings); } catch (e) { this._setBusy(false); this._showCreateError("Couldn't create the world. Check your connection."); return; }
     this._setBusy(false);
-    this.hideWorlds();
-    this.game.startWorld(record.id);
+    this.game.startWorld(record.id); // the LOADING state hides the create screen, at black
   }
 }

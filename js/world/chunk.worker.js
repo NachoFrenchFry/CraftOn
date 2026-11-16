@@ -1,7 +1,7 @@
 // chunk.worker.js — the one chunk worker: terrain generation, the initial light pass and meshing in a single
 // script, so ChunkManager runs one pool of up to hardwareConcurrency − 1 workers (at most 6) and hands every job to the
 // idlest worker instead of splitting cores between fixed generation and meshing pools. Never imports Three.js.
-//   {type:'init', seed?, cutoutBlocks?}
+//   {type:'init', seed?, worldOptions?, cutoutBlocks?}   worldOptions: { worldType, flatLayers, structuresAvoidRavines } (Superflat worlds, Nov 10 2026; ravine-free structures, Nov 15) — kept with the seed
 //   {type:'generate', id, cx, cz, seed}            → {id, cx, cz, blocks, heightMap, biomeMap, springs, containers, ms} (buffers transferred)
 // The structure files (structures/index.json → structures/<name>.json, loot.json) are fetched and parsed once at startup;
 // generate jobs wait for them.
@@ -24,6 +24,8 @@ import { markCutout } from '../blocks/BlockRegistry.js';
 import { BufferPool } from '../utils/ArrayPool.js';
 
 let generator = null;
+/** The world options of the current world (init): the generator is rebuilt when they or the seed change. */
+let worldOptions = null, optionsKey = 'null';
 /** Linear RGB bytes per block id (3 per block), sent by the main thread from the texture files. */
 /** The structure registry once loaded (null when the files are missing: the world generates without structures). */
 let structures = null, structuresLoaded = false;
@@ -39,7 +41,9 @@ const structuresReady = (async () => {
   structuresLoaded = true;
   if (generator) generator.setStructures(structures);
 })();
-const newGenerator = (seed) => { const g = new WorldGenerator(seed); g.setStructures(structures); return g; };
+const newGenerator = (seed) => { const g = new WorldGenerator(seed, worldOptions); g.optionsKey = optionsKey; g.setStructures(structures); return g; };
+/** The generator for a job's seed (rebuilt when the seed or the world options changed since). */
+const generatorFor = (seed) => { if (!generator || generator.seed !== (seed >>> 0) || generator.optionsKey !== optionsKey) generator = newGenerator(seed); return generator; };
 const builders = new MeshBuilders();
 /** Mesh result buffers by size class: the main thread sends them back once uploaded, so steady-state meshing allocates nothing. */
 const pool = new BufferPool(24 << 20);
@@ -67,6 +71,7 @@ self.onmessage = (e) => {
 function handle(e) {
   const msg = e.data;
   if (msg.type === 'init') {
+    if (msg.worldOptions !== undefined) { worldOptions = msg.worldOptions || null; optionsKey = JSON.stringify(worldOptions); }
     if (msg.seed !== undefined) generator = newGenerator(msg.seed);
     if (msg.cutoutBlocks) for (const id of msg.cutoutBlocks) markCutout(id); // the atlas' transparency overrides, mirrored here
     if (msg.debugFail !== undefined) debugFail = msg.debugFail;
@@ -75,7 +80,7 @@ function handle(e) {
   if (msg.type === 'generate') {
     if (!structuresLoaded) { structuresReady.then(() => self.onmessage(e)); return; } // the structure files are still loading
     maybeFail(msg);
-    if (!generator || generator.seed !== msg.seed) generator = newGenerator(msg.seed || 0);
+    generatorFor(msg.seed || 0);
     const t0 = performance.now();
     const r = generator.generateChunk(msg.cx, msg.cz);
     self.postMessage(
@@ -86,7 +91,7 @@ function handle(e) {
   }
   if (msg.type === 'locate') {
     if (!structuresLoaded) { structuresReady.then(() => self.onmessage(e)); return; }
-    if (!generator || generator.seed !== msg.seed) generator = newGenerator(msg.seed || 0);
+    generatorFor(msg.seed || 0);
     const t0 = performance.now();
     let found = null;
     try { found = locate(generator, msg.kind, msg.name, msg.x | 0, msg.z | 0, msg.maxDist); } catch (err) { console.warn('chunk.worker: locate failed', err); }

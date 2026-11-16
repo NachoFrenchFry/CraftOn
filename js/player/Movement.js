@@ -2,9 +2,12 @@
 // in Node. Each physics tick: velocity *= drag, then velocity += direction × accel while a key is held.
 // The steady state is accel / (1 − drag), so accel = targetSpeed × (1 − drag) keeps the old top speeds
 // (walk 4.317 b/s, sprint 5.612 b/s). Ground drag 0.83 per 60 Hz tick ≈ Minecraft's 0.546 per 20 Hz tick;
-// a stronger brake drag applies on the ground with no input so a sprint stops within about 0.25 s.
+// a stronger brake drag applies on the ground with no input so a sprint stops within about 0.25 s. Ice (Nov 15 2026) keeps
+// Minecraft's slipperiness: ICE_DRAG per 60 Hz tick (0.98 × 0.91 per 20 Hz tick) whether a key is held or not — no brake
+// drag — and accel = targetSpeed × (1 − ICE_DRAG), so the top speeds stay the same while starting and stopping take seconds.
 
 export const GROUND_DRAG = 0.83;
+export const ICE_DRAG = 0.9625;         // slippery blocks: a sprint slides about 2.4 blocks (1.8 s) before stopping
 export const GROUND_BRAKE_DRAG = 0.75;   // no input on the ground: full sprint → < 0.1 b/s in 15 ticks
 export const AIR_DRAG = 0.97;
 export const AIR_ACCEL_FACTOR = 0.2;     // air control: a fifth of the ground acceleration
@@ -18,7 +21,7 @@ export const TICK = 1 / 60;
  * @param {number} dirX input direction (unit or zero)
  * @param {number} dirZ
  * @param {number} targetSpeed top speed for the current pose (walk / sprint / sneak / fly)
- * @param {'ground'|'air'|'fly'} mode
+ * @param {'ground'|'ice'|'air'|'fly'} mode
  * @param {number} dt seconds (drag and accel are defined per 60 Hz tick and scaled to dt)
  */
 export function stepHorizontal(v, dirX, dirZ, targetSpeed, mode, dt = TICK) {
@@ -27,6 +30,7 @@ export function stepHorizontal(v, dirX, dirZ, targetSpeed, mode, dt = TICK) {
   let baseDrag, drag, accelScale;
   if (mode === 'fly') { baseDrag = FLY_DRAG; drag = pushing ? FLY_DRAG : FLY_BRAKE_DRAG; accelScale = 1; }
   else if (mode === 'air') { baseDrag = GROUND_DRAG; drag = AIR_DRAG; accelScale = AIR_ACCEL_FACTOR; }
+  else if (mode === 'ice') { baseDrag = ICE_DRAG; drag = ICE_DRAG; accelScale = 1; } // the same drag with or without input: nothing brakes on ice
   else { baseDrag = GROUND_DRAG; drag = pushing ? GROUND_DRAG : GROUND_BRAKE_DRAG; accelScale = 1; }
   const accel = targetSpeed * (1 - baseDrag) * accelScale * ticks;
   const k = Math.pow(drag, ticks);

@@ -5,12 +5,16 @@
 // once with its coordinates, the job type and the error). A watchdog
 // (every 2 s) looks for chunks inside the render distance that have not reached "meshed" about 10 s after they were
 // needed and resets whatever they were stuck in; F3 shows the stuck / retried / failed counts (`stats().health`).
+// Extra centers (Nov 12 2026, `setExtraCenters`): the host of a server gives one per connected guest; the chunks within
+// GUEST_CHUNK_RADIUS of one are generated (nearest to that guest first, at most half the generation slots while the host's
+// own queue has work) and lit like any others, kept loaded while the guest is there, and never meshed unless they are also
+// inside the host's own render distance — so guests can build, and mobs, items and liquids run, however far from the host.
 
 import { WorkerPool } from './WorkerPool.js';
 import { Chunk, ChunkState } from './Chunk.js';
 import { chunkKey, keyToChunkX, keyToChunkZ } from './ChunkCoords.js';
 import { buildPaddedChunk, allocPadded } from './ChunkPadding.js';
-import { INTEGRATION_BUDGET_MS, MAX_MESH_UPLOADS_PER_FRAME, UNLOAD_MARGIN, GENERATION_MARGIN } from '../config/Constants.js';
+import { INTEGRATION_BUDGET_MS, MAX_MESH_UPLOADS_PER_FRAME, UNLOAD_MARGIN, GENERATION_MARGIN, GUEST_CHUNK_RADIUS } from '../config/Constants.js';
 import { LightUpdater, LIGHT_BUDGET_MS } from './lighting/LightUpdater.js';
 import { chunkTop } from './lighting/SkyLight.js';
 
@@ -52,6 +56,10 @@ export class ChunkManager {
     this.genQueue = [];
     this.genInFlight = new Set();
     this.genResults = [];
+    /** Extra load centers { cx, cz } (one per connected guest, set by the host server) and their own generation queue / in-flight set. */
+    this.extraCenters = [];
+    this.guestQueue = [];
+    this.guestInFlight = new Set();
     this.meshCheck = new Set();
     this.meshInFlight = new Set();
     this.meshResults = [];
@@ -91,8 +99,46 @@ export class ChunkManager {
   /** Chunks farther than this from the player are unloaded. Always larger than genRadius. */
   get unloadRadius() { return this.genRadius + UNLOAD_MARGIN; }
 
-  setSeed(seed) {
-    this.pool.broadcast({ type: 'init', seed });
+  /**
+   * The extra load centers: the host sets one per connected guest from its latest position (HostServer._syncCenters) and
+   * clears them when hosting stops. Only a changed set recomputes the queues (a guest crossing a chunk border, joining,
+   * leaving or teleporting), never a frame with the same centers.
+   */
+  setExtraCenters(list) {
+    const next = [];
+    const seen = new Set();
+    for (const c of list || []) { const cx = c.cx | 0, cz = c.cz | 0, key = cx + ',' + cz; if (seen.has(key)) continue; seen.add(key); next.push({ cx, cz }); }
+    const sig = [...seen].sort().join(';'), cur = this.extraCenters.map((c) => c.cx + ',' + c.cz).sort().join(';');
+    if (sig === cur) return;
+    this.extraCenters = next;
+    this.queuesDirty = true;
+  }
+
+  /** Within GUEST_CHUNK_RADIUS of an extra center: a chunk held for a guest. */
+  _nearExtra(cx, cz) {
+    const r2 = GUEST_CHUNK_RADIUS * GUEST_CHUNK_RADIUS;
+    for (const c of this.extraCenters) { const dx = cx - c.cx, dz = cz - c.cz; if (dx * dx + dz * dz <= r2) return true; }
+    return false;
+  }
+
+  /** Kept loaded: inside the host's own unload radius, or held for a guest (a chunk is only ever held once, whoever needs it). */
+  _isHeld(cx, cz) { return this._withinRadius(cx, cz, this.unloadRadius) || this._nearExtra(cx, cz); }
+
+  /** Loaded chunks outside the host's own unload radius: the ones held only for guests (F3, the tests, the report). */
+  get guestChunkCount() {
+    if (this.centerCX === null) return 0;
+    let n = 0;
+    for (const key of this.world.chunks.keys()) if (!this._withinRadius(keyToChunkX(key), keyToChunkZ(key), this.unloadRadius)) n++;
+    return n;
+  }
+
+  /**
+   * The world the workers generate: its seed and (Nov 10 2026) its options — `{ worldType, flatLayers }` for a Superflat world
+   * (Superflat.worldOptionsOf). Broadcast as init state, so a replacement worker gets the same world.
+   */
+  setSeed(seed, worldOptions = null) {
+    this.worldOptions = worldOptions;
+    this.pool.broadcast({ type: 'init', seed, worldOptions: worldOptions || null });
   }
 
 
@@ -112,6 +158,9 @@ export class ChunkManager {
     this.genQueue.length = 0;
     this.genInFlight.clear();
     this.genResults.length = 0;
+    this.guestQueue.length = 0;
+    this.guestInFlight.clear();
+    this.extraCenters = [];
     this.meshCheck.clear();
     this.meshInFlight.clear();
     this.meshResults.length = 0;
@@ -316,7 +365,7 @@ export class ChunkManager {
       if (this.lightInFlight.size >= maxInFlight) break;
       const chunk = this.world.chunks.get(key);
       if (!chunk || chunk.lit || chunk.lighting || this.isFailed(key)) { this.lightCheck.delete(key); continue; }
-      if (!this._withinRadius(chunk.cx, chunk.cz, reach)) continue;
+      if (!this._withinRadius(chunk.cx, chunk.cz, reach) && !this._nearExtra(chunk.cx, chunk.cz)) continue; // guest chunks are lit too (zombies spawn by darkness, torches need light)
       if (!this._hasAllNeighbors(chunk.cx, chunk.cz)) continue;
       this.lightCheck.delete(key);
       chunk.lighting = true;
@@ -344,12 +393,13 @@ export class ChunkManager {
     const genR = this.genRadius;
     const unloadR = this.unloadRadius;
     const span = Math.ceil(genR);
-    // Unload far chunks.
+    // Unload far chunks (never one held for a guest).
+    void unloadR;
     for (const key of [...this.world.chunks.keys()]) {
-      const dx = keyToChunkX(key) - cx, dz = keyToChunkZ(key) - cz;
-      if (dx * dx + dz * dz > unloadR * unloadR) {
-        if (this.world.events) this.world.events.emit('chunk:unloading', keyToChunkX(key), keyToChunkZ(key));
-        this.meshManager.removeChunk(keyToChunkX(key), keyToChunkZ(key));
+      const kx = keyToChunkX(key), kz = keyToChunkZ(key);
+      if (!this._isHeld(kx, kz)) {
+        if (this.world.events) this.world.events.emit('chunk:unloading', kx, kz);
+        this.meshManager.removeChunk(kx, kz);
         this.world.chunks.delete(key);
         this.meshCheck.delete(key);
       }
@@ -371,6 +421,21 @@ export class ChunkManager {
     }
     queue.sort((a, b) => a.priority - b.priority);
     this.genQueue = queue;
+    // Guest chunks: the disc around every extra center, nearest to that guest first; a chunk the host's queue already holds is not queued twice.
+    const guest = [], queued = new Set(queue.map((j) => j.key));
+    const gr = GUEST_CHUNK_RADIUS;
+    for (const c of this.extraCenters) {
+      for (let dz = -gr; dz <= gr; dz++) for (let dx = -gr; dx <= gr; dx++) {
+        const d2 = dx * dx + dz * dz;
+        if (d2 > gr * gr) continue;
+        const key = chunkKey(c.cx + dx, c.cz + dz);
+        if (queued.has(key) || this.world.chunks.has(key) || this.genInFlight.has(key) || this.isFailed(key) || this.isRetrying(key)) continue;
+        queued.add(key);
+        guest.push({ cx: c.cx + dx, cz: c.cz + dz, key, priority: Math.sqrt(d2) });
+      }
+    }
+    guest.sort((a, b) => a.priority - b.priority);
+    this.guestQueue = guest;
     // Re-check meshing candidates in the new radius.
     for (const key of this.world.chunks.keys()) {
       const chunk = this.world.chunks.get(key);
@@ -380,20 +445,35 @@ export class ChunkManager {
 
   _dispatchGeneration() {
     const maxInFlight = this.pool.size * 2;
-    while (this.genInFlight.size < maxInFlight && this.genQueue.length) {
-      const job = this.genQueue.shift();
-      if (this.world.chunks.has(job.key)) continue;
+    const post = (job, forGuest) => {
       this.genInFlight.add(job.key);
+      if (forGuest) this.guestInFlight.add(job.key);
       const gen = this.generation;
       const gmsg = { type: 'generate', cx: job.cx, cz: job.cz, seed: this.world.seed };
       const gp = this.pool.post(gmsg);
       this.jobIds.generate.set(job.key, gmsg.id);
       gp.then((r) => {
+        this.guestInFlight.delete(job.key);
         if (gen !== this.generation) return;
         this.jobIds.generate.delete(job.key);
         this.genTiming.total += r.ms || 0; this.genTiming.count++;
         this.genResults.push(r);
-      }).catch((e) => { if (gen === this.generation) this._jobFailed('generate', job.key, job.cx, job.cz, e); });
+      }).catch((e) => { this.guestInFlight.delete(job.key); if (gen === this.generation) this._jobFailed('generate', job.key, job.cx, job.cz, e); });
+    };
+    // The host's own chunks first; while guest chunks wait too, the host keeps at least half of the slots.
+    const half = Math.floor(maxInFlight / 2);
+    const hostCap = this.guestQueue.length ? maxInFlight - half : maxInFlight;
+    while (this.genInFlight.size < hostCap && this.genQueue.length) {
+      const job = this.genQueue.shift();
+      if (this.world.chunks.has(job.key)) continue;
+      post(job, false);
+    }
+    // Guest chunks: at most half the slots while the host's own queue is not empty, every free slot otherwise.
+    const guestCap = this.genQueue.length ? half : maxInFlight;
+    while (this.genInFlight.size < maxInFlight && this.guestInFlight.size < guestCap && this.guestQueue.length) {
+      const job = this.guestQueue.shift();
+      if (this.world.chunks.has(job.key) || this.genInFlight.has(job.key)) continue;
+      post(job, true);
     }
   }
 
@@ -443,7 +523,7 @@ export class ChunkManager {
       const key = chunkKey(r.cx, r.cz);
       this.genInFlight.delete(key);
       if (this.world.chunks.has(key)) continue;
-      if (this.centerCX !== null && !this._withinRadius(r.cx, r.cz, this.unloadRadius)) continue;
+      if (this.centerCX !== null && !this._isHeld(r.cx, r.cz)) continue; // generated for a center that has moved on since
       const chunk = new Chunk(r.cx, r.cz, r.blocks);
       chunk.heightMap.set(r.heightMap);
       chunk.biomeMap.set(r.biomeMap);
@@ -587,6 +667,9 @@ export class ChunkManager {
       meshes: this.meshManager.meshCount,
       meshPending: ready + this.meshInFlight.size + this.meshResults.length,
       genQueue: this.genQueue.length + this.genInFlight.size,
+      guestQueue: this.guestQueue.length,
+      guestChunks: this.guestChunkCount,
+      extraCenters: this.extraCenters.length,
       lightPending: [...this.lightCheck].filter((k) => { const c = this.world.chunks.get(k); return c && this.centerCX !== null && this._withinRadius(c.cx, c.cz, rd + 1) && this._hasAllNeighbors(c.cx, c.cz); }).length + this.lightInFlight.size + this.lightResults.length,
       lightInFlight: this.lightInFlight.size,
       lightQueue: this.lightUpdater.pending,

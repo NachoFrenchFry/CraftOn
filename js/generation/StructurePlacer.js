@@ -41,6 +41,8 @@ export class StructurePlacer {
     this.nearCache = new Map();
     this._spawn = undefined;
     this._mask = new Uint8Array(256);
+    /** New worlds (Nov 15 2026, the `structuresAvoidRavines` world option): a surface or tree site is rejected when a ravine cuts its footprint. */
+    this.avoidRavines = !!gen.structuresAvoidRavines;
     /** Per-structure chunk reach: ceil((reach + 16) / 16) chunks around a start can hold its blocks. */
     this._chunkReach = new Map();
     for (const s of registry.list) this._chunkReach.set(s.name, Math.ceil((s.reach + 16) / 16) + 1);
@@ -182,9 +184,26 @@ export class StructurePlacer {
     } else {
       const g = this._ground(fp, mode === 'tree' ? Math.min(3, placement.maxSlope) : placement.maxSlope);
       if (!g) return null;
+      if (this.avoidRavines && this._ravineUnder(fp)) return null; // no random draw here: the sites that pass roll exactly as before
       y = g.median + 1;
     }
     return { struct, x, y, z, rot, fp };
+  }
+
+  /** Does a ravine open the surface of any column of the footprint, or within one block of it? (RavineCarver.surfaceCarved's test.) */
+  _ravineUnder(fp) {
+    const ravines = this.gen.ravines;
+    if (!ravines) return false;
+    const minX = fp.minX - 1, maxX = fp.maxX + 1, minZ = fp.minZ - 1, maxZ = fp.maxZ + 1;
+    const discs = ravines.discsNear(minX, maxX, minZ, maxZ); // the few discs over the box, once per site
+    if (!discs.length) return false;
+    for (let z = minZ; z <= maxZ; z++) {
+      for (let x = minX; x <= maxX; x++) {
+        const surface = this.gen.surfaceHeight(x, z);
+        for (const d of discs) if (ravines.constructor.cutsSurface(d, x, z, surface)) return true;
+      }
+    }
+    return false;
   }
 
   /** Every start whose bounding box overlaps chunk (cx, cz). Cached per chunk. */
@@ -263,11 +282,15 @@ export class StructurePlacer {
         if (lx < 0 || lx >= sx || lz < 0 || lz >= sz) continue;
         const col = (wx - wx0) + ((wz - wz0) << 4);
         mask[col] = 1;
-        const h = heightMap16[col], colBase = lx + lz * sx;
+        const colBase = lx + lz * sx;
         if (foundation) {
-          // Foundation: fill downward under the solid parts of the bottom layer until the ground.
+          // Foundation (Nov 15 2026): under every solid block of the bottom layer, from just below the piece downward, every
+          // non-solid block (air above a slope, a cave, a ravine) becomes the foundation block until the first solid one — no
+          // depth limit, and only this chunk's own blocks, so chunks still generate independently.
           const bottom = ids[colBase];
-          if (bottom !== VOID && bottom !== B.AIR && SOLID[bottom]) for (let y = Math.max(1, h + 1); y < baseY && y < WORLD_HEIGHT; y++) blocks[col + (y << 8)] = foundation;
+          if (bottom !== VOID && bottom !== B.AIR && SOLID[bottom]) {
+            for (let y = Math.min(baseY - 1, WORLD_HEIGHT - 1); y >= 1; y--) { const i = col + (y << 8); if (SOLID[blocks[i]]) break; blocks[i] = foundation; }
+          }
         }
         for (let ly = 0; ly < sy; ly++) {
           const wy = baseY + ly;

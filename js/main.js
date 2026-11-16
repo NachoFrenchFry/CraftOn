@@ -78,6 +78,7 @@ async function main() {
   game.cloudMock = params.has('mockcloud');
   const bench = params.has('bench');
   game.debuglog = params.has('debuglog') || bench; // the benchmark also wants no performance popup and the timing reports
+  game.fadesEnabled = params.get('fade') === 'on' || (!params.has('nofade') && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)); // the fades between menu screens (ScreenFade.js): off with ?nofade (the headless runner's default) or reduced motion; ?fade=on forces them (headless Chrome reports reduced motion)
   const T = game.timing;
   // Page load = navigation start → this module running (HTML, CSS, import map and the whole module graph).
   T.add('page load (navigation → main.js)', performance.now(), `${performance.getEntriesByType('resource').filter((r) => /\/js\/.*\.js/.test(r.name)).length} game modules`);
@@ -114,6 +115,7 @@ async function main() {
   if (loggedIn) {
     boot.setStep('Loading your worlds…', 0.9);
     await Promise.all([game.awaitWorldList(1500), game.sessionGuard.claim()]); // one place per account: claim it now
+    game.presence.start(); // "in the menus" for my friends from now on (a sign-in later starts it through account:changed)
   }
   boot.setStep('Ready', 1);
   game.state.set(loggedIn ? State.MENU : State.ACCOUNT);

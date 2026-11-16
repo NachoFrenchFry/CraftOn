@@ -117,7 +117,7 @@ export class DebugOverlay {
     this._set(i++, `Seed: ${g.world.seed}${g.worldMeta && g.worldMeta.seedText ? ` ("${g.worldMeta.seedText}")` : ''}`);
     this._set(i++, t && t.hit ? `Target: ${BlockRegistry.nameOf(t.blockId)} at ${t.blockPos.x} ${t.blockPos.y} ${t.blockPos.z}` : 'Target: none');
     this._set(i++, `Mode: ${p.gameMode}  ${p.flying ? 'flying ' : ''}${p.sprinting ? 'sprinting ' : ''}${p.sneaking ? 'sneaking ' : ''}${p.inWater ? 'in water ' : ''}${p.onGround ? 'on ground' : 'airborne'}   swimming: ${p.swimming}${p.crawling ? ' (crawling)' : ''}`);
-    this._set(i++, `Perspective: ${['first person', 'third person (back)', 'third person (front)'][g.cameraController.perspective]}   Items: ${g.entities.items.length}   Armor: ${g.inventory.armorPoints()}`);
+    this._set(i++, `Perspective: ${['first person', 'third person (back)', 'third person (front)'][g.cameraController.perspective]}   Items: ${g.entities.items.length}   Armor: ${g.inventory.armorPoints()}${g.inventory.armorValue().cap > 0.7 ? ` (cap ${Math.round(g.inventory.armorValue().cap * 100)} %)` : ''}`);
     this._set(i++, this._networkLine());
     const rs = g.settings.get('renderScale');
     this._set(i++, `Render scale: ${Math.round(g.renderer.renderScale * 100)}%${rs === 0 ? ' (auto)' : ''}   FPS cap: ${g.loop.maxFps > 0 ? g.loop.maxFps : 'unlimited'}   Sim distance: ${g.settings.get('simulationDistance')} chunks   Shaders: ${g.settings.get('shadersOn') ? g.settings.get('shaderPreset') : 'off'}`);

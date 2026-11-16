@@ -48,22 +48,23 @@ for (const def of ITEM_DEFINITIONS) {
     bow: !!def.bow,
     glider: !!def.glider,
     rocket: !!def.rocket,
+    boat: !!def.boat, // the Boat item (Nov 15 2026): placed as an entity, never a block
     description: def.description || null,
     def,
   });
 }
 for (const it of items.values()) idByName.set(it.name, it.id);
 
-// ---- Catalog order: by category, then tier (wood → stone → gold → iron → diamond → obsidian), then data order ----
-const TIER_ORDER = { wooden: 0, wood: 0, stone: 1, golden: 2, gold: 2, iron: 3, diamond: 4, obsidian: 5 }; // obsidian: armor only (no tools yet), after diamond
+// ---- Catalog order: by category, then tier (wood → stone → gold → iron → diamond → obsidian → Encorsed), then data order ----
+const TIER_ORDER = { wooden: 0, wood: 0, stone: 1, golden: 2, gold: 2, iron: 3, diamond: 4, obsidian: 5, encorsed: 6 }; // obsidian: armor only (no tools), Encorsed Obsidian (Nov 9 2026) last in every tool group and after obsidian in the armor
 const TOOL_ORDER = { pickaxe: 0, axe: 1, shovel: 2, sword: 3, mace: 4, spear: 5 }; // shovels between the axes and the swords; the mace right after the swords, the spears after the mace, then the bow
 const PIECE_ORDER = { helmet: 0, chestplate: 1, gauntlets: 2, leggings: 3, boots: 4 };
 const tierOf = (name) => { const t = name.split('_')[0]; return TIER_ORDER[t] !== undefined ? TIER_ORDER[t] : 9; };
 /** Blocks by kind: building, natural, ores + storage, plants, functional. */
 const NATURAL_BLOCKS = new Set(['grass_block', 'dirt', 'sand', 'gravel', 'clay', 'snow', 'snowy_grass', 'ice', 'log', 'leaves', 'bedrock', 'water', 'lava', 'stone', 'cobblestone', 'sandstone', 'mossy_cobblestone', 'obsidian']);
 const FUNCTIONAL_BLOCKS = new Set(['crafting_table', 'furnace', 'chest', 'torch', 'explosives']);
-const MATERIAL_ITEMS = new Set(['string', 'coal', 'iron_ingot', 'gold_ingot', 'diamond']);
-const MATERIAL_ORDER = ['string', 'coal', 'iron_ingot', 'gold_ingot', 'diamond'];
+const MATERIAL_ITEMS = new Set(['string', 'coal', 'iron_ingot', 'gold_ingot', 'diamond', 'encorsed_obsidian_fragment']);
+const MATERIAL_ORDER = ['string', 'coal', 'iron_ingot', 'gold_ingot', 'diamond', 'encorsed_obsidian_fragment'];
 /**
  * [category, tier, sub, dataIndex]: the Creative catalog, the search results and the Survival recipe tie-breaker all
  * follow it, so gold always comes before iron and nothing depends on where an item was appended to the definitions.
@@ -72,7 +73,7 @@ function rankOf(it, index) {
   const name = it.name;
   if (it.isBlock) {
     const blockDef = it.def;
-    if (name.endsWith('_ore') || name.endsWith('_block') && !NATURAL_BLOCKS.has(name) && name !== 'grass_block') return [2, name.endsWith('_ore') ? 0 : 1, 0, index];
+    if (name.endsWith('_ore') || name.endsWith('_block') && !NATURAL_BLOCKS.has(name) && name !== 'grass_block' || name === 'encorsed_obsidian') return [2, name.endsWith('_ore') ? 0 : 1, name === 'encorsed_obsidian' ? 1 : 0, index]; // Encorsed Obsidian sits last among the storage blocks (crafted from its fragments)
     if (blockDef.renderType === 'cross' || name === 'cactus' || name === 'dead_bush') return [3, 0, 0, index];
     if (FUNCTIONAL_BLOCKS.has(name)) return [4, 0, 0, index];
     if (NATURAL_BLOCKS.has(name)) return [1, 0, 0, index];
@@ -81,7 +82,7 @@ function rankOf(it, index) {
   if (it.tool) return [5, 0, (TOOL_ORDER[it.tool.type] ?? 5) * 10 + tierOf(name), index];
   if (it.bow || name === 'arrow') return [5, 1, it.bow ? 0 : 1, index];
   if (name === 'stick') return [5, 2, 0, index];
-  if (it.glider || it.rocket) return [5, 3, it.glider ? 0 : 1, index];
+  if (it.glider || it.rocket || it.boat) return [5, 3, it.glider ? 0 : it.rocket ? 1 : 2, index]; // the boat after the glider and the rocket
   if (it.armor) return [6, 0, TIER_ORDER[it.armor.material] * 10 + (PIECE_ORDER[it.armor.slot] ?? 9), index];
   if (it.food) return [7, name.startsWith('raw_') ? 0 : 1, 0, index];
   if (MATERIAL_ITEMS.has(name)) return [8, 0, MATERIAL_ORDER.indexOf(name), index];
@@ -119,6 +120,8 @@ export const ItemRegistry = {
   description(id) { const it = items.get(id); return it ? it.description : null; },
   isGlider(id) { const it = items.get(id); return !!(it && it.glider); },
   isRocket(id) { const it = items.get(id); return !!(it && it.rocket); },
+  /** The boat item (placed as a rideable entity, never a block). */
+  isBoat(id) { const it = items.get(id); return !!(it && it.boat); },
   /** Every item, including creative-only ones, in definition order. */
   all() { return [...items.values()]; },
   /** Every item in catalog order: building, natural, ores / storage, plants, functional blocks, tools (pickaxes, axes, shovels, swords, each wood → stone → gold → iron → diamond, the mace, the spears, then bow, arrows, stick), armor, food, materials, buckets, spawn eggs. */

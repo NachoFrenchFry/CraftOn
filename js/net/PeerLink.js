@@ -238,6 +238,12 @@ export class PeerLink {
   /** Bytes queued on the reliable channel (back-pressure for chunk batches). */
   get bufferedAmount() { return this.reliable ? this.reliable.bufferedAmount : 0; }
 
+  /**
+   * The reliable channel alone is open. `open` needs both channels; on the host the guest's HELLO can arrive over the
+   * reliable channel before the unordered state channel has finished opening, and the world download must not wait for it.
+   */
+  get reliableOpen() { return !!this.reliable && this.reliable.readyState === 'open'; }
+
   _closed(reason) {
     if (this.closed) return;
     this.closed = true;

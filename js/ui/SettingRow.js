@@ -1,8 +1,9 @@
 // SettingRow.js — the one row builder of the Settings screen. A row is full width: the label on the left with the hint or
 // warning in small gray under it, the control on the right — a slider with its value in yellow before it, an ON / OFF
 // button, or a cycling select button that shows the value — bound live to Settings. Every tab (Video, Performance,
-// Audio, Shaders and the Controls tab's option rows) builds its rows here; the row's control carries the id
-// `setting-<key>` for the headless tests.
+// Audio, Shaders and the Controls tab's option rows) builds its rows here, and so does the Create World form (a 'text' row
+// for the name and seed, its values in a plain object through the `store` parameter); the row's control carries the id
+// `setting-<key>` (or `<schema.idPrefix>-<key>`) for the headless tests.
 
 /** The text shown for a value: a percentage, ON / OFF, the select label, "Off" below `offBelow`, or value + unit. */
 export function formatSetting(schema, value) {
@@ -21,10 +22,12 @@ export class SettingRow {
    *   hint, warn(value) → text | null
    * @param {((value: any) => void)|null} [set]  how a new value is stored; the default is settings.set(key, value)
    *   (the Shaders preset row applies a whole preset instead)
+   * @param {{ get(key: string): any, set(key: string, value: any): void }|null} [store]  where the value lives when it is not a
+   *   game setting (the Create World form keeps its rows in a plain object); the default is game.settings
    */
-  constructor(game, schema, set = null) {
+  constructor(game, schema, set = null, store = null) {
     this.game = game;
-    this.settings = game.settings;
+    this.settings = store || game.settings;
     this.schema = schema;
     this.set = set || ((v) => this.settings.set(schema.key, v));
     const row = document.createElement('div');
@@ -49,6 +52,19 @@ export class SettingRow {
       control.addEventListener('input', () => this._apply(parseFloat(control.value)));
       control.addEventListener('change', () => game.audio.playUI('click', 0.4));
       holder.append(value, control);
+    } else if (schema.type === 'text') {
+      // A text box (the Create World form's name and seed): the text is stored as it changes; Enter submits through schema.onEnter.
+      control = document.createElement('input');
+      control.type = 'text';
+      control.className = 'option-input';
+      if (schema.maxLength) control.maxLength = schema.maxLength;
+      if (schema.placeholder) control.placeholder = schema.placeholder;
+      control.autocomplete = 'off'; control.spellcheck = false;
+      control.addEventListener('input', () => this._apply(control.value));
+      control.addEventListener('focus', () => { game.input.textInputActive = true; });
+      control.addEventListener('blur', () => { game.input.textInputActive = false; });
+      control.addEventListener('keydown', (e) => { if (e.key === 'Enter' && schema.onEnter) schema.onEnter(); e.stopPropagation(); });
+      holder.appendChild(control);
     } else {
       control = document.createElement('button');
       control.type = 'button';
@@ -65,7 +81,7 @@ export class SettingRow {
       });
       holder.appendChild(control);
     }
-    control.id = `setting-${schema.key}`;
+    control.id = `${schema.idPrefix || 'setting'}-${schema.key}`; // the headless tests find controls by id (a form passes its own prefix)
     row.append(text, holder);
     this.row = row; this.text = text; this.value = value; this.control = control;
     this.refresh();
@@ -75,6 +91,7 @@ export class SettingRow {
 
   _show(v) {
     if (this.schema.type === 'range') { this.control.value = v; this.value.textContent = formatSetting(this.schema, v); }
+    else if (this.schema.type === 'text') { const t = v == null ? '' : String(v); if (this.control.value !== t) this.control.value = t; } // never moves the caret while typing
     else this.control.textContent = formatSetting(this.schema, v);
     if (this.schema.warn) this.setWarn(this.schema.warn(v));
   }

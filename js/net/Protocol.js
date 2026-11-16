@@ -39,6 +39,9 @@ export const Msg = Object.freeze({
   PING: 'ping', PONG: 'pong',
   // KICK host → guest { reason } right before the host closes the link (kicked or banned)
   KICK: 'kick',
+  // COMMAND guest → host { name, argv }: a cheat command the host runs for the guest (/tp, /give, /summon, /spawn) after checking
+  // the lock and the permission; the replies come back as CHAT { system, color }
+  COMMAND: 'command',
   // RESPAWN guest → host { reason: 'respawn' | 'void' }: please place me; SPAWN_AT host → guest { x, y, z, reason }: the
   // authoritative placement (a respawn, a void / teleport jump, or a 'correction' back to the last accepted position)
   RESPAWN: 'respawn', SPAWN_AT: 'spawnAt',
@@ -65,6 +68,12 @@ export const Msg = Object.freeze({
   // { seq, x, y, z, op: 'exchange' | 'takeAll' | 'put', slot, button, cursor, id, n }; CHEST_ACK host → guest { seq, ok, cursor, stack, n };
   // CHEST_SLOT host → all { x, y, z, slot, stack }
   CHEST_OPEN: 'chestOpen', CHEST_CONTENTS: 'chestContents', CHEST_OP: 'chestOp', CHEST_ACK: 'chestAck', CHEST_SLOT: 'chestSlot',
+  // Boats (Nov 15 2026, host-owned list and seats; the driver's machine moves its boat): BOAT_PLACE guest → host { x, y, z, yaw };
+  // BOAT_SPAWN host → all { id, x, y, z, yaw, driver, passenger } (every boat to a joining guest too); BOAT_REMOVE host → all { id };
+  // BOAT_ENTER guest → host { id } / BOAT_LEAVE guest → host {}; BOAT_RIDERS host → all { id, driver, passenger }; BOAT_BREAK guest → host
+  // { id } (the host checks it is empty and in reach). Boat states travel on the state channel: a driving guest's P carries
+  // `b: [id, x, y, z, vx, vy, vz, yaw]`, the host's PS carries `boats: [[id, x, y, z, vx, vy, vz, yaw], …]`.
+  BOAT_PLACE: 'boatPlace', BOAT_SPAWN: 'boatSpawn', BOAT_REMOVE: 'boatRemove', BOAT_ENTER: 'boatEnter', BOAT_LEAVE: 'boatLeave', BOAT_RIDERS: 'boatRiders', BOAT_BREAK: 'boatBreak',
   // state channel
   P: 'p', PS: 'ps', M: 'm',
 });
@@ -79,14 +88,15 @@ export const RejectReason = Object.freeze({
 });
 
 /** Pose bits in player snapshots. BOW_SHIFT: two bits holding the bow draw frame (0 = not drawing, 1–3 = pulling_0/1/2). */
-export const Pose = Object.freeze({ ON_GROUND: 1, SNEAKING: 2, SWIMMING: 4, CRAWLING: 8, FLYING: 16, IN_WATER: 32, SPRINTING: 64, SPECTATOR: 128, ON_FIRE: 256, IN_LAVA: 512, DEAD: 1024, BOW_SHIFT: 11, BOW_MASK: 3 << 11, GLIDING: 1 << 13, ROCKET: 1 << 14 });
+export const Pose = Object.freeze({ ON_GROUND: 1, SNEAKING: 2, SWIMMING: 4, CRAWLING: 8, FLYING: 16, IN_WATER: 32, SPRINTING: 64, SPECTATOR: 128, ON_FIRE: 256, IN_LAVA: 512, DEAD: 1024, BOW_SHIFT: 11, BOW_MASK: 3 << 11, GLIDING: 1 << 13, ROCKET: 1 << 14, RIDING: 32768 });
 
 /** Pose bits of a local Player. */
 export function poseBits(p) {
   return (p.onGround ? Pose.ON_GROUND : 0) | (p.sneaking ? Pose.SNEAKING : 0) | (p.swimming ? Pose.SWIMMING : 0) | (p.crawling ? Pose.CRAWLING : 0)
     | (p.flying ? Pose.FLYING : 0) | (p.inWater ? Pose.IN_WATER : 0) | (p.sprinting ? Pose.SPRINTING : 0) | (p.isSpectator ? Pose.SPECTATOR : 0)
     | (p.onFire ? Pose.ON_FIRE : 0) | (p.inLava ? Pose.IN_LAVA : 0) | (p.dead ? Pose.DEAD : 0) | (((p.bowFrame | 0) & 3) << Pose.BOW_SHIFT)
-    | (p.gliding ? Pose.GLIDING : 0) | (p.rocketTime > 0 || p.dashTime > 0 ? Pose.ROCKET : 0); // the rocket trail: a glide boost or a dash
+    | (p.gliding ? Pose.GLIDING : 0) | (p.rocketTime > 0 || p.dashTime > 0 ? Pose.ROCKET : 0) // the rocket trail: a glide boost or a dash
+    | (p.riding ? Pose.RIDING : 0); // sitting in a boat (the seat comes from BOAT_RIDERS, not from the position)
 }
 /** The bow draw frame carried in pose bits (0 when not drawing). */
 export function bowFrameOf(pose) { return (pose >> Pose.BOW_SHIFT) & 3; }
@@ -105,7 +115,7 @@ export function decodePlayerState(a) {
     x: a[0], y: a[1], z: a[2], vx: a[3], vy: a[4], vz: a[5], yaw: a[6], pitch: a[7], pose,
     onGround: !!(pose & Pose.ON_GROUND), sneaking: !!(pose & Pose.SNEAKING), swimming: !!(pose & Pose.SWIMMING), crawling: !!(pose & Pose.CRAWLING),
     flying: !!(pose & Pose.FLYING), inWater: !!(pose & Pose.IN_WATER), sprinting: !!(pose & Pose.SPRINTING), spectator: !!(pose & Pose.SPECTATOR),
-    onFire: !!(pose & Pose.ON_FIRE), inLava: !!(pose & Pose.IN_LAVA), dead: !!(pose & Pose.DEAD), bowFrame: bowFrameOf(pose), gliding: !!(pose & Pose.GLIDING), rocket: !!(pose & Pose.ROCKET),
+    onFire: !!(pose & Pose.ON_FIRE), inLava: !!(pose & Pose.IN_LAVA), dead: !!(pose & Pose.DEAD), bowFrame: bowFrameOf(pose), gliding: !!(pose & Pose.GLIDING), rocket: !!(pose & Pose.ROCKET), riding: !!(pose & Pose.RIDING),
   };
 }
 

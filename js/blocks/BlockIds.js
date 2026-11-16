@@ -86,9 +86,11 @@ export const BlockIds = Object.freeze({
   CHEST_N: 75,
   CHEST_E: 76,
   CHEST_W: 77,
+  // Encorsed Obsidian (Nov 9 2026): the crafted top-tier block, as tough as obsidian; never renumber (saves store ids)
+  ENCORSED_OBSIDIAN: 78,
 });
 
-export const BLOCK_COUNT = 78;
+export const BLOCK_COUNT = 79; // one past the highest id (Encorsed Obsidian 78, Nov 9 2026)
 
 /** Ids of blocks that no longer exist. Saved chunk edits holding them are converted to stone on load. */
 export const REMOVED_BLOCK_IDS = Object.freeze([16, 28, 29]);

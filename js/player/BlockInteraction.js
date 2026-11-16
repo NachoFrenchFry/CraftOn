@@ -12,7 +12,7 @@ import { ItemIds } from '../items/ItemDefinitions.js';
 import { BOW_DRAW_SECONDS, BOW_MIN_DRAW_SECONDS } from '../config/Constants.js';
 import { bowPower, maceClosingSpeed, maceDamage, isMaceSmash, MACE_BURST_VELOCITY, spearClosingSpeed, spearDamage, isSpearFast, horizontalDir } from './Damage.js';
 import { RaycastHit } from './BlockRaycaster.js';
-import { isSource, isLavaSource, isLiquid } from '../world/WaterLevels.js';
+import { isSource, isLavaSource, isLiquid, isWater } from '../world/WaterLevels.js';
 import { MOB_BY_TYPE } from '../entities/mobs/MobSpawner.js';
 import { REACH_SURVIVAL, REACH_CREATIVE, PLACE_REPEAT_SECONDS, CREATIVE_REPEAT_DELAY, CREATIVE_BREAK_REPEAT, CREATIVE_PLACE_REPEAT, FAST_REPEAT_SECONDS, FAST_REPEAT_VOLUME, ATTACK_REACH } from '../config/Constants.js';
 
@@ -53,6 +53,8 @@ export class BlockInteraction {
     this.chewTimer = 0;
     /** Other player under the crosshair (multiplayer), or null. */
     this.targetPlayer = null;
+    /** Boat under the crosshair (never the one the player rides), or null. */
+    this.targetBoat = null;
     /** Bow: seconds the use button has been held with a bow (0 = not drawing). */
     this.drawTimer = 0;
     /** Swinging at air: a click with nothing targeted swings once (no hold-to-repeat; SWING_INTERVAL only paces mining). */
@@ -95,7 +97,7 @@ export class BlockInteraction {
   /** Per-frame update. eye/dir describe the player's eye ray. */
   update(dt, ex, ey, ez, dx, dy, dz) {
     const held = this.heldItemId;
-    const includeWater = held === ItemIds.BUCKET; // an empty bucket may target water sources
+    const includeWater = held === ItemIds.BUCKET || ItemRegistry.isBoat(held); // an empty bucket may target water sources, a boat is placed on water
     this.raycaster.cast(ex, ey, ez, dx, dy, dz, this.reach, this.target, includeWater);
     this._eye.x = ex; this._eye.y = ey; this._eye.z = ez;
     const t = this.target;
@@ -107,7 +109,12 @@ export class BlockInteraction {
     const rpHit = this.remotePlayers && !this.player.isSpectator ? this.remotePlayers.raycast(ex, ey, ez, dx, dy, dz, ATTACK_REACH) : null;
     this.targetPlayer = rpHit && (!t.hit || rpHit.distance < t.distance) && (!mobHit || rpHit.distance < mobHit.distance) ? rpHit.player : null;
     if (this.targetPlayer) this.targetMob = null;
-    if (this.targetMob || this.targetPlayer) this.selectionBox.hide(); else this.selectionBox.update(t);
+    // Boats (Nov 15 2026): a hull under the crosshair is used (get in) or hit (break an empty one); the nearest wins as above.
+    const boats = this.entities.boats;
+    const boatHit = boats && !this.player.isSpectator ? boats.raycast(ex, ey, ez, dx, dy, dz, this.reach) : null;
+    this.targetBoat = boatHit && (!t.hit || boatHit.distance < t.distance) && (!mobHit || boatHit.distance < mobHit.distance) && (!rpHit || boatHit.distance < rpHit.distance) ? boatHit.boat : null;
+    if (this.targetBoat) { this.targetMob = null; this.targetPlayer = null; }
+    if (this.targetMob || this.targetPlayer || this.targetBoat) this.selectionBox.hide(); else this.selectionBox.update(t);
     const key = t.hit ? `${t.blockPos.x},${t.blockPos.y},${t.blockPos.z}` : null;
     if (key !== this.lastTargetKey) { this.progress = 0; this.lastTargetKey = key; }
 
@@ -126,6 +133,15 @@ export class BlockInteraction {
     const use = this.actions.isActive('use');
     if (!attack) this.attackLatched = false;
 
+    if (this.targetBoat) {
+      // A boat only ever takes the click: use gets in, attack hits it (an empty one breaks); nothing behind it is touched.
+      this._stopMining();
+      this.airSwinging = false;
+      if (this.actions.wasPressed('attack')) this.events.emit('boat:hit', this.targetBoat);
+      if (this.actions.wasPressed('use')) { this.events.emit('boat:enter', this.targetBoat); this.placeTimer = 0; this.placeRepeating = false; }
+      this.eatTimer = 0;
+      return;
+    }
     if (this.targetPlayer) {
       this._stopMining();
       if (this.actions.wasPressed('attack')) this._attackPlayer(this.targetPlayer);
@@ -416,6 +432,8 @@ export class BlockInteraction {
     if (ItemRegistry.isGlider(stack.itemId)) { if (!repeat && this.player.gliding) this.events.emit('player:rocket'); return; }
     // A rocket in the hand: right click dashes about 5 blocks along the look (Game checks the cooldown, water, flight; Survival uses one rocket).
     if (ItemRegistry.isRocket(stack.itemId)) { if (!repeat) this.events.emit('player:dash'); return; }
+    // The boat: an entity on the water or on top of the targeted block (never a block of its own).
+    if (ItemRegistry.isBoat(stack.itemId)) { if (!repeat) this._placeBoat(t, stack); return; }
     if (!t.hit) return;
     if (stack.itemId === ItemIds.BUCKET || stack.itemId === ItemIds.WATER_BUCKET || stack.itemId === ItemIds.LAVA_BUCKET) { this._useBucket(stack.itemId); return; }
     const item = ItemRegistry.get(stack.itemId);
@@ -460,6 +478,23 @@ export class BlockInteraction {
       consumed = { itemId: consumedId, slot };
     }
     this.events.emit('block:placed', px, py, pz, id, consumed);
+  }
+
+  /**
+   * The boat item (Nov 15 2026): on water (the targeted water block's column: it floats up to the surface by itself) or on top of
+   * the targeted block, facing the way the player looks; the hull needs free space and may not be put into the player. Survival
+   * uses the item up. The entity is spawned by Game (the host does it for a guest).
+   */
+  _placeBoat(t, stack) {
+    if (!t.hit || !this.entities.boats) return;
+    let x, y, z;
+    if (isWater(t.blockId)) { x = t.blockPos.x + 0.5; y = t.blockPos.y + 0.6; z = t.blockPos.z + 0.5; }
+    else { const pp = t.placePos; x = pp.x + 0.5; y = pp.y; z = pp.z + 0.5; }
+    if (!this.entities.boats.canPlaceAt(x, y, z)) return;
+    if (this.player.aabb.intersectsBox(x - 0.6875, y, z - 0.6875, x + 0.6875, y + 0.5625, z + 0.6875)) return;
+    if (!this.player.isCreative) this.inventory.removeFromSlot(this.inventory.selectedIndex, 1);
+    this.events.emit('player:swing');
+    this.events.emit('boat:place', x, y, z, this.player.yaw);
   }
 
   /** Explosives: the placement cell must be free and loaded; the item is used (Survival) and the entity primed at once (4 s fuse). */

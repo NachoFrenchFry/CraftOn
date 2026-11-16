@@ -35,6 +35,7 @@ export const ACTIONS = Object.freeze([
   { id: 'debug', label: 'Debug Overlay', group: 'Misc', default: ['F3'] },
   { id: 'toggleGameMode', label: 'Toggle Survival / Creative', group: 'Misc', default: ['F4'] },
   { id: 'atlasDebug', label: 'Texture Atlas View', group: 'Misc', default: ['F7'] },
+  { id: 'smoothCamera', label: 'Smooth Camera (for recording)', group: 'Misc', default: ['F8'] },
 ]);
 
 /** action id → default key list (frozen arrays). */

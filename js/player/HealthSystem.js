@@ -79,14 +79,14 @@ export class HealthSystem {
     if (p.inLava) {
       p.fireTimer = FIRE_SECONDS;
       this.lavaTimer -= dt;
-      if (this.lavaTimer <= 0) { this.lavaTimer = LAVA_DAMAGE_INTERVAL; this.damage(lavaDamage(inv.armorPoints()), { kind: 'lava' }, { ignoreInvuln: true }); }
+      if (this.lavaTimer <= 0) { this.lavaTimer = LAVA_DAMAGE_INTERVAL; this.damage(lavaDamage(inv.armorValue()), { kind: 'lava' }, { ignoreInvuln: true }); }
     } else this.lavaTimer = 0;
     if (p.inWater) p.fireTimer = 0;
     if (p.fireTimer > 0 && !p.dead) {
       p.fireTimer -= dt;
       if (!p.inLava) {
         this.fireTick -= dt;
-        if (this.fireTick <= 0) { this.fireTick = FIRE_INTERVAL; this.damage(fireDamage(inv.armorPoints()), { kind: 'fire' }, { ignoreInvuln: true }); }
+        if (this.fireTick <= 0) { this.fireTick = FIRE_INTERVAL; this.damage(fireDamage(inv.armorValue()), { kind: 'fire' }, { ignoreInvuln: true }); }
       }
     } else this.fireTick = 0;
     p.onFire = p.fireTimer > 0;
@@ -127,11 +127,12 @@ export class HealthSystem {
     return amount;
   }
 
-  /** Landing after a fall (PlayerPhysics 'player:land'): gentle damage, armor reduces it, boots count double. */
+  /** Landing after a fall (PlayerPhysics 'player:land'): gentle damage, armor reduces it, boots count double; nothing with the world's Fall damage setting off. */
   onLand(fall) {
     const p = this.player, inv = this.game.inventory;
     if (!this.active || p.dead || p.inWater || p.inLava) return;
-    const dmg = fallDamage(fall, inv.armorPoints(), inv.armorPointsFor('boots'));
+    if (this.game.worldMeta && this.game.worldMeta.fallDamage === false) return; // guests follow the host's setting (WELCOME / WORLD)
+    const dmg = fallDamage(fall, inv.armorValue(), inv.armorPointsFor('boots'));
     if (dmg > 0) this.damage(dmg, { kind: 'fall' }, { ignoreInvuln: true });
   }
 
@@ -146,6 +147,7 @@ export class HealthSystem {
   die(cause) {
     const g = this.game, p = g.player;
     if (p.dead) return;
+    if (p.riding) g.leaveBoat(true); // out of the boat where it is (Nov 15 2026)
     p.dead = true;
     p.health = 0;
     p.fireTimer = 0; p.onFire = false;
@@ -205,6 +207,7 @@ export class HealthSystem {
     if (reason === 'respawn') { if (p.dead) this.respawnAt(x, y, z); else p.teleport(x, y, z); return; }
     if (reason === 'correction') console.info(`CraftOn net: the host corrected our position to ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`);
     p.teleport(x, y, z);
+    if (reason === 'teleport') this.game._unbury(); // a /tp through the host: never left inside blocks
   }
 
   /** Alive again at (x, y, z) with full health and a short grace period. */

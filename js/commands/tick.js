@@ -1,7 +1,8 @@
 // tick.js — /tick: the game speed on Minecraft's scale, 20 ticks per second = normal. The time scale
 // (rate / 20) is applied in one place, GameLoop, so physics, animations, flowing liquids, mobs, timers, particles,
 // shaders and sound all follow it; mouse look and UI fades stay real-time. Only the host may use it in multiplayer;
-// guests receive the rate and the freeze state.
+// guests receive the rate and the freeze state. A cheat (Nov 11 2026): refused in a world locked to Survival, and the
+// Pure Survival badge asks first.
 import { TICK_RATE_DEFAULT, TICK_RATE_MIN, TICK_RATE_MAX } from '../config/Constants.js';
 
 const describe = (game) => `Tick rate: ${game.tick.rate} (${(game.tick.rate / TICK_RATE_DEFAULT).toFixed(game.tick.rate % TICK_RATE_DEFAULT === 0 ? 0 : 2).replace(/\.?0+$/, '')}× speed)${game.tick.frozen ? ', frozen' : ''}`;
@@ -16,6 +17,7 @@ export const tick = {
     [lit('step'), { kind: 'int', name: 'n', min: 1, max: 1000, optional: true, examples: ['1', '10'] }],
     [lit('reset')],
   ],
+  cheat: true,
   permitted(game) { return game.isGuest ? 'Only the host can change the tick rate.' : true; },
   run(game, argv, reply, m) {
     const sub = (argv[0] || '').toLowerCase();

@@ -57,10 +57,12 @@ export class WaterSimulation {
     this.pending = new Set();
     /** Scheduled cells outside the simulation distance: resumed when the player comes within range. */
     this.paused = new Set();
-    /** scheduled cells farther than simRadius from the player wait (simulation distance). */
+    /** scheduled cells farther than simRadius from every player wait (simulation distance); `simCenters` holds the host and (hosting) every guest. */
     this.simCenter = null;
+    this.simCenters = [];
     this.simRadius = Infinity;
     this._pausedAtX = Infinity; this._pausedAtZ = Infinity;
+    this._pausedSig = '';
     /** chunk key → Set of cells waiting for that chunk to load. */
     this.deferred = new Map();
     /** Statistics (F3 / benchmark): updates and milliseconds of the last tick, the slowest tick, updates left waiting. */
@@ -147,7 +149,22 @@ export class WaterSimulation {
     return false;
   }
 
-  setSimulationCenter(x, z) { if (!this.simCenter) this.simCenter = { x, z }; else { this.simCenter.x = x; this.simCenter.z = z; } }
+  setSimulationCenter(x, z) { this.setSimulationCenters([{ x, z }]); }
+
+  /** Every player's position: cells within the simulation distance of any of them run (the host and, when hosting, each guest). */
+  setSimulationCenters(list) {
+    this.simCenters = list && list.length ? list : [];
+    const c = this.simCenters[0] || null;
+    if (!c) { this.simCenter = null; return; }
+    if (!this.simCenter) this.simCenter = { x: c.x, z: c.z }; else { this.simCenter.x = c.x; this.simCenter.z = c.z; }
+  }
+
+  /** Squared distance from a cell to the nearest simulation center. */
+  _d2ToNearest(x, z) {
+    let best = Infinity;
+    for (const c of this.simCenters) { const dx = x - c.x, dz = z - c.z, d2 = dx * dx + dz * dz; if (d2 < best) best = d2; }
+    return best;
+  }
 
   /**
    * Process one scheduled tick (call every WATER_TICK_SECONDS): the cells scheduled so far, those within WATER_NEAR_RADIUS of
@@ -160,12 +177,12 @@ export class WaterSimulation {
     const c = this.simCenter, r = this.simRadius;
     const limited = !!c && r !== Infinity;
     const r2 = r * r, near2 = WATER_NEAR_RADIUS * WATER_NEAR_RADIUS;
-    // Cells paused outside the simulation distance come back once the player has moved (checked every 8 blocks of movement).
-    if (this.paused.size && limited && (Math.abs(c.x - this._pausedAtX) > 8 || Math.abs(c.z - this._pausedAtZ) > 8)) {
-      this._pausedAtX = c.x; this._pausedAtZ = c.z;
-      for (const key of this.paused) {
-        const dx = cellX(key) - c.x, dz = cellZ(key) - c.z;
-        if (dx * dx + dz * dz <= r2) { this.paused.delete(key); this.pending.add(key); }
+    // Cells paused outside the simulation distance come back once a player has moved (every center rounded to 8 blocks).
+    if (this.paused.size && limited) {
+      const sig = this.simCenters.map((p) => `${Math.round(p.x / 8)},${Math.round(p.z / 8)}`).join(';');
+      if (sig !== this._pausedSig) {
+        this._pausedSig = sig; this._pausedAtX = c.x; this._pausedAtZ = c.z;
+        for (const key of this.paused) if (this._d2ToNearest(cellX(key), cellZ(key)) <= r2) { this.paused.delete(key); this.pending.add(key); }
       }
     }
     const pend = this.pending;
@@ -175,8 +192,8 @@ export class WaterSimulation {
     for (const key of pend) {
       if (i++ >= limit) break;
       if (limited) {
-        const dx = cellX(key) - c.x, dz = cellZ(key) - c.z, d2 = dx * dx + dz * dz;
-        if (d2 > r2) { pend.delete(key); this.paused.add(key); continue; } // outside the simulation distance: paused, not dropped
+        const d2 = this._d2ToNearest(cellX(key), cellZ(key));
+        if (d2 > r2) { pend.delete(key); this.paused.add(key); continue; } // outside every player's simulation distance: paused, not dropped
         if (d2 > near2) { far++; continue; } // the second pass
       }
       if (n >= MAX_WATER_UPDATES_PER_TICK || ((n & 1) === 1 && now() - t0 >= budgetMs)) { stopped = true; break; }

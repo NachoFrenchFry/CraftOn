@@ -2,7 +2,7 @@
 // (SkinLayout.js, textures/entity/player.png: the face is painted into the head's front pixels, so there are no eye
 // boxes): walk cycle, head look, body yaw lag, sneaking tilt, forward arm swing while mining/placing, a held item in the
 // right hand (with the bow's draw frames and an aiming pose), worn armor as a textured 3D layer (ArmorModel.js), and a
-// horizontal swimming pose with still arms and a flutter kick.
+// horizontal swimming pose with still arms and a flutter kick, and the sitting pose of a boat rider (legs forward).
 
 import * as THREE from 'three';
 import { createSkinPart, PX, setToolHandleRotation, tintModelLight } from './ModelParts.js';
@@ -23,6 +23,9 @@ const HIP_HEIGHT = 12 * PX;
 
 /** Freestyle flutter kick: legs alternate ±SWIM_KICK_AMP at SWIM_KICK_HZ, a little faster when moving faster. */
 export const SWIM_KICK_AMP = 0.35;
+/** Sitting in a boat: the thighs point forward (the model faces −Z, a negative x rotation lifts the legs forward), the arms rest a little forward. */
+export const SIT_LEG_ANGLE = -1.45;
+export const SIT_ARM_ANGLE = -0.35;
 export const SWIM_KICK_HZ = 1.4;
 export function flutterKick(t, out = { left: 0, right: 0 }) {
   const k = Math.sin(t * Math.PI * 2) * SWIM_KICK_AMP;
@@ -359,6 +362,16 @@ export class PlayerModel {
     const spread = 0.03 + Math.sin(this.walkTime * 0.5) * 0.02 + (this.swimSpreadZ || 0) + (this.glideBlend || 0) * 0.45;
     this.leftArm.pivot.rotation.z = -spread;
     this.rightArm.pivot.rotation.z = spread + armRoll;
+    // Sitting in a boat (Nov 15 2026): the legs point forward from the hips, the arms rest a little forward; eased like the other poses.
+    this.sitBlend = damp(this.sitBlend || 0, p.riding ? 1 : 0, 4 / POSE_TRANSITION_SECONDS, dt);
+    if (this.sitBlend > 0.01) {
+      const sb = this.sitBlend;
+      this.leftLeg.pivot.rotation.x = this.leftLeg.pivot.rotation.x * (1 - sb) + SIT_LEG_ANGLE * sb;
+      this.rightLeg.pivot.rotation.x = this.rightLeg.pivot.rotation.x * (1 - sb) + SIT_LEG_ANGLE * sb;
+      this.leftLeg.pivot.rotation.z = this.leftLeg.pivot.rotation.z * (1 - sb) + 0.08 * sb;
+      this.rightLeg.pivot.rotation.z = this.rightLeg.pivot.rotation.z * (1 - sb) - 0.08 * sb;
+      if (this.aimBlend < 0.5) { this.leftArm.pivot.rotation.x = this.leftArm.pivot.rotation.x * (1 - sb) + SIT_ARM_ANGLE * sb; this.rightArm.pivot.rotation.x = this.rightArm.pivot.rotation.x * (1 - sb) + SIT_ARM_ANGLE * sb; }
+    }
   }
 
   /**

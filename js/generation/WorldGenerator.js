@@ -1,6 +1,10 @@
 // WorldGenerator.js — orchestrates all generation passes for one chunk, in order:
 // terrain → surface/bedrock → caves → water → ores → structures → decorations. Deterministic per (seed, cx, cz).
-// Worker-safe; also usable on the main thread (e.g. for spawn finding).
+// Worker-safe; also usable on the main thread (e.g. for spawn finding). `new WorldGenerator(seed, { worldType, flatLayers, structuresAvoidRavines })`
+// (Nov 10 2026): a 'superflat' world is only its layers from y = 0 up — no caves, ores, trees, plants, structures, lakes,
+// lava or springs, plains everywhere — and every helper (surfaceHeight, biomeAt, lavaNear, desertLakeParams…) answers flat
+// without running the noise. Every place that builds a generator passes the options (the chunk workers through
+// ChunkManager.setSeed, WorldSession for the spawn search, the Node checks).
 
 import { SEA_LEVEL, BLOCKS_PER_CHUNK, WORLD_HEIGHT, MIN_CAVE_Y, CHEESE_TOP_Y, CAVE_SPRING_MIN, CAVE_SPRING_MAX, CAVE_SPRING_CAVERN_BLOCKS, LAVA_POOL_CAVERN_BLOCKS, LAVA_POOL_MAX_Y, LAVA_POOL_MAX_CELLS, LAVA_POOL_CHANCE, LAVA_SEA_LEVEL, DESERT_LAKE_CHANCE, MEGA_CAVE_DIAMOND_FACTOR } from '../config/Constants.js';
 import { BlockIds as B } from '../blocks/BlockIds.js';
@@ -18,6 +22,7 @@ import { SimplexNoise } from '../utils/noise/SimplexNoise.js';
 import { deriveSeed, chunkRandom } from '../utils/Random.js';
 import { fieldOffset } from './NoiseOffsets.js';
 import { isWater, isLava } from '../world/WaterLevels.js';
+import { worldTypeOf, normalizeFlatLayers, flatColumn } from './Superflat.js';
 
 const SPRING_SALT = 0x5b12;
 const LAVA_SALT = 0x7a1c;
@@ -25,8 +30,22 @@ const LAKE_SALT = 0x3d9e;
 const SOLID_FOR_LAVA = (id) => id !== B.AIR && !isWater(id) && !isLava(id) && id !== B.GRASS && id !== B.FLOWER_RED && id !== B.FLOWER_YELLOW && id !== B.FLOWER_BLUE && id !== B.DEAD_BUSH;
 
 export class WorldGenerator {
-  constructor(seed) {
+  /**
+   * @param {number} seed
+   * @param {{ worldType?: 'default'|'superflat', flatLayers?: {block: string, height: number}[] }|null} [options]  the world type
+   *   and, for Superflat, the layers (bottom to top; clamped and validated by Superflat.normalizeFlatLayers)
+   */
+  constructor(seed, options = null) {
     this.seed = seed >>> 0;
+    this.worldType = worldTypeOf(options && options.worldType);
+    /** New worlds since Nov 15 2026: surface structures never sit on a ravine (StructurePlacer); a saved world without the option keeps its placement. */
+    this.structuresAvoidRavines = !!(options && options.structuresAvoidRavines);
+    /** Superflat: { layers, height, column (the block id of every y below the top) }; null for a default world. */
+    this.flat = null;
+    if (this.worldType === 'superflat') {
+      const { layers, height } = normalizeFlatLayers(options && options.flatLayers);
+      this.flat = { layers, height, column: flatColumn(layers) };
+    }
     this.shaper = new TerrainShaper(this.seed);
     this.biomes = new BiomeProvider(this.seed, this.shaper);
     this.surface = new SurfaceBuilder(this.seed);
@@ -49,10 +68,23 @@ export class WorldGenerator {
     this.structures = null;
   }
 
-  /** Install the structure registry (structures/*.json parsed by StructureRegistry.fromList); null disables structures. */
+  /** Install the structure registry (structures/*.json parsed by StructureRegistry.fromList); null disables structures. A Superflat world never has any. */
   setStructures(registry) {
-    this.structures = registry ? new StructurePlacer(this, registry) : null;
+    this.structures = registry && !this.flat ? new StructurePlacer(this, registry) : null;
     this.decorator.structures = this.structures;
+  }
+
+  /** Superflat: the spawn point, on top of the layers at the origin. */
+  flatSpawn() { return { x: 0.5, y: this.flat ? this.flat.height : 0, z: 0.5 }; }
+
+  /** A Superflat chunk: the layers from y = 0 up, air above, plains everywhere, nothing else (the same for every chunk). */
+  _generateFlat() {
+    const blocks = new Uint8Array(BLOCKS_PER_CHUNK);
+    const column = this.flat.column;
+    for (let y = 0; y < column.length; y++) { const id = column[y]; if (id) blocks.fill(id, y << 8, (y << 8) + 256); } // one y slab = 256 consecutive cells
+    const heightMap = new Uint8Array(256).fill(Math.max(0, column.length - 1));
+    const biomeMap = new Uint8Array(256).fill(BiomeIds.PLAINS);
+    return { blocks, heightMap, biomeMap, springs: new Int16Array(0), lavaPools: 0, mega: 0, containers: null };
   }
 
   /**
@@ -61,6 +93,7 @@ export class WorldGenerator {
    *   `containers`: structure chests in this chunk as { index, slots } (chunk-local block index, serialized chest slots)
    */
   generateChunk(cx, cz) {
+    if (this.flat) return this._generateFlat();
     this.shaper.resetCache();
     const blocks = new Uint8Array(BLOCKS_PER_CHUNK);
     const heights = this.heights, biomeIds = this.biomeIds;
@@ -260,6 +293,7 @@ export class WorldGenerator {
    * @returns {{x:number, z:number, rx:number, rz:number, depth:number, h:number}|null}
    */
   desertLakeParams(cx, cz) {
+    if (this.flat) return null;
     const key = cx + ',' + cz;
     if (this._lakeCache.has(key)) return this._lakeCache.get(key);
     let lake = null;
@@ -332,6 +366,7 @@ export class WorldGenerator {
 
   /** Any lava within `r` blocks (horizontally) of a column and above `minY`, by generating the chunks around it (spawn search). */
   lavaNear(x, z, r = 16, minY = 0) {
+    if (this.flat) return false;
     const cache = new Map();
     for (let cz = (z - r) >> 4; cz <= (z + r) >> 4; cz++) for (let cx = (x - r) >> 4; cx <= (x + r) >> 4; cx++) {
       const key = cx + ',' + cz;
@@ -400,6 +435,7 @@ export class WorldGenerator {
   }
 
   _isCold(x, z) {
+    if (this.flat) return false;
     return this.shaper.sample(x, z, this._sample).temperature < -0.45;
   }
 
@@ -437,12 +473,15 @@ export class WorldGenerator {
     }
   }
 
-  /** Terrain height (before caves) at a world column — for spawn finding on the main thread. */
+  /** Terrain height (before caves) at a world column — for spawn finding on the main thread. Superflat: the top layer's y everywhere. */
   surfaceHeight(x, z) {
+    if (this.flat) return this.flat.height - 1;
     return this.shaper.sample(x, z, this._sample).height;
   }
 
+  /** The biome of a world column. Superflat: plains everywhere. */
   biomeAt(x, z) {
+    if (this.flat) return BiomeIds.PLAINS;
     return this.biomes.classify(this.shaper.sample(x, z, this._sample));
   }
 }

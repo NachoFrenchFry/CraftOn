@@ -4,14 +4,35 @@
 //   { kind: 'enum', name: 'mode', values: [...] | (game) => [...], label?: (v) => string, optional?: true }
 //   { kind: 'int', name: 'rate', min: 1, max: 100, optional?: true, examples?: ['10', '20'] }
 //   { kind: 'coords', name: 'pos' }                                         three numbers x y z ("~" = here)
+//   { kind: 'player' | 'item' | 'mob', name }                                a player / item / mob name (part 3, Nov 11 2026):
+//                                                                            the game lists them (playerNames / itemNames / mobNames)
 // The registry uses the syntax for parsing and validation (run), the usage text (help), the suggestion popup
 // (suggest: rows, a usage hint with the current argument, red hints for invalid input, greyed rows the player may not
 // use) and Tab completion (complete). Feedback goes only to the player who typed the command through `reply`.
+// Cheats (`cheat: true`, or a function of the match for /set gamemode): refused by game.cheatDenied() — a world locked to
+// Survival, a guest without the host's permission — and, while the world still has its Pure Survival badge, run only when
+// the same command is typed again within 15 s (the first try answers BADGE_CONFIRM_COMMAND); the badge is written off
+// (game.loseBadge) before the command runs, and a failed write refuses it with OFFLINE_TEXT.
+import { BADGE_CONFIRM_COMMAND, CHEAT_CONFIRM_WINDOW_MS, OFFLINE_TEXT } from '../core/WorldSettings.js';
+
+const NAMED_KINDS = new Set(['enum', 'player', 'item', 'mob']);
+
+/** "~", "~5", "-3" per axis against a position: the absolute coordinates of a `coords` argument. */
+export function resolveCoords(parts, at) {
+  const axes = ['x', 'y', 'z'];
+  const out = {};
+  parts.forEach((w, i) => {
+    const base = at ? Number(at[axes[i]]) || 0 : 0;
+    out[axes[i]] = w.startsWith('~') ? base + (w.length > 1 ? Number(w.slice(1)) : 0) : Number(w);
+  });
+  return out;
+}
 
 /**
- * A command: { name, description, syntax: ArgSpec[][], run(game, argv, reply, match), permitted?(game) → true | reason }.
- * `reply(text | parts[], kind)` prints to this player's chat (`kind` 'info' | 'error'); `parts` are chat segments
- * ({ text, bold?, copy? } — a `copy` segment is clickable and copies that text).
+ * A command: { name, description, syntax: ArgSpec[][], run(game, argv, reply, match, actor?), permitted?(game) → true | reason,
+ * cheat?: boolean | (game, match) => boolean, remote?: true }. `reply(text | parts[], kind)` prints to this player's chat
+ * (`kind` 'info' | 'error'); `parts` are chat segments ({ text, bold?, copy? } — a `copy` segment is clickable and copies
+ * that text). `remote` commands are run by the host for a guest (HostServer._command passes the guest as `actor`).
  */
 export class CommandRegistry {
   /** @param {import('../core/Game.js').Game} game */
@@ -19,6 +40,8 @@ export class CommandRegistry {
     this.game = game;
     /** name → command */
     this.commands = new Map();
+    /** The cheat waiting for its confirmation: { key, at } (the normalised line and when it was first typed). */
+    this.pendingCheat = null;
   }
 
   register(command) {
@@ -56,14 +79,24 @@ export class CommandRegistry {
   /** Every usage line of a command. */
   usages(cmd) { return cmd.syntax.map((form) => CommandRegistry.usage(cmd.name, form)); }
 
-  /** The options of an enum (static list or a function of the game). */
-  enumValues(a) { const v = typeof a.values === 'function' ? a.values(this.game) : a.values; return Array.isArray(v) ? v : []; }
+  /** The options of an enum (static list or a function of the game) or of a player / item / mob argument (the game lists them). */
+  enumValues(a) {
+    if (a.kind === 'player' || a.kind === 'item' || a.kind === 'mob') { const fn = this.game[a.kind + 'Names']; const v = typeof fn === 'function' ? fn.call(this.game) : []; return Array.isArray(v) ? v : []; }
+    const v = typeof a.values === 'function' ? a.values(this.game) : a.values; return Array.isArray(v) ? v : [];
+  }
+
+  /** The readable label of one option (the spec's `label`, else the game's itemLabel / mobLabel / playerLabel). */
+  labelOf(a, v) {
+    if (a.label) return a.label(v);
+    const fn = this.game[a.kind + 'Label'];
+    return typeof fn === 'function' ? fn.call(this.game, v) || '' : '';
+  }
 
   /** Does the typed word satisfy the argument? Returns { ok, value, error }. */
   _checkArg(a, word) {
     const w = String(word);
     if (a.kind === 'literal') return w.toLowerCase() === a.value ? { ok: true, value: a.value } : { ok: false, error: null };
-    if (a.kind === 'enum') { const hit = this.enumValues(a).find((v) => v.toLowerCase() === w.toLowerCase()); return hit !== undefined ? { ok: true, value: hit } : { ok: false, error: `Unknown ${a.name} '${w}'` }; }
+    if (NAMED_KINDS.has(a.kind)) { const hit = this.enumValues(a).find((v) => v.toLowerCase() === w.toLowerCase()); return hit !== undefined ? { ok: true, value: hit } : { ok: false, error: `Unknown ${a.name} '${w}'` }; }
     if (a.kind === 'int') {
       const n = /^-?\d+$/.test(w) ? Number(w) : NaN;
       if (!Number.isFinite(n)) return { ok: false, error: `${a.name} must be a whole number` };
@@ -80,32 +113,52 @@ export class CommandRegistry {
    */
   match(cmd, argv) {
     let closest = null;
+    const numeric = (w) => /^(~|-?\d)/.test(String(w || ''));
     for (const form of cmd.syntax) {
       const values = [];
-      let i = 0, error = null, depth = 0;
+      let i = 0, error = null, depth = 0, failed = null, at = 0;
       for (const a of form) {
         const span = a.kind === 'coords' ? 3 : 1;
         if (i >= argv.length) { if (a.optional) break; error = `Usage: ${CommandRegistry.usage(cmd.name, form)}`; break; }
         if (a.kind === 'coords') {
           const parts = argv.slice(i, i + 3);
-          if (parts.length < 3 || !parts.every((p) => this._checkArg(a, p).ok)) { error = `${a.name} needs three numbers (x y z)`; break; }
+          if (parts.length < 3 || !parts.every((p) => this._checkArg(a, p).ok)) { error = `${a.name} needs three numbers (x y z)`; failed = a; at = i; break; }
           values.push(parts); i += span; depth++; continue;
         }
         const r = this._checkArg(a, argv[i]);
-        if (!r.ok) { error = r.error || `Usage: ${CommandRegistry.usage(cmd.name, form)}`; break; }
+        if (!r.ok) { error = r.error || `Usage: ${CommandRegistry.usage(cmd.name, form)}`; failed = a; at = i; break; }
         values.push(r.value); i += span; depth++;
       }
       if (!error && i < argv.length) error = `Too many arguments. Usage: ${CommandRegistry.usage(cmd.name, form)}`;
       if (!error) return { form, values, error: null };
-      if (!closest || depth > closest.depth) closest = { form, error, depth };
+      // The message of the form that got furthest; at a tie the one whose failing argument fits what was typed (numbers for
+      // coordinates, a word for a name), so "/tp nobody" says Unknown player and "/tp 1 2" asks for three numbers.
+      const rank = depth * 10 + (failed && (failed.kind === 'coords') === numeric(argv[at]) ? 1 : 0);
+      if (!closest || rank > closest.rank) closest = { form, error, rank };
     }
     return closest ? { form: closest.form, values: null, error: closest.error } : { form: null, values: null, error: `Usage: ${this.usages(cmd).join(' | ')}` };
   }
 
-  /** Why the player may not use a command right now (a string), or null. */
-  denied(cmd) { if (!cmd.permitted) return null; const r = cmd.permitted(this.game); return r === true || r === undefined || r === null ? null : String(r); }
+  /** Why the player may not use a command right now (a string), or null: its own `permitted`, then — for a cheat — the lock / permission rule. */
+  denied(cmd) {
+    if (cmd.permitted) { const r = cmd.permitted(this.game); if (!(r === true || r === undefined || r === null)) return String(r); }
+    if (cmd.cheat === true) { const why = this.cheatDenied(); if (why) return why; }
+    return null;
+  }
 
-  /** Run a "/command args" line; `reply(text, kind)` receives the feedback. Returns false for an unknown command. */
+  /** Is this matched command a cheat (teleports, /give, /summon, /setspawn, /tick, /locate, leaving Survival)? */
+  isCheat(cmd, m) { return typeof cmd.cheat === 'function' ? !!cmd.cheat(this.game, m) : !!cmd.cheat; }
+
+  /** The game's reason no cheat may run now (a Survival lock, a guest without permission), or null. */
+  cheatDenied() { return typeof this.game.cheatDenied === 'function' ? this.game.cheatDenied() : null; }
+
+  /** Would a cheat take the world's Pure Survival badge (the host / single player only: guests never own the badge)? */
+  badgeAtStake() { return !!this.game.survivalOnly && !this.game.isGuest; }
+
+  /**
+   * Run a "/command args" line; `reply(text, kind)` receives the feedback. Returns false for an unknown command, true
+   * otherwise — or a promise of true when the world's badge had to be written off first.
+   */
   run(line, reply) {
     const { name, argv } = CommandRegistry.parse(line);
     const cmd = this.commands.get(name);
@@ -114,9 +167,25 @@ export class CommandRegistry {
     if (denied) { reply(denied, 'error'); return true; }
     const m = this.match(cmd, argv);
     if (m.error) { reply(m.error, 'error'); return true; }
+    if (this.isCheat(cmd, m)) {
+      const why = this.cheatDenied();
+      if (why) { reply(why, 'error'); return true; }
+      if (this.badgeAtStake()) {
+        // The first try only warns; the same command again within the window removes the badge (written first) and runs.
+        const key = [name, ...argv.map((a) => a.toLowerCase())].join(' '), now = Date.now();
+        const pending = this.pendingCheat;
+        if (!pending || pending.key !== key || now - pending.at > CHEAT_CONFIRM_WINDOW_MS) { this.pendingCheat = { key, at: now }; reply(BADGE_CONFIRM_COMMAND, 'info'); return true; }
+        this.pendingCheat = null;
+        return Promise.resolve(this.game.loseBadge({ confirm: false, silent: true })).then((ok) => { if (!ok) { reply(OFFLINE_TEXT, 'error'); return true; } this._exec(cmd, name, argv, reply, m); return true; });
+      }
+    }
+    this._exec(cmd, name, argv, reply, m);
+    return true;
+  }
+
+  _exec(cmd, name, argv, reply, m) {
     try { cmd.run(this.game, argv, reply, m); }
     catch (e) { console.warn(`CraftOn command /${name} failed`, e); reply(`/${name} failed: ${e.message || e}`, 'error'); }
-    return true;
   }
 
   /**
@@ -164,6 +233,7 @@ export class CommandRegistry {
     out.replaceStart = endsWithSpace ? line.length : line.length - word.length;
     const options = new Map();                // text → row
     let hint = null, hintSpec = null, hintDepth = -1, anyForm = false, firstError = null, tooMany = true;
+    const specsAtDepth = []; // every form's argument at the deepest position reached (for the red hint of an unknown word)
     for (const form of cmd.syntax) {
       // the earlier words must fit this form
       let ok = true, i = 0, pos = 0;
@@ -179,11 +249,12 @@ export class CommandRegistry {
       tooMany = false;
       const a = form[pos];
       anyForm = true;
-      if (pos > hintDepth) { hintDepth = pos; hintSpec = a; hint = { before: ['/' + cmd.name, ...form.slice(0, pos).map((x) => CommandRegistry.argText(x))].join(' ') + ' ', current: CommandRegistry.argText(a), after: form.slice(pos + 1).map((x) => ' ' + CommandRegistry.argText(x)).join('') }; }
+      if (pos > hintDepth) { hintDepth = pos; hintSpec = a; specsAtDepth.length = 0; hint = { before: ['/' + cmd.name, ...form.slice(0, pos).map((x) => CommandRegistry.argText(x))].join(' ') + ' ', current: CommandRegistry.argText(a), after: form.slice(pos + 1).map((x) => ' ' + CommandRegistry.argText(x)).join('') }; }
+      if (pos === hintDepth) specsAtDepth.push(a);
       const more = form.length > pos + 1;
       const add = (text, detail) => { if (!options.has(text)) options.set(text, { text, label: text, detail: detail || '', prefix: true, disabled, needsSpace: more }); else if (more) options.get(text).needsSpace = true; };
       if (a.kind === 'literal') add(a.value, '');
-      else if (a.kind === 'enum') for (const v of this.enumValues(a)) add(v, a.label ? a.label(v) : '');
+      else if (NAMED_KINDS.has(a.kind)) for (const v of this.enumValues(a)) add(v, this.labelOf(a, v));
       else if (a.kind === 'int') for (const v of a.examples || []) add(String(v), '');
     }
     out.items = sortRows([...options.values()], word);
@@ -191,8 +262,10 @@ export class CommandRegistry {
     if (!anyForm && tooMany && !firstError) { out.error = 'Too many arguments'; return out; }
     if (firstError && !anyForm) { out.error = firstError; return out; }
     if (word && !out.items.length) {
-      const spec = hintSpec;
-      if (spec && (spec.kind === 'enum' || spec.kind === 'literal')) out.error = `Unknown ${spec.kind === 'enum' ? spec.name : 'option'} '${word}'`;
+      // Several forms may expect different things here (/tp: coordinates or a player): a word that is not a number is judged as the name.
+      const numeric = /^(~|-?\d)/.test(word);
+      const spec = (!numeric && specsAtDepth.find((x) => NAMED_KINDS.has(x.kind) || x.kind === 'literal')) || hintSpec;
+      if (spec && (NAMED_KINDS.has(spec.kind) || spec.kind === 'literal')) out.error = `Unknown ${spec.kind === 'literal' ? 'option' : spec.name} '${word}'`;
       else if (spec && spec.kind === 'int') { const r = this._checkArg(spec, word); if (!r.ok) out.error = r.error; }
     }
     return out;

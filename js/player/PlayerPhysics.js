@@ -6,6 +6,7 @@ import * as C from '../config/Constants.js';
 import { isWater, isLava, heightOf } from '../world/WaterLevels.js';
 import { isSolidAt, sweepAxis, hasSupport, hasHeadroom, liquidUnderBox } from '../entities/EntityPhysics.js';
 import { stepHorizontal, stepFlyVertical } from './Movement.js';
+import { SLIPPERY } from '../blocks/BlockRegistry.js';
 import { glideTick, glideBoostTick, crashDamage } from './Glide.js';
 
 const EPS = C.COLLISION_EPSILON;
@@ -46,6 +47,11 @@ export class PlayerPhysics {
     const above = this.world.getBlock(bx, by + 1, bz);
     if (kind === 1 ? isWater(above) : isLava(above)) return kind;
     return y - by < heightOf(id) ? kind : 0;
+  }
+
+  /** Standing on a slippery block (ice): the block right under the centre of the feet. */
+  _onSlippery(p) {
+    return SLIPPERY[this.world.getBlock(Math.floor(p.position.x), Math.floor(p.position.y - 0.01), Math.floor(p.position.z))] === 1;
   }
 
   /** Is the space above the current box free up to `height` above the feet? */
@@ -124,6 +130,17 @@ export class PlayerPhysics {
     p.updateAABB();
     p.horizontalSpeed = Math.hypot(v.x, v.z);
     p.blockedHorizontally = false;
+  }
+
+  /** A boat rider is carried, not stepped: only the water / lava flags (the same samples the step takes) so drowning and burning still happen. */
+  liquidState(p) {
+    const feetLiquid = this._liquidAt(p.position.x, p.position.y + 0.2, p.position.z);
+    const midLiquid = this._liquidAt(p.position.x, p.position.y + p.height * 0.5, p.position.z);
+    const headLiquid = this._liquidAt(p.position.x, p.position.y + p.eyeHeight, p.position.z);
+    p.inWater = feetLiquid === 1 || midLiquid === 1;
+    p.inLava = feetLiquid === 2 || midLiquid === 2;
+    p.headInWater = headLiquid === 1;
+    p.headInLava = headLiquid === 2;
   }
 
   step(dt) {
@@ -243,7 +260,7 @@ export class PlayerPhysics {
         v.x += (fx * speed - v.x) * blend;
         v.z += (fz * speed - v.z) * blend;
       } else {
-        stepHorizontal(v, fx, fz, speed, p.flying ? 'fly' : p.onGround ? 'ground' : 'air', dt);
+        stepHorizontal(v, fx, fz, speed, p.flying ? 'fly' : p.onGround ? (this._onSlippery(p) ? 'ice' : 'ground') : 'air', dt);
       }
 
       // Vertical motion.

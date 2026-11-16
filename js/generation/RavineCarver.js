@@ -103,7 +103,10 @@ export class RavineCarver {
         const discs = this.path(scx, scz);
         if (!discs) continue;
         for (const d of discs) {
-          if (d.x + d.r < minX - 4 || d.x - d.r > maxX + 4 || d.z + d.r < minZ - 4 || d.z - d.r > maxZ + 4) continue;
+          // Kept for surfaceCarved's near test: every disc that can cover a column centre within 4 blocks of the chunk (the
+          // columns run to ±4, their centres to ±4.5 — a ±4 cut here left a neighbour chunk drawing the leaves of a tree the
+          // trunk's chunk never built, when a ravine's edge fell within half a block of the margin; Nov 15 2026).
+          if (d.x + d.r < minX - 4.5 || d.x - d.r > maxX + 4.5 || d.z + d.r < minZ - 4.5 || d.z - d.r > maxZ + 4.5) continue;
           active.push(d);
           if (d.x + d.r < minX - 1 || d.x - d.r > maxX + 1 || d.z + d.r < minZ - 1 || d.z - d.r > maxZ + 1) continue;
           this._carveDisc(blocks, heights, minX, minZ, d);
@@ -147,15 +150,38 @@ export class RavineCarver {
     const cx = x >> 4, cz = z >> 4;
     const near = this.activeCX !== null && Math.abs(cx - this.activeCX) <= 1 && Math.abs(cz - this.activeCZ) <= 1
       && x >= this.activeCX * 16 - 4 && x <= this.activeCX * 16 + 19 && z >= this.activeCZ * 16 - 4 && z <= this.activeCZ * 16 + 19;
-    const test = (d) => { const ddx = (x + 0.5 - d.x) / d.r, ddz = (z + 0.5 - d.z) / d.r; return ddx * ddx + ddz * ddz < 1 && surface <= d.y + d.rv && surface >= d.y - d.rv; };
-    if (near) { for (const d of this.activeDiscs) if (test(d)) return true; return false; }
+    if (near) { for (const d of this.activeDiscs) if (RavineCarver.cutsSurface(d, x, z, surface)) return true; return false; }
     for (let scx = cx - RANGE; scx <= cx + RANGE; scx++) {
       for (let scz = cz - RANGE; scz <= cz + RANGE; scz++) {
         const discs = this.path(scx, scz);
         if (!discs) continue;
-        for (const d of discs) if (test(d)) return true;
+        for (const d of discs) if (RavineCarver.cutsSurface(d, x, z, surface)) return true;
       }
     }
     return false;
+  }
+
+  /** The one surface test (surfaceCarved and the structure placer share it): does disc `d` open column (x, z) whose terrain top is `surface`? */
+  static cutsSurface(d, x, z, surface) {
+    const ddx = (x + 0.5 - d.x) / d.r, ddz = (z + 0.5 - d.z) / d.r;
+    return ddx * ddx + ddz * ddz < 1 && surface <= d.y + d.rv && surface >= d.y - d.rv;
+  }
+
+  /**
+   * Every ravine disc that overlaps the world box [minX..maxX] × [minZ..maxZ] (edges inclusive, the disc's radius counted),
+   * from the cached paths of the source chunks in reach. The structure placer collects these once per candidate site and
+   * tests its footprint's columns against the short list instead of running the full path scan per column.
+   */
+  discsNear(minX, maxX, minZ, maxZ) {
+    const out = [];
+    const cx0 = (minX >> 4) - RANGE, cx1 = (maxX >> 4) + RANGE, cz0 = (minZ >> 4) - RANGE, cz1 = (maxZ >> 4) + RANGE;
+    for (let scx = cx0; scx <= cx1; scx++) {
+      for (let scz = cz0; scz <= cz1; scz++) {
+        const discs = this.path(scx, scz);
+        if (!discs) continue;
+        for (const d of discs) if (d.x + d.r >= minX && d.x - d.r <= maxX + 1 && d.z + d.r >= minZ && d.z - d.r <= maxZ + 1) out.push(d);
+      }
+    }
+    return out;
   }
 }

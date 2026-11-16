@@ -1,7 +1,12 @@
 // Decorator.js — trees (cross-chunk safe), tall grass, flowers, cacti and dead bushes.
 // Trees of the 3×3 neighbouring chunks are enumerated deterministically; only the blocks that fall
 // inside the current chunk are written. Trees never stand on one-block-wide peaks or on columns a ravine
-// cuts open, so none float. Worker-safe.
+// cuts open — but the candidates come from the noise height, and caves (worm and noise) cut the surface before the
+// decorator runs, so about 7 % of them would hang over a hole. The tree's own chunk (the one with the trunk column)
+// is the only one that can see the real ground, so it counts the gap under the trunk (Nov 15 2026): none → as before;
+// 1–4 blocks → the trunk grows down to the solid block; deeper → the tree is dropped when the whole tree fits inside
+// this chunk (local x and z 2–13, so no neighbour draws any of it), else the trunk grows down however deep (the
+// neighbours draw its leaves regardless). The candidates and their random draws never change. Worker-safe.
 
 import { chunkRandom } from '../utils/Random.js';
 import { SEA_LEVEL, WORLD_HEIGHT } from '../config/Constants.js';
@@ -16,6 +21,10 @@ const SALT_TREES = 0x7ee5;
 const SALT_PLANTS = 0x91a7;
 const TREE_ATTEMPTS = 10;
 const TREE_MIN_SPACING = 3;
+/** A gap of up to this many non-solid blocks under a trunk is bridged with logs; a deeper one drops the tree (when it fits the chunk). */
+export const TREE_BRIDGE_GAP = 4;
+/** A tree whose trunk sits at local x and z within [TREE_INNER_MIN, TREE_INNER_MAX] lies entirely in its chunk (canopy radius TREE_MAX_RADIUS). */
+const TREE_INNER_MIN = 2, TREE_INNER_MAX = 13;
 /** A column whose four neighbours are all lower, with a drop of at least this much somewhere: a peak, no tree. */
 const PEAK_DROP = 2;
 
@@ -97,12 +106,25 @@ export class Decorator {
           if (spec.x + TREE_MAX_RADIUS < wx0 || spec.x - TREE_MAX_RADIUS > wx0 + 15) continue;
           if (spec.z + TREE_MAX_RADIUS < wz0 || spec.z - TREE_MAX_RADIUS > wz0 + 15) continue;
           if (structures && structures.columnBlocked(spec.x, spec.z)) continue; // the trunk would stand in a structure
-          buildTree(spec, write);
-          // Dirt under the trunk, like Minecraft.
           const lx = spec.x - wx0, lz = spec.z - wz0;
-          if (lx >= 0 && lx < 16 && lz >= 0 && lz < 16) {
-            const gi = lx + (lz << 4) + ((spec.y - 1) << 8);
-            if (blocks[gi] === B.GRASS_BLOCK || blocks[gi] === B.SNOWY_GRASS) blocks[gi] = B.DIRT;
+          const own = lx >= 0 && lx < 16 && lz >= 0 && lz < 16; // the trunk column is in this chunk: the ground under it is visible
+          let groundY = spec.y - 1;
+          if (own) {
+            // The gap under the trunk: non-solid blocks (cave air, plants, water) down to the first solid one.
+            const col = lx + (lz << 4);
+            while (groundY >= 1 && !SOLID[blocks[col + (groundY << 8)]]) groundY--;
+            const gap = spec.y - 1 - groundY;
+            if (gap > TREE_BRIDGE_GAP && lx >= TREE_INNER_MIN && lx <= TREE_INNER_MAX && lz >= TREE_INNER_MIN && lz <= TREE_INNER_MAX) continue; // over a deep hole and wholly inside this chunk: no tree
+          }
+          buildTree(spec, write);
+          if (own) {
+            // Bridge the gap with logs (air, plants and liquids only: `write` with isTrunk never replaces a solid block), then
+            // dirt under the trunk, like Minecraft.
+            for (let y = spec.y - 1; y > groundY; y--) write(spec.x, y, spec.z, B.LOG, true);
+            if (groundY >= 1) {
+              const gi = lx + (lz << 4) + (groundY << 8);
+              if (blocks[gi] === B.GRASS_BLOCK || blocks[gi] === B.SNOWY_GRASS) blocks[gi] = B.DIRT;
+            }
           }
         }
       }

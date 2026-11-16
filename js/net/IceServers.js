@@ -22,6 +22,12 @@ export function resetIceServers() { cache = null; inflight = null; noted = false
 
 function stunOnly(mock) { return mock ? [] : STUN_SERVERS.map((urls) => ({ urls })); }
 
+/**
+ * STUN only, without asking the Edge Function for relay credentials: a world open through its Same Wi-Fi multiplayer
+ * setting (HostServer `lan` mode) only expects same-network guests, which never need a relay.
+ */
+export function stunOnlyIceServers(mock = false) { return { iceServers: stunOnly(mock), turn: false, note: 'Same Wi-Fi multiplayer: no relay requested' }; }
+
 function normalize(list) {
   const out = [];
   for (const s of Array.isArray(list) ? list : [list]) {

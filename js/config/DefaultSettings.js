@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   mouseSensitivity: 0.5,  // 0.05..1.5
   crouchMode: 'hold',     // 'hold' | 'toggle' (Controls tab)
   invertY: false,
+  smoothCameraTime: 0.35, // seconds the camera takes to catch up with the mouse while Smooth Camera (F8) is on, 0.1..2
   masterVolume: 0.8,
   blocksVolume: 1.0,
   playerVolume: 1.0,
@@ -94,6 +95,7 @@ export const SETTING_SCHEMA = [
   // ---- Controls (the key-binding list follows these rows) ----
   { key: 'mouseSensitivity', label: 'Mouse Sensitivity', type: 'range', min: 0.05, max: 1.5, step: 0.05, unit: '', section: 'controls' },
   { key: 'invertY', label: 'Invert Mouse Y', type: 'toggle', section: 'controls' },
+  { key: 'smoothCameraTime', label: 'Smooth Camera Time', type: 'range', min: 0.1, max: 2.0, step: 0.05, unit: ' s', section: 'controls', hint: 'How long the camera takes to catch up with the mouse while Smooth Camera is on (F8 by default).' },
   { key: 'crouchMode', label: 'Crouch mode', type: 'select', options: [['hold', 'Hold'], ['toggle', 'Toggle']], section: 'controls', hint: 'Hold: crouch while the key is down. Toggle: press once to crouch, again to stand (flying, swimming, a menu or death ends it).' },
 ];
 

@@ -6,8 +6,8 @@
 export const TEXTURE_DIR = 'textures/';
 export const CRACK_STAGES = 10;
 
-/** The six hand-made textures. The export tool never overwrites these, even with --force. */
-export const ORIGINAL_TEXTURES = Object.freeze(['grass_block_top', 'grass_block_side', 'stone', 'log_top', 'log_side', 'leaves']);
+/** The hand-made textures (six originals plus the owner's two Encorsed Obsidian drawings, Nov 9 2026). The export tool never overwrites these, even with --force or --only. */
+export const ORIGINAL_TEXTURES = Object.freeze(['grass_block_top', 'grass_block_side', 'stone', 'log_top', 'log_side', 'leaves', 'encorsed_obsidian', 'encorsed_obsidian_fragment']);
 /** Generated once, then hand-edited by the author: the exporter never rewrites these either. */
 export const EDITED_TEXTURES = Object.freeze(['grass_block_snow_side', 'grass', 'torch_side']);
 
@@ -50,6 +50,11 @@ export const GENERATED_TEXTURES = Object.freeze([
   'mace', 'wooden_spear', 'stone_spear', 'golden_spear', 'iron_spear', 'diamond_spear',
   // the shovels (Nov 6 2026)
   'wooden_shovel', 'stone_shovel', 'golden_shovel', 'iron_shovel', 'diamond_shovel',
+  // Encorsed Obsidian gear (Nov 9 2026); the block and the fragment are the owner's drawings (ORIGINAL_TEXTURES)
+  'encorsed_pickaxe', 'encorsed_axe', 'encorsed_shovel', 'encorsed_sword', 'encorsed_spear',
+  'encorsed_helmet', 'encorsed_chestplate', 'encorsed_gauntlets', 'encorsed_leggings', 'encorsed_boots',
+  // the boat item (Nov 15 2026)
+  'boat',
 ]);
 
 /**
@@ -66,7 +71,8 @@ export const EXTRA_ATLAS_TEXTURES = Object.freeze([...PARTICLE_TEXTURES, ...HELD
 
 /**
  * Entity sheets in textures/entity/ (not part of the atlas): the mob sheets (64×32 Minecraft-style box-UV nets), the
- * player skin and the zombie (64×64, the standard Minecraft skin layout, see js/player/models/SkinLayout.js) and the arrow.
+ * player skin and the zombie (64×64, the standard Minecraft skin layout, see js/player/models/SkinLayout.js), the arrow, the glider
+ * and the boat (128×64: the hull's five box nets, js/entities/Boat.js).
  */
 export const ENTITY_TEXTURES = Object.freeze([
     'cow',
@@ -77,18 +83,19 @@ export const ENTITY_TEXTURES = Object.freeze([
     'zombie',
     'player',
     'arrow',
-    'glider'
+    'glider',
+    'boat'
 ]);
 export const ENTITY_TEXTURE_SIZE = Object.freeze([64, 32]);
 /** Sheets that are not 64×32. */
-export const ENTITY_TEXTURE_SIZES = Object.freeze({ zombie: [64, 64], player: [64, 64], arrow: [16, 16], glider: [32, 32] });
+export const ENTITY_TEXTURE_SIZES = Object.freeze({ zombie: [64, 64], player: [64, 64], arrow: [16, 16], glider: [32, 32], boat: [128, 64] });
 export const SKIN_SIZE = Object.freeze([64, 64]);
 /**
  * Armor sheets in textures/entity/armor/: per material `<m>_layer_1.png` holds the helmet,
  * chestplate (+ sleeves), gauntlets and boots nets, `<m>_layer_2.png` the leggings (waist + upper legs).
  * 64×32 box-UV nets like the mobs; see js/player/models/ArmorModel.js for the rectangles.
  */
-export const ARMOR_SHEET_MATERIALS = Object.freeze(['wooden', 'golden', 'iron', 'diamond', 'obsidian']);
+export const ARMOR_SHEET_MATERIALS = Object.freeze(['wooden', 'golden', 'iron', 'diamond', 'obsidian', 'encorsed']);
 export const ARMOR_TEXTURES = Object.freeze(ARMOR_SHEET_MATERIALS.flatMap((m) => [`${m}_layer_1`, `${m}_layer_2`]));
 export const ARMOR_TEXTURE_SIZE = Object.freeze([64, 32]);
 
